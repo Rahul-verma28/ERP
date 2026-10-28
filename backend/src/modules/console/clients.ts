@@ -1,4 +1,4 @@
-import type { Prisma, TenantStatus } from '@prisma/client';
+import type { Prisma, TenantSource, TenantStatus } from '@prisma/client';
 import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { ConsoleCtx } from '../../kernel/context';
@@ -6,6 +6,7 @@ import { audit } from '../audit/service';
 import { cache } from '../../kernel/cache';
 import { scopedTenantFilter } from './service';
 import { clientOrders } from '../platformBilling/orders';
+import { healthFor } from './insights';
 
 // Console → Clients (design v2 §3). Only account metadata: plan, status, usage counts and who
 // brought the client in. Business records (customers, invoices, salaries) are never read here.
@@ -20,10 +21,13 @@ async function scopedTenant(ctx: ConsoleCtx, id: string) {
   return tenant;
 }
 
-export async function listClients(ctx: ConsoleCtx, q: { search?: string; status?: TenantStatus; limit: number; cursor?: string }) {
+export async function listClients(ctx: ConsoleCtx, q: { search?: string; status?: TenantStatus; source?: TenantSource; ownerId?: string; limit: number; cursor?: string }) {
   const where: Prisma.TenantWhereInput = {
     ...(await scopedTenantFilter(ctx)),
     ...(q.status ? { status: q.status } : {}),
+    ...(q.source ? { source: q.source } : {}),
+    // Owner (sales) = the Console user who brought the client in; ANDed so it never widens the scope
+    ...(q.ownerId ? { AND: [{ acquisition: { acquiredByUserId: q.ownerId } }] } : {}),
     ...(q.search ? { OR: [{ name: { contains: q.search, mode: 'insensitive' } }, { gstin: { contains: q.search.toUpperCase() } }] } : {}),
   };
   const rows = await db().tenant.findMany({
@@ -34,18 +38,25 @@ export async function listClients(ctx: ConsoleCtx, q: { search?: string; status?
     include: {
       subscription: { select: { status: true, trialEndsAt: true, currentPeriodEnd: true, cycle: true, planId: true } },
       acquisition: { select: { acquiredByType: true, acquiredByUserId: true, method: true } },
+      partner: { select: { name: true } },
       _count: { select: { members: { where: { status: 'active' } } } },
     },
   });
   const pageRows = rows.slice(0, q.limit);
-  const [plans, people] = await Promise.all([
+  const ids = pageRows.map((t) => t.id);
+  const [plans, people, health, lastPaid, nextSteps] = await Promise.all([
     db().plan.findMany({ select: { id: true, key: true, name: true } }),
     db().user.findMany({
       where: { id: { in: [...new Set(pageRows.flatMap((t) => [t.ownerUserId, t.acquisition?.acquiredByUserId].filter(Boolean) as string[]))] } },
       select: { id: true, name: true, email: true },
     }),
+    healthFor(ids),
+    db().platformOrder.findMany({ where: { tenantId: { in: ids }, status: 'paid' }, orderBy: { paidAt: 'desc' }, distinct: ['tenantId'], select: { tenantId: true, taxablePaise: true, cycle: true } }),
+    db().consoleFollowup.findMany({ where: { tenantId: { in: ids }, doneAt: null }, orderBy: { dueAt: 'asc' }, distinct: ['tenantId'], select: { tenantId: true, title: true, dueAt: true } }),
   ]);
   const plan = new Map(plans.map((p) => [p.id, p]));
+  const mrr = new Map(lastPaid.map((o) => [o.tenantId, Math.round(Number(o.taxablePaise) / (o.cycle === 'yearly' ? 12 : 1))]));
+  const next = new Map(nextSteps.map((f) => [f.tenantId, { title: f.title, dueAt: f.dueAt }]));
   const person = new Map(people.map((u) => [u.id, u]));
   return {
     data: pageRows.map((t) => ({
@@ -62,6 +73,10 @@ export async function listClients(ctx: ConsoleCtx, q: { search?: string; status?
       owner: person.get(t.ownerUserId) ?? null,
       acquiredBy: t.acquisition?.acquiredByUserId ? person.get(t.acquisition.acquiredByUserId)?.name ?? null : null,
       activeUsers: t._count.members,
+      partner: t.partner?.name ?? null,
+      mrrPaise: mrr.get(t.id) ?? null,
+      health: health.get(t.id) ?? null,
+      next: next.get(t.id) ?? null,
     })),
     nextCursor: rows.length > q.limit ? pageRows[pageRows.length - 1].id : null,
   };
@@ -86,7 +101,10 @@ export async function clientDetail(ctx: ConsoleCtx, id: string) {
       take: 20,
     }),
   ]);
-  const orders = await clientOrders(id);
+  const [orders, partner] = await Promise.all([
+    clientOrders(id),
+    tenant.partnerId ? tx.partner.findUnique({ where: { id: tenant.partnerId }, select: { id: true, name: true } }) : null,
+  ]);
   const plan = subscription ? await tx.plan.findUnique({ where: { id: subscription.planId }, select: { key: true, name: true, limits: true } }) : null;
   const peopleIds = [acquisition?.acquiredByUserId, acquisition?.changedBy, ...extensions.map((e) => e.grantedBy), ...history.map((h) => h.actorId)].filter(Boolean) as string[];
   const people = new Map((await tx.user.findMany({ where: { id: { in: [...new Set(peopleIds)] } }, select: { id: true, name: true, email: true } })).map((u) => [u.id, u]));
@@ -103,6 +121,9 @@ export async function clientDetail(ctx: ConsoleCtx, id: string) {
     onboardingType: tenant.onboardingType,
     isInternal: tenant.isInternal,
     createdAt: tenant.createdAt,
+    // Partner clients are billed to the partner, never through AHEAD orders
+    partner,
+    billedBy: tenant.billingOwner,
     owner: owner && { name: owner.name, email: owner.email, mobile: owner.mobile, emailVerified: !!owner.emailVerifiedAt, lastLoginAt: owner.lastLoginAt },
     subscription: subscription && {
       status: subscription.status, cycle: subscription.cycle, plan,
@@ -147,6 +168,12 @@ export async function extendClient(ctx: ConsoleCtx, id: string, input: { days: n
   await audit({ tenantId: null, action: `console.${kind}_extended`, entity: 'tenant', entityId: id, before: { endAt: previous }, after: { endAt: newEndAt, days: input.days, reason: input.reason.trim() } });
   cache.del(`ent:tenant:${id}`);
   return row;
+}
+
+/** Vendors see a client's name, plan, status and payments — not usage, modules or contact details (platform design §1). */
+export function vendorView(c: Awaited<ReturnType<typeof clientDetail>>) {
+  const { usage: _u, modules: _m, history: _h, extensions: _e, owner, ...rest } = c;
+  return { ...rest, owner: owner && { name: owner.name, email: '', mobile: '', emailVerified: owner.emailVerified, lastLoginAt: owner.lastLoginAt }, usage: null, modules: [], history: [], extensions: [] };
 }
 
 /** Scope check for actions that call other services with a tenant id (e.g. changeAcquisition). */

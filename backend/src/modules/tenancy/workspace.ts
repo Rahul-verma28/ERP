@@ -70,6 +70,9 @@ export const BusinessSignup = z
     modules: z.array(MODULE_KEY).max(20).default([]),
     heardFrom: optionalText(z.string().trim().max(60)),
     couponCode: optionalText(z.string().trim().toUpperCase().max(20)),
+    /** A vendor's or salesperson's code, from a ?ref= link or typed in */
+    referralCode: optionalText(z.string().trim().toUpperCase().max(20)),
+    referralVia: z.enum(['link', 'code']).default('code'),
     /** "Send me product updates" at signup */
     marketingOptIn: z.boolean().default(false),
     termsAccepted: z.literal(true, { errorMap: () => ({ message: 'Please accept the Terms and Privacy Policy' }) }),

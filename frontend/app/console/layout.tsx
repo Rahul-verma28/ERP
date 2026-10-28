@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { ConsoleShell } from "@/components/console-shell"
@@ -16,6 +16,12 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const router = useRouter()
   const { status, me, switchToConsole } = useAuth()
   const ready = status === "authenticated" && me?.workspace === "console"
+  const pathname = usePathname()
+  // Two-step is required in the Console once the setup window is over: nothing else opens until it's on
+  const mustSetUpMfa = ready && !!me?.security.mustSetUpMfa && !pathname.startsWith("/console/account/two-step")
+  React.useEffect(() => {
+    if (mustSetUpMfa) router.replace("/console/account/two-step")
+  }, [mustSetUpMfa, router])
   // Once the Console has been shown, a tenant session means the user switched away: never switch back
   const wasReady = React.useRef(false)
   const switching = React.useRef(false)
@@ -39,7 +45,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     } else router.replace("/app")
   }, [ready, status, me, switchToConsole, router])
 
-  if (!ready) {
+  if (!ready || mustSetUpMfa) {
     return (
       <FullScreen>
         <Loader2 className="size-5 animate-spin" aria-label="Loading" />

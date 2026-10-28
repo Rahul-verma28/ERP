@@ -26,9 +26,12 @@ export const PERMISSION_CATALOG: Record<PermissionModule, ResourceDef[]> = {
     { resource: 'payment', label: 'Payments & AHEAD invoices', actions: ['view', 'create', 'approve'] },
     { resource: 'discount', label: "Discounts above a role's limit", actions: ['approve'] },
     { resource: 'commission', label: 'Commission reports', actions: ['view'] },
-    { resource: 'support', label: 'Support access', actions: ['create'] },
     { resource: 'member', label: 'Console users', actions: ['view', 'create', 'edit'] },
     { resource: 'audit', label: 'Platform audit log', actions: ['view'] },
+    { resource: 'revenue', label: 'Income figures', actions: ['view'] },
+    { resource: 'prospect', label: 'Prospects & follow-ups', actions: ['view', 'create', 'edit'] },
+    { resource: 'note', label: 'Internal client notes', actions: ['view', 'create'] },
+    { resource: 'partner', label: 'Partners', actions: ['view', 'create', 'edit'] },
   ],
   tenant: [
     { resource: 'settings', label: 'Business settings', actions: ['view', 'edit'] },

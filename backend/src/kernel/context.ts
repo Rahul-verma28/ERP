@@ -37,6 +37,8 @@ export interface ConsoleCtx extends PlatformCtx {
   ip?: string;
   /** Data scope granted for the permission checked on this request */
   scope?: PermissionScope;
+  /** Partner people: every client query is limited to this partner's clients */
+  partnerId?: string | null;
 }
 
 export type Ctx = TenantCtx | SystemCtx | PlatformCtx;

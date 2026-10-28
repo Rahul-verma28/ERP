@@ -58,7 +58,7 @@ export function allocate(amounts: number[], discount: number): number[] {
 
 async function seller() {
   const s = await getSetting('ahead.billing');
-  if (!/^\d{2}$/.test(s.stateCode)) throw new AppError('VALIDATION_FAILED', "Set AHEAD's billing details (state code) in Console → Settings first.");
+  if (!/^\d{2}$/.test(s.stateCode)) throw new AppError('VALIDATION_FAILED', "Prices can't be worked out yet: AHEAD's billing details aren't filled in. A Super Admin adds them in Settings › Rules & billing details.");
   return s;
 }
 
@@ -220,6 +220,22 @@ export async function createPaidClient(ctx: ConsoleCtx, input: NewClientInput) {
   });
   await audit({ tenantId: null, action: 'console.client_created', entity: 'tenant', entityId: created.tenant.id, after: { orderId: order.id, plan: q.plan.key, cycle: q.cycle, totalPaise: q.totalPaise, discountBp: q.discountBp, needsApproval: q.needsApproval } });
   return { tenantId: created.tenant.id, orderId: order.id, status: order.status, totalPaise: q.totalPaise };
+}
+
+/** Wireframe C3 "Convert to paid": an order for a client already on AHEAD (trial, Free or unpaid). */
+export async function convertClient(ctx: ConsoleCtx, tenantId: string, order: Omit<QuoteInput, 'billTo'>) {
+  const tx = db();
+  const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true, legalName: true, gstin: true, billingStateCode: true, status: true } });
+  if (!['trialing', 'free', 'past_due', 'incomplete'].includes(tenant.status)) throw new AppError('INVALID_TRANSITION', 'Only a client on trial, on the Free plan or with a failed payment can be converted.');
+  const open = await tx.platformOrder.findFirst({ where: { tenantId, status: { in: ['pending_approval', 'awaiting_payment'] } }, select: { id: true } });
+  if (open) throw new AppError('CONFLICT', 'This client already has an order waiting — send that payment link or cancel it first.', { orderId: open.id });
+  if (!tenant.billingStateCode) throw new AppError('VALIDATION_FAILED', "Add the client's GST state first (the owner sets it in Settings › Business).");
+  const billTo = { name: tenant.legalName ?? tenant.name, gstin: tenant.gstin, stateCode: tenant.billingStateCode, address: null };
+  const q = await quote({ ...order, billTo }, { actorRoleKey: await roleKeyOf(ctx) });
+  const cancelDays = await getSetting('onboarding.unpaid_cancel_days');
+  const saved = await saveOrder(q, { tenantId, kind: 'fresh', billTo, createdBy: ctx.userId, expiresAt: new Date(Date.now() + cancelDays * DAY) });
+  await audit({ tenantId: null, action: 'console.client_converted', entity: 'tenant', entityId: tenantId, after: { orderId: saved.id, plan: q.plan.key, cycle: q.cycle, totalPaise: q.totalPaise, discountBp: q.discountBp, needsApproval: q.needsApproval } });
+  return { orderId: saved.id, status: saved.status, totalPaise: q.totalPaise };
 }
 
 async function loadOrder(id: string) {

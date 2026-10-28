@@ -286,12 +286,21 @@ Not built / differs: Inventory, HR and Support tabs (modules not built); approva
 - [x] Role-aware defaults (Owner sees money first, staff see their own work); widgets can be hidden/reordered per user
 - [x] Global search / Ctrl+K command palette (records, pages, actions)
 
-### Phase 4 — Console revamp
-- [ ] View-first everywhere (Phase 0 pattern); maker-checker approval for plan, price, coupon and settings changes; setting history with restore
-- [ ] Client 360 with tabs: Overview, Subscription, Invoices & payments, Users, Activity timeline, Notes, Account health (setup progress, limits, module status, record counts, errors — no business data)
-- [ ] Revenue dashboard: MRR/ARR, new vs churned, trial → paid funnel, collections, ageing of unpaid orders
-- [ ] Sales workspace: prospects list, follow-up tasks on trial clients, reminders
-- [ ] Console security: MFA mandatory for every Console user, IP allowlist, session list
+### Phase 4 — Console: one simple app for the AHEAD team, vendors and partners (reworked 2026-10-27)
+The first Phase 4 build (11 pages, MRR/ARR, History, Security, before → after + reason on every edit) was rejected as confusing on 26 Oct. Reworked to a minimal Console with three panels — each person sees only their own menu:
+- **AHEAD team:** Home (to-do list, plain numbers, 6-month income), Clients, Leads, Payments, Partners, Settings (Plans & prices · Rules & billing details · Team).
+- **Vendor:** Home (own clients, what they paid this month, referral link + code), My clients, Payments.
+- **Partner:** Home (clients, this month's bill), Clients, Billing, Team.
+
+Built: migrations `20261026000000_console_v2` (prospects, follow-ups, notes) and `20261026120000_console_partners` (`partners`; `platform_members.partner_id` + `referral_code`; FK `tenants.partner_id`). Partner people are Console members linked to a partner; `scopedTenantFilter` limits every client query to that partner. Partner Admin / Partner Staff roles; vendors can add clients and see their payments. Backend `modules/console/{insights,sales,client360,partners,referral}.ts`; routes `/home`, `/referral`, `/tenants/:id/{summary,health,users,timeline,notes,convert,plan}`, `/partner-clients`, `/partners`, `/billing`, prospects and follow-ups. Partner clients go live at once (billed by the partner, no AHEAD period) and the renewal / dunning jobs skip them. Signup accepts `?ref=CODE` (kept 30 days) and credits the vendor or salesperson. Removed: History, Security (allowed networks, Console session rules), Revenue and Audit log pages, and reasons on normal edits — a short note stays only on extending a trial, changing who brought a client in, cancelling an order and refunds. Web: `components/console/kit.tsx` (page, panels, stats, status chips, empty states, steps), one-page client view, 3-step Add client wizard (Business → Owner → Plan; payment link sent automatically, or live at once for partners), view-first Plans, Rules and Team; My account inside the Console; login takes vendors and partners straight to their panel. Tests: `consoleStep4.test.ts` (12, incl. partner isolation, partner bill, billing jobs, referral codes, role-aware Home); full backend suite passing; browser pass as Super Admin, partner admin and vendor, and at phone width.
+Not built / later: the monthly partner invoice run (the bill is a live total; AHEAD sends the invoice by hand), partner branding and domains, vendor commission ledger and payouts, "Change plan" for a client paying AHEAD (pro-rated), @mentions in notes, a price change start date.
+- [x] View-first everywhere; plain saves (no reason dialogs); audit kept in the background
+- [x] One-page client view: plan & payments, activity & notes, owner, next step, setup & usage, users (counts only — no business data)
+- [x] Home with a to-do list and plain numbers (no MRR/ARR jargon)
+- [x] Leads: prospects, calls, automatic follow-ups
+- [x] Vendor panel with referral link/code and client onboarding
+- [x] Partner panel: clients, plan changes, monthly bill, own team
+- [x] Two-step required for Console users (setup screen inside the Console)
 
 ### Industry coverage (match the big ERPs)
 Today: 6 templates (salon, retail, pharmacy, gym, coaching/school, service company). Each new industry = template (modules, terminology, custom fields, dashboard widgets, starter catalogue) + the industry-specific feature it needs; features in brackets need modules that do not exist yet.

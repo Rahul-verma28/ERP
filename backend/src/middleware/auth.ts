@@ -93,7 +93,7 @@ export async function consoleContext(req: Request, _res: Response, next: NextFun
   const member = await getPlatformMember(auth.sub);
   if (!member || member.status !== 'active') throw new AppError('PERMISSION_DENIED', 'You are not an active member of the AHEAD team.');
   if ((await mfaRequirement(auth.sub)).consoleBlocked) throw new AppError('MFA_SETUP_REQUIRED', 'AHEAD Console users must set up two-step verification.');
-  req.console = { kind: 'platform', userId: auth.sub, memberId: member.id, roleId: member.roleId, sessionId: auth.sid, requestId: req.requestId, ip: req.ip };
+  req.console = { kind: 'platform', userId: auth.sub, memberId: member.id, roleId: member.roleId, partnerId: member.partnerId, sessionId: auth.sid, requestId: req.requestId, ip: req.ip };
   next();
 }
 

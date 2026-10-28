@@ -41,7 +41,7 @@ export interface PlanPatch {
 }
 
 /** Editing a plan's modules re-computes the entitlements of every client on that plan. */
-export async function updatePlan(key: string, patch: PlanPatch) {
+export async function updatePlan(key: string, patch: PlanPatch, reason?: string) {
   const tx = db();
   const plan = await tx.plan.findUnique({ where: { key }, include: { modules: true } });
   if (!plan) throw notFound('Plan');
@@ -64,13 +64,13 @@ export async function updatePlan(key: string, patch: PlanPatch) {
     for (const s of affected) await persistEntitlements(s.tenantId);
     recomputed = affected.length;
   }
-  await audit({ tenantId: null, action: 'console.plan_updated', entity: 'plan', entityId: key, before, after: patch });
+  await audit({ tenantId: null, action: 'console.plan_updated', entity: 'plan', entityId: key, before, after: { ...patch, reason } });
   invalidateCatalog();
   return { key, recomputed };
 }
 
 /** Prices are versioned (SUB-06): the active row is closed and a new one opened. Existing subscriptions keep their price. */
-export async function setPrice(input: { itemType: PriceItemType; itemRef: string; cycle: BillingCycle; amountPaise: number }) {
+export async function setPrice(input: { itemType: PriceItemType; itemRef: string; cycle: BillingCycle; amountPaise: number }, reason?: string) {
   const tx = db();
   const current = await tx.price.findFirst({ where: { itemType: input.itemType, itemRef: input.itemRef, cycle: input.cycle, activeTo: null } });
   if (current && Number(current.amountPaise) === input.amountPaise) return { id: current.id, unchanged: true };
@@ -79,7 +79,7 @@ export async function setPrice(input: { itemType: PriceItemType; itemRef: string
   const now = new Date();
   if (current) await tx.price.update({ where: { id: current.id }, data: { activeTo: now } });
   const row = await tx.price.create({ data: { ...input, amountPaise: BigInt(input.amountPaise), activeFrom: now } });
-  await audit({ tenantId: null, action: 'console.price_changed', entity: 'price', entityId: `${input.itemType}:${input.itemRef}:${input.cycle}`, before: current ? Number(current.amountPaise) : null, after: input.amountPaise });
+  await audit({ tenantId: null, action: 'console.price_changed', entity: 'price', entityId: `${input.itemType}:${input.itemRef}:${input.cycle}`, before: current ? Number(current.amountPaise) : null, after: { amountPaise: input.amountPaise, reason } });
   invalidateCatalog();
   return { id: row.id, unchanged: false };
 }
@@ -94,7 +94,7 @@ export interface CouponInput {
   maxRedemptions?: number | null;
 }
 
-export async function createCoupon(input: CouponInput) {
+export async function createCoupon(input: CouponInput, reason?: string) {
   const tx = db();
   const code = input.code.trim().toUpperCase();
   if (input.type === 'percent' && input.value > 100) throw new AppError('VALIDATION_FAILED', 'A percentage coupon cannot exceed 100%.', { fields: { value: 'At most 100' } });
@@ -106,16 +106,16 @@ export async function createCoupon(input: CouponInput) {
       maxRedemptions: input.maxRedemptions ?? null,
     },
   });
-  await audit({ tenantId: null, action: 'console.coupon_created', entity: 'coupon', entityId: code, after: row });
+  await audit({ tenantId: null, action: 'console.coupon_created', entity: 'coupon', entityId: code, after: { ...row, reason } });
   return row;
 }
 
 /** Ends a coupon now (coupons are never deleted: past checkouts reference them). */
-export async function endCoupon(code: string) {
+export async function endCoupon(code: string, reason?: string) {
   const tx = db();
   const coupon = await tx.coupon.findUnique({ where: { code } });
   if (!coupon) throw notFound('Coupon');
   const row = await tx.coupon.update({ where: { code }, data: { validTo: new Date() } });
-  await audit({ tenantId: null, action: 'console.coupon_ended', entity: 'coupon', entityId: code, before: { validTo: coupon.validTo }, after: { validTo: row.validTo } });
+  await audit({ tenantId: null, action: 'console.coupon_ended', entity: 'coupon', entityId: code, before: { validTo: coupon.validTo }, after: { validTo: row.validTo, reason } });
   return row;
 }

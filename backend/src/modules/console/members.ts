@@ -5,13 +5,16 @@ import { normaliseEmail, normaliseMobile } from '../../kernel/crypto';
 import { audit } from '../audit/service';
 import { invalidatePlatformMember, teamOf } from './service';
 
-// Console → Console users (design v2 §2). Runs inside consoleTx. Rules:
+// Console → Team (design v2 §2). Runs inside consoleTx. Rules:
 // only a Super Admin grants or changes Super Admin; nobody changes their own role or status;
-// the last active Super Admin stays; the reporting tree never loops.
+// the last active Super Admin stays; the reporting tree never loops. Partner people only ever
+// see and manage their own partner's team, with partner roles.
 
-export async function consoleRoles() {
+const layerOf = (ctx: ConsoleCtx) => (ctx.partnerId ? 'partner' : 'platform') as 'partner' | 'platform';
+
+export async function consoleRoles(ctx: ConsoleCtx) {
   const roles = await db().role.findMany({
-    where: { tenantId: null, layer: 'platform' },
+    where: { tenantId: null, layer: layerOf(ctx) },
     orderBy: { sort: 'asc' },
     include: { permissions: true, _count: { select: { platformMembers: { where: { status: 'active' } } } } },
   });
@@ -29,7 +32,8 @@ export async function listMembers(ctx: ConsoleCtx) {
   const tx = db();
   const visible = ctx.scope === 'all' ? undefined : teamOf(ctx.userId, await treeEdges());
   const rows = await tx.platformMember.findMany({
-    where: visible ? { userId: { in: visible } } : {},
+    // AHEAD's team list leaves partner people out (they show under Partners)
+    where: { partnerId: ctx.partnerId ?? null, ...(visible ? { userId: { in: visible } } : {}) },
     include: { user: { select: { id: true, name: true, email: true, mobile: true, lastLoginAt: true } }, role: { select: { key: true, name: true } } },
     orderBy: { joinedAt: 'asc' },
   });
@@ -44,8 +48,8 @@ async function actorRoleKey(ctx: ConsoleCtx) {
   return (await db().role.findUniqueOrThrow({ where: { id: ctx.roleId }, select: { key: true } })).key;
 }
 
-async function consoleRole(key: string) {
-  const role = await db().role.findFirst({ where: { tenantId: null, layer: 'platform', key } });
+async function consoleRole(key: string, layer: 'platform' | 'partner') {
+  const role = await db().role.findFirst({ where: { tenantId: null, layer, key } });
   if (!role) throw new AppError('VALIDATION_FAILED', 'Unknown Console role.', { fields: { roleKey: 'Unknown role' } });
   return role;
 }
@@ -68,11 +72,13 @@ export interface NewMember {
   reportsTo?: string | null;
 }
 
-export async function addMember(ctx: ConsoleCtx, input: NewMember) {
+/** `partnerId`: AHEAD adding a partner's first admin; partner admins always add to their own partner. */
+export async function addMember(ctx: ConsoleCtx, input: NewMember, opts: { partnerId?: string } = {}) {
   const tx = db();
-  const role = await consoleRole(input.roleKey);
+  const partnerId = ctx.partnerId ?? opts.partnerId ?? null;
+  const role = await consoleRole(input.roleKey, partnerId ? 'partner' : 'platform');
   if (role.key === 'super_admin' && (await actorRoleKey(ctx)) !== 'super_admin') throw new AppError('PERMISSION_DENIED', 'Only a Super Admin can add another Super Admin.');
-  const reportsTo = await checkManager(input.reportsTo);
+  const reportsTo = partnerId ? null : await checkManager(input.reportsTo);
 
   const email = normaliseEmail(input.email);
   let user = await tx.user.findUnique({ where: { email } });
@@ -85,24 +91,25 @@ export async function addMember(ctx: ConsoleCtx, input: NewMember) {
   const existing = await tx.platformMember.findUnique({ where: { userId: user.id } });
   if (existing?.status === 'active') throw new AppError('CONFLICT', 'This person is already in the Console.', { fields: { email: 'Already a Console user' } });
 
-  const data = { roleId: role.id, reportsTo, status: 'active' as const, deactivatedAt: null, createdBy: ctx.userId };
+  const data = { roleId: role.id, reportsTo, partnerId, status: 'active' as const, deactivatedAt: null, createdBy: ctx.userId };
   const member = existing
     ? await tx.platformMember.update({ where: { id: existing.id }, data })
     : await tx.platformMember.create({ data: { userId: user.id, ...data } });
-  await audit({ tenantId: null, action: 'console.member_added', entity: 'platform_member', entityId: member.id, after: { email, role: role.key, reportsTo } });
+  await audit({ tenantId: null, action: 'console.member_added', entity: 'platform_member', entityId: member.id, after: { email, role: role.key, reportsTo, partnerId } });
   invalidatePlatformMember(user.id);
   return { id: member.id, newUser: !existing && !user.passwordHash };
 }
 
-export async function updateMember(ctx: ConsoleCtx, id: string, patch: { roleKey?: string; reportsTo?: string | null; status?: 'active' | 'deactivated' }) {
+export async function updateMember(ctx: ConsoleCtx, id: string, patch: { roleKey?: string; reportsTo?: string | null; status?: 'active' | 'deactivated'; reason?: string }) {
   const tx = db();
   const member = await tx.platformMember.findUnique({ where: { id }, include: { role: { select: { key: true } } } });
   if (!member) throw notFound('Console user');
+  if (ctx.partnerId && member.partnerId !== ctx.partnerId) throw notFound('Console user');
   if (ctx.scope !== 'all' && !teamOf(ctx.userId, await treeEdges()).includes(member.userId)) throw notFound('Console user');
   if (member.userId === ctx.userId && (patch.roleKey || patch.status)) throw new AppError('PERMISSION_DENIED', 'You cannot change your own role or status.');
 
   const actorIsSuper = (await actorRoleKey(ctx)) === 'super_admin';
-  const newRole = patch.roleKey ? await consoleRole(patch.roleKey) : null;
+  const newRole = patch.roleKey ? await consoleRole(patch.roleKey, member.partnerId ? 'partner' : 'platform') : null;
   if (!actorIsSuper && (member.role.key === 'super_admin' || newRole?.key === 'super_admin')) throw new AppError('PERMISSION_DENIED', 'Only a Super Admin can change a Super Admin.');
 
   const losesSuper = member.role.key === 'super_admin' && member.status === 'active' && ((newRole && newRole.key !== 'super_admin') || patch.status === 'deactivated');

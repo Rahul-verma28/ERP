@@ -17,6 +17,7 @@ import { audit } from '../audit/service';
 import { consumeOtp, sendOtp } from './otp';
 import { zEmail, zMobileIN, zPassword, zPersonName } from '../../kernel/zodRules';
 import { BusinessSignup, signupToTenant } from '../tenancy/workspace';
+import { referralAcquisition } from '../console/referral';
 import { REFRESH_COOKIE, clearRefreshCookie, rotateSession, signAccessToken, signPurposeToken, startSession, verifyPurposeToken } from './tokens';
 import { buildMe, checkPassword, completeLogin, sendEmailVerification } from './service';
 
@@ -85,11 +86,12 @@ router.post('/signup', publicRoute, loginLimiter, validate(SignupBody), async (r
     // Single use: the OTP row is deleted when the token is redeemed
     const used = await db().otpCode.deleteMany({ where: { id: proof.otpId, consumedAt: { not: null } } });
     if (!used.count) throw new AppError('OTP_TOKEN_INVALID', 'Please verify your mobile number again.');
+    // A valid vendor / sales referral credits them; otherwise it is a plain self-signup
+    const referral = await referralAcquisition(body.referralCode, body.referralVia);
     const created = await createTenant({
       owner: { kind: 'new', name: body.name, email: body.email, mobile: body.mobile, passwordHash, mobileVerified: true },
       ...signupToTenant(body),
-      // Vendor referral links/codes arrive with the referral module; the coupon is recorded now
-      acquisition: { byType: 'self', method: 'signup', couponCode: body.couponCode ?? undefined },
+      acquisition: { byType: 'self', method: 'signup', ...referral, couponCode: body.couponCode ?? undefined },
     });
     const accessToken = await startSession(req, res, created.user.id, created.tenant.id, created.ownerRoleId);
     await sendEmailVerification(created.user);

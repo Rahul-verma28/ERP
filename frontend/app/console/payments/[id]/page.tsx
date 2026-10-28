@@ -142,7 +142,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   const canApprove = o.status === "pending_approval" && canConsole("platform.discount.approve") && o.createdBy !== me?.user.id
 
   return (
-    <>
+    <div className="mx-auto w-full max-w-6xl">
       <Link href="/console/payments" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" /> Payments
       </Link>
@@ -302,6 +302,6 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
 
       <PaymentDialog order={o} open={payOpen} onOpenChange={setPayOpen} onDone={reload} />
       <CancelDialog order={o} open={cancelOpen} onOpenChange={setCancelOpen} onDone={reload} />
-    </>
+    </div>
   )
 }

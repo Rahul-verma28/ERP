@@ -316,6 +316,7 @@ model Tenant {
   members      TenantMember[]
   subscription Subscription?
   acquisition  TenantAcquisition?
+  partner      Partner?           @relation(fields: [partnerId], references: [id], map: "tenants_partner_fkey")
 
   @@index([partnerId])
   @@index([status])
@@ -393,12 +394,39 @@ model PlatformMember {
   createdBy     String?      @map("created_by") @db.Uuid
   joinedAt      DateTime     @default(now()) @map("joined_at") @db.Timestamptz
   deactivatedAt DateTime?    @map("deactivated_at") @db.Timestamptz
+  /// Set for partner people: they only ever see that partner's clients
+  partnerId     String?      @map("partner_id") @db.Uuid
+  /// Vendors and salespeople: signups with this code are credited to them
+  referralCode  String?      @unique(map: "platform_members_referral_code_key") @map("referral_code") @db.VarChar(20)
 
-  user User @relation(fields: [userId], references: [id])
-  role Role @relation(fields: [roleId], references: [id])
+  user    User     @relation(fields: [userId], references: [id])
+  role    Role     @relation(fields: [roleId], references: [id])
+  partner Partner? @relation(fields: [partnerId], references: [id], map: "platform_members_partner_fkey")
 
   @@index([reportsTo])
+  @@index([partnerId], map: "platform_members_partner_idx")
   @@map("platform_members")
+}
+
+/// A reseller that brings its own clients; AHEAD bills it monthly at list price minus discountBp.
+model Partner {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  name        String
+  contactName String   @map("contact_name")
+  email       String
+  mobile      String   @db.VarChar(15)
+  gstin       String?  @db.VarChar(15)
+  stateCode   String?  @map("state_code") @db.Char(2)
+  discountBp  Int      @default(0) @map("discount_bp")
+  status      String   @default("active")
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  members PlatformMember[]
+  tenants Tenant[]
+
+  @@map("partners")
 }
 
 /// What a Console extension changed: the trial end (trialing) or the payment grace end (past_due)
@@ -1413,4 +1441,68 @@ model SignInEvent {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@map("sign_in_events")
+}
+
+// ── Phase 4: Console sales workspace (platform tables) ──
+
+model ConsoleProspect {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  name         String
+  businessName String   @map("business_name")
+  industryKey  String?  @map("industry_key")
+  city         String?
+  mobile       String?  @db.VarChar(15)
+  email        String?
+  source       String?
+  /// new | contacted | demo | trial | won | lost
+  stage        String   @default("new")
+  lostReason   String?  @map("lost_reason")
+  ownerUserId  String   @map("owner_user_id") @db.Uuid
+  /// The business once it signs up (self or from the Console)
+  tenantId     String?  @map("tenant_id") @db.Uuid
+  createdBy    String   @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  followups ConsoleFollowup[]
+  notes     ConsoleNote[]
+
+  @@index([ownerUserId, stage], map: "console_prospects_owner_idx")
+  @@index([mobile], map: "console_prospects_mobile_idx")
+  @@index([tenantId], map: "console_prospects_tenant_idx")
+  @@map("console_prospects")
+}
+
+model ConsoleFollowup {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  prospectId  String?   @map("prospect_id") @db.Uuid
+  tenantId    String?   @map("tenant_id") @db.Uuid
+  title       String
+  dueAt       DateTime  @map("due_at") @db.Timestamptz
+  ownerUserId String    @map("owner_user_id") @db.Uuid
+  doneAt      DateTime? @map("done_at") @db.Timestamptz
+  autoKey     String?   @unique(map: "console_followups_auto_key") @map("auto_key")
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  prospect ConsoleProspect? @relation(fields: [prospectId], references: [id], onDelete: Cascade, map: "console_followups_prospect_fkey")
+
+  @@index([ownerUserId, doneAt, dueAt], map: "console_followups_owner_idx")
+  @@index([tenantId], map: "console_followups_tenant_idx")
+  @@map("console_followups")
+}
+
+model ConsoleNote {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String?  @map("tenant_id") @db.Uuid
+  prospectId    String?  @map("prospect_id") @db.Uuid
+  body          String
+  privateToTeam Boolean  @default(false) @map("private_to_team")
+  authorId      String   @map("author_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  prospect ConsoleProspect? @relation(fields: [prospectId], references: [id], onDelete: Cascade, map: "console_notes_prospect_fkey")
+
+  @@index([tenantId, createdAt(sort: Desc)], map: "console_notes_tenant_idx")
+  @@map("console_notes")
 }

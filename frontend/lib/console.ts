@@ -16,6 +16,10 @@ export interface ClientRow {
   owner: { id: string; name: string; email: string } | null
   acquiredBy: string | null
   activeUsers: number
+  mrrPaise: number | null
+  health: Health | null
+  next: { title: string; dueAt: string } | null
+  partner: string | null
 }
 
 export type AcquiredByType = "self" | "vendor" | "sales_user" | "partner_user"
@@ -57,6 +61,8 @@ export interface ClientDetail {
   } | null
   orders: { id: string; status: OrderStatus; cycle: string; totalPaise: number; createdAt: string; paidAt: string | null; expiresAt: string; invoice: { id: string; number: string } | null }[]
   extensions: { id: string; kind: "trial" | "grace"; days: number; reason: string; newEndAt: string; createdAt: string; grantedBy: string | null }[]
+  partner: { id: string; name: string } | null
+  billedBy: "self" | "partner"
   history: { id: string; action: string; at: string; actor: string | null }[]
 }
 
@@ -224,4 +230,118 @@ export interface PlatformInvoice {
   issuedAt: string
   /** Present on GET /console/invoices/:id */
   creditNote?: CreditNote | null
+}
+
+// ── Product v3 Phase 4: home, revenue, Client 360, sales, history, security ──
+
+export type HealthFlag = "good" | "no_invoice" | "limit" | "errors" | "quiet"
+export interface Health { flag: HealthFlag; label: string }
+
+export interface ClientSummary {
+  health: Health
+  mrr: number | null
+  users: { active: number; max: number | null; activeThisWeek: number }
+  setup: { done: number; total: number; missing: string[] }
+  next: { id: string; title: string; dueAt: string; owner: string | null } | null
+}
+
+export interface AccountHealth {
+  setup: { key: string; label: string; state: "done" | "skipped" | null }[]
+  setupCompleted: boolean
+  records: { customers: number; invoices: number; appointments: number; items: number; quotations: number; expenses: number }
+  limits: Record<"users" | "invoicesThisMonth" | "contacts" | "items", { used: number; max: number | null }>
+  modules: { key: string; status: "active" | "read_only" | "inactive"; tier: string }[]
+  lastSignIn: string | null
+  twoStep: { admins: number; adminsOn: number }
+  errors: { failedJobs: number; importBadRows: number }
+}
+
+export interface ClientUser { id: string; name: string; role: string; roleKey: string; status: string; twoStep: boolean; lastSignIn: string | null }
+
+export type TimelineKind = "plan" | "payment" | "note" | "followup" | "reminder" | "account"
+export interface TimelineEvent { id: string; at: string; kind: TimelineKind; text: string; who: string | null }
+
+export interface ConsoleNote { id: string; body: string; privateToTeam: boolean; author: string | null; mine: boolean; createdAt: string }
+
+export const STAGES = ["new", "contacted", "demo", "trial", "won", "lost"] as const
+export type Stage = (typeof STAGES)[number]
+export const STAGE_LABEL: Record<Stage, string> = { new: "New", contacted: "Contacted", demo: "Demo done", trial: "Trial", won: "Won", lost: "Lost" }
+
+export interface Prospect {
+  id: string
+  name: string
+  businessName: string
+  industryKey: string | null
+  city: string | null
+  mobile: string | null
+  email: string | null
+  source: string | null
+  stage: Stage
+  lostReason: string | null
+  ownerUserId: string
+  owner: string | null
+  tenantId: string | null
+  tenant: { id: string; status: TenantStatus; subscription: { trialEndsAt: string | null } | null } | null
+  next: { id: string; title: string; dueAt: string } | null
+  updatedAt: string
+}
+
+export interface Followup {
+  id: string
+  title: string
+  dueAt: string
+  overdue: boolean
+  auto: boolean
+  owner: string | null
+  about: { kind: "prospect" | "client"; id: string; name: string } | null
+}
+
+// ── Home (one shape for the AHEAD team, vendors and partners) ──
+
+export type Audience = "team" | "vendor" | "partner"
+
+export interface HomeStat { key: string; label: string; value: number; money?: boolean; hint?: string; href?: string }
+export interface HomeTodo { kind: "discount" | "unpaid" | "trial" | "followup" | "setup" | "signin"; title: string; detail: string; href: string; action: string }
+
+export interface ConsoleHome {
+  audience: Audience
+  stats: HomeStat[]
+  todo: HomeTodo[]
+  income: { month: string; label: string; paise: number }[] | null
+  recent: { id: string; name: string; status: TenantStatus; industryKey: string; createdAt: string }[]
+  referral: Referral | null
+}
+
+export interface Referral { code: string; link: string }
+
+// ── Partners ──
+
+export interface PartnerRow {
+  id: string
+  name: string
+  contactName: string
+  email: string
+  mobile: string
+  discountPercent: number
+  status: "active" | "paused"
+  clients: number
+  liveClients: number
+  people: number
+  createdAt: string
+}
+
+export interface PartnerBill {
+  discountPercent: number
+  lines: { tenantId: string; name: string; plan: string; listPaise: number; chargePaise: number }[]
+  subtotalPaise: number
+  gstPaise: number
+  totalPaise: number
+  gstRatePercent: number
+}
+
+export interface PartnerDetail extends Omit<PartnerRow, "clients" | "liveClients" | "people"> {
+  gstin: string | null
+  stateCode: string | null
+  people: { id: string; status: string; user: { name: string; email: string; lastLoginAt: string | null }; role: { name: string } }[]
+  bill: PartnerBill
 }

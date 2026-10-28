@@ -16,11 +16,12 @@ export interface PlatformMemberSnapshot {
   roleId: string;
   reportsTo: string | null;
   status: 'invited' | 'active' | 'deactivated';
+  partnerId: string | null;
 }
 
 export function getPlatformMember(userId: string): Promise<PlatformMemberSnapshot | null> {
   return cache.getOrSet(`pmember:${userId}`, () =>
-    prisma.platformMember.findUnique({ where: { userId }, select: { id: true, userId: true, roleId: true, reportsTo: true, status: true } }),
+    prisma.platformMember.findUnique({ where: { userId }, select: { id: true, userId: true, roleId: true, reportsTo: true, status: true, partnerId: true } }),
   TTL_MS);
 }
 
@@ -58,10 +59,12 @@ export function tenantScopeFilter(scope: PermissionScope, userIds: string[]): Pr
 
 /** Which clients this Console user may see for the permission checked on the request. */
 export async function scopedTenantFilter(ctx: ConsoleCtx): Promise<Prisma.TenantWhereInput> {
+  // Partner people never see beyond their partner's clients, whatever their scope
+  const partner: Prisma.TenantWhereInput = ctx.partnerId ? { partnerId: ctx.partnerId } : {};
   const scope = ctx.scope ?? 'own';
-  if (scope === 'all') return {};
+  if (scope === 'all') return partner;
   const ids = scope === 'team' ? teamOf(ctx.userId, await reportingTree()) : [ctx.userId];
-  return tenantScopeFilter(scope, ids);
+  return { ...partner, ...tenantScopeFilter(scope, ids) };
 }
 
 /** Console permission keys for a role, as { key: scope }. */
@@ -79,38 +82,12 @@ export async function consolePermissions(roleId: string) {
 export async function consoleAccess(userId: string) {
   const member = await getPlatformMember(userId);
   if (!member || member.status !== 'active') return null;
-  const [role, permissions] = await Promise.all([
+  const [role, permissions, partner] = await Promise.all([
     prisma.role.findUniqueOrThrow({ where: { id: member.roleId }, select: { key: true, name: true } }),
     consolePermissions(member.roleId),
+    member.partnerId ? prisma.partner.findUnique({ where: { id: member.partnerId }, select: { id: true, name: true, status: true, discountBp: true } }) : null,
   ]);
-  return { memberId: member.id, role, permissions };
-}
-
-const DAY = 86_400_000;
-
-/** GET /console/dashboard — client counts within the caller's scope. */
-export async function dashboard(ctx: ConsoleCtx, now = new Date()) {
-  const where = await scopedTenantFilter(ctx);
-  const [byStatus, trialsEndingSoon, newThisWeek, pendingApprovals] = await Promise.all([
-    prisma.tenant.groupBy({ by: ['status'], where: { ...where, isInternal: false }, _count: true }),
-    prisma.tenant.count({ where: { ...where, isInternal: false, subscription: { status: 'trialing', trialEndsAt: { gte: now, lte: new Date(now.getTime() + 7 * DAY) } } } }),
-    prisma.tenant.count({ where: { ...where, isInternal: false, createdAt: { gte: new Date(now.getTime() - 7 * DAY) } } }),
-    prisma.platformOrder.count({ where: { status: 'pending_approval', ...(Object.keys(where).length ? { tenantId: { in: (await prisma.tenant.findMany({ where, select: { id: true } })).map((t) => t.id) } } : {}) } }),
-  ]);
-  const counts = Object.fromEntries(byStatus.map((r) => [r.status, r._count])) as Record<string, number>;
-  return {
-    scope: ctx.scope ?? 'own',
-    clients: {
-      total: byStatus.reduce((n, r) => n + r._count, 0),
-      trialing: counts.trialing ?? 0,
-      active: counts.active ?? 0,
-      pastDue: counts.past_due ?? 0,
-      free: counts.free ?? 0,
-      closed: counts.closed ?? 0,
-      awaitingPayment: counts.incomplete ?? 0,
-    },
-    pendingApprovals,
-    trialsEndingIn7Days: trialsEndingSoon,
-    newLast7Days: newThisWeek,
-  };
+  // Which Console panel this person sees: the AHEAD team's, a vendor's or a partner's
+  const audience = partner ? 'partner' : role.key === 'vendor' ? 'vendor' : 'team';
+  return { memberId: member.id, role, permissions, audience, partner: partner && { id: partner.id, name: partner.name, status: partner.status, discountPercent: partner.discountBp / 100 } };
 }

@@ -42,6 +42,9 @@ export interface ConsoleAccess {
   role: { key: string; name: string }
   /** platform.* permission keys with their scope (all / team / own) */
   permissions: Record<string, Scope>
+  /** Which Console panel this person sees */
+  audience: "team" | "vendor" | "partner"
+  partner: { id: string; name: string; status: "active" | "paused"; discountPercent: number } | null
 }
 
 export interface Me {

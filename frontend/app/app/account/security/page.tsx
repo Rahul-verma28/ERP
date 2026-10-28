@@ -19,6 +19,7 @@ import { timeAgo, type AccountOverview, type SessionRow } from "@/lib/account"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatDateTime } from "@/lib/format"
 import { useApi } from "@/lib/use-api"
+import { useAccountBase } from "@/lib/account-base"
 import { cn } from "@/lib/utils"
 
 // My account › Security (wireframe A2): password, two-step verification, backup codes,
@@ -140,6 +141,7 @@ function PasswordCard({ account, onChanged }: { account: AccountOverview; onChan
 // ── Two-step verification ──
 
 function TwoStepCard({ account, onChanged }: { account: AccountOverview; onChanged: () => Promise<void> }) {
+  const base = useAccountBase()
   const s = account.security
   const required = s.requiredBy.length > 0
   const [off, setOff] = React.useState(false)
@@ -161,7 +163,7 @@ function TwoStepCard({ account, onChanged }: { account: AccountOverview; onChang
       <div className="flex flex-wrap gap-2">
         {s.mfaEnabled ? (
           <>
-            <Link href="/app/account/two-step?change=1" className={buttonVariants({ variant: "outline", size: "sm" })}>
+            <Link href={`${base.account}/two-step?change=1`} className={buttonVariants({ variant: "outline", size: "sm" })}>
               Change app
             </Link>
             <Button variant="outline" size="sm" disabled={required} title={required ? `${s.requiredBy[0].name} requires it` : undefined} onClick={() => setOff(true)}>
@@ -169,7 +171,7 @@ function TwoStepCard({ account, onChanged }: { account: AccountOverview; onChang
             </Button>
           </>
         ) : (
-          <Link href="/app/account/two-step" className={buttonVariants({ size: "sm" })}>
+          <Link href={`${base.account}/two-step`} className={buttonVariants({ size: "sm" })}>
             Turn on
           </Link>
         )}

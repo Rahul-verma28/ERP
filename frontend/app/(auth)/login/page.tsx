@@ -23,7 +23,8 @@ type LoginStep =
 
 /** Page after sign-in: ?next=, else the person's start page (My account › Working preferences) */
 function landing(me: Me) {
-  if (me.workspace === "console") return "/console"
+  // Vendors and partners have no business of their own: their panel is the Console
+  if (me.workspace === "console" || (!me.tenant && me.console)) return "/console"
   const start = me.user.preferences?.startPage
   return start && start !== "dashboard" && me.modules?.[start as keyof NonNullable<Me["modules"]>] ? `/app/m/${start}` : "/app"
 }

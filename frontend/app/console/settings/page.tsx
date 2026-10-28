@@ -1,256 +1,45 @@
 "use client"
 
-import * as React from "react"
-import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Skeleton } from "@/components/ui/skeleton"
-import { PageHeader } from "@/components/app-shell"
-import { Field, NativeSelect } from "@/components/form"
-import { api, errorMessage } from "@/lib/api"
+import Link from "next/link"
+import { ArrowRight, FileSliders, Tags, Users, type LucideIcon } from "lucide-react"
+import { Page } from "@/components/console/kit"
 import { useAuth } from "@/lib/auth"
-import { useApi } from "@/lib/use-api"
-import type { Catalog, SettingRow } from "@/lib/console"
-import type { PlanLimits } from "@/lib/types"
-import { GST_STATES } from "@/lib/format"
 
-type Announcement = { text: string; tone: "info" | "warning"; until: string | null } | null
+// Settings: three places, in plain words. Everything else lives where it is used.
 
-const ROLE_LABEL: Record<string, string> = { console_sales_executive: "Sales Executive", console_sales_manager: "Sales Manager", vendor: "Vendor" }
-const LIMITS: { key: keyof PlanLimits; label: string }[] = [
-  { key: "users", label: "Users" },
-  { key: "branches", label: "Branches" },
-  { key: "contacts", label: "Contacts" },
-  { key: "items", label: "Items" },
-  { key: "invoicesPerMonth", label: "Invoices / month" },
-  { key: "storageMb", label: "Storage (MB)" },
-  { key: "aiCredits", label: "AI credits" },
-]
-
-/** One card = a group of settings saved together; values are kept as the JSON the API expects. */
-function SettingCard({
-  title,
-  description,
-  keys,
-  rows,
-  canEdit,
-  onSaved,
-  children,
-}: {
+interface Card {
+  href: string
+  icon: LucideIcon
   title: string
-  description: string
-  keys: string[]
-  rows: SettingRow[]
-  canEdit: boolean
-  onSaved: () => void
-  children: (draft: Record<string, unknown>, set: (key: string, value: unknown) => void) => React.ReactNode
-}) {
-  const initial = React.useMemo(() => Object.fromEntries(keys.map((k) => [k, rows.find((r) => r.key === k)?.value])), [keys, rows])
-  const [draft, setDraft] = React.useState(initial)
-  const [busy, setBusy] = React.useState(false)
-  const dirty = keys.filter((k) => JSON.stringify(draft[k]) !== JSON.stringify(initial[k]))
-  const overridden = rows.filter((r) => keys.includes(r.key) && r.overridden)
-
-  async function run(fn: () => Promise<unknown>, message: string) {
-    setBusy(true)
-    try {
-      await fn()
-      toast.success(message)
-      onSaved()
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <fieldset disabled={!canEdit || busy} className="grid gap-4">
-          {children(draft, (key, value) => setDraft((d) => ({ ...d, [key]: value })))}
-        </fieldset>
-      </CardContent>
-      {canEdit && (
-        <CardFooter className="flex flex-wrap justify-end gap-2">
-          {overridden.length > 0 && (
-            <Button
-              variant="ghost"
-              disabled={busy}
-              onClick={() => run(() => Promise.all(overridden.map((r) => api.delete(`/console/settings/${r.key}`))), "Back to defaults")}
-            >
-              Use defaults
-            </Button>
-          )}
-          <Button disabled={busy || !dirty.length} onClick={() => run(() => Promise.all(dirty.map((k) => api.put(`/console/settings/${k}`, { value: draft[k] }))), "Settings saved")}>
-            {busy ? "Saving…" : "Save"}
-          </Button>
-        </CardFooter>
-      )}
-    </Card>
-  )
+  text: string
+  show: boolean
 }
 
-const num = (v: string) => (v === "" ? 0 : Number(v))
-
-export default function ConsoleSettingsPage() {
+export default function SettingsPage() {
   const { canConsole } = useAuth()
-  const settings = useApi<{ data: SettingRow[] }>("/console/settings")
-  const catalog = useApi<Catalog>(canConsole("platform.plan.view") ? "/console/catalog" : null)
-  const canEdit = canConsole("platform.setting.edit")
-
-  if (settings.error) return <p className="text-sm text-destructive">{settings.error.message}</p>
-  if (!settings.data) return <Skeleton className="h-96 rounded-4xl" />
-  const rows = settings.data.data
-  // Re-mount cards after a save so drafts restart from the stored values
-  const v = rows.map((r) => r.version).join("-")
-  const common = { rows, canEdit, onSaved: settings.reload }
-
+  const cards: Card[] = [
+    { href: "/console/settings/plans", icon: Tags, title: "Plans & prices", text: "What each plan includes, its monthly and yearly price, and coupons.", show: canConsole("platform.plan.view") },
+    { href: "/console/settings/rules", icon: FileSliders, title: "Rules & billing details", text: "Free trial length, discount limits, AHEAD's invoice details and the announcement banner.", show: canConsole("platform.setting.view") },
+    { href: "/console/team", icon: Users, title: "Team", text: "The AHEAD team and vendors who use this Console, and what each person can do.", show: canConsole("platform.member.view") },
+  ]
   return (
-    <>
-      <PageHeader title="Settings" description="Platform-wide rules. Changes apply within a minute and are kept in the audit log." />
-      <div className="grid gap-4 lg:grid-cols-2">
-        <SettingCard key={`trial-${v}`} title="Trial and grace" description="New signups and failed renewals" keys={["trial.days", "trial.plan_key", "grace.days_monthly", "grace.days_yearly"]} {...common}>
-          {(d, set) => (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Trial length (days)">
-                <Input type="number" min={1} max={90} value={String(d["trial.days"])} onChange={(e) => set("trial.days", num(e.target.value))} />
-              </Field>
-              <Field label="Trial plan" hint="Plan a new trial is attached to">
-                {catalog.data ? (
-                  <NativeSelect value={String(d["trial.plan_key"])} onChange={(e) => set("trial.plan_key", e.target.value)}>
-                    {catalog.data.plans.map((p) => (
-                      <option key={p.key} value={p.key}>{p.name}</option>
-                    ))}
-                  </NativeSelect>
-                ) : (
-                  <Input value={String(d["trial.plan_key"])} onChange={(e) => set("trial.plan_key", e.target.value)} />
-                )}
-              </Field>
-              <Field label="Grace after failed monthly renewal (days)">
-                <Input type="number" min={0} max={60} value={String(d["grace.days_monthly"])} onChange={(e) => set("grace.days_monthly", num(e.target.value))} />
-              </Field>
-              <Field label="Grace after failed yearly renewal (days)">
-                <Input type="number" min={0} max={90} value={String(d["grace.days_yearly"])} onChange={(e) => set("grace.days_yearly", num(e.target.value))} />
-              </Field>
-            </div>
-          )}
-        </SettingCard>
-
-        <SettingCard key={`limits-${v}`} title="Trial limits" description="What a trial client can use (empty = unlimited)" keys={["trial.limits"]} {...common}>
-          {(d, set) => {
-            const limits = d["trial.limits"] as PlanLimits
-            return (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {LIMITS.map((f) => (
-                  <Field key={f.key} label={f.label}>
-                    <Input
-                      type="number"
-                      min={0}
-                      value={limits[f.key] === null ? "" : String(limits[f.key])}
-                      onChange={(e) => set("trial.limits", { ...limits, [f.key]: e.target.value === "" && ["contacts", "items", "invoicesPerMonth"].includes(f.key) ? null : num(e.target.value) })}
-                    />
-                  </Field>
-                ))}
-              </div>
-            )
-          }}
-        </SettingCard>
-
-        <SettingCard key={`discount-${v}`} title="Discount limits" description="Highest discount each role may give without Super Admin approval (used in new-client checkout)" keys={["sales.discount_limits"]} {...common}>
-          {(d, set) => {
-            const limits = d["sales.discount_limits"] as Record<string, number>
-            return (
-              <div className="grid gap-4 sm:grid-cols-3">
-                {Object.keys(ROLE_LABEL).map((role) => (
-                  <Field key={role} label={`${ROLE_LABEL[role]} (%)`}>
-                    <Input type="number" min={0} max={100} value={String(limits[role] ?? 0)} onChange={(e) => set("sales.discount_limits", { ...limits, [role]: num(e.target.value) })} />
-                  </Field>
-                ))}
-              </div>
-            )
-          }}
-        </SettingCard>
-
-        <SettingCard key={`banner-${v}`} title="Announcement" description="One line on top of every client workspace — e.g. planned maintenance" keys={["announcement.banner"]} {...common}>
-          {(d, set) => {
-            const a = d["announcement.banner"] as Announcement
-            const value = a ?? { text: "", tone: "info" as const, until: null }
-            const update = (patch: Partial<NonNullable<Announcement>>) => {
-              const next = { ...value, ...patch }
-              set("announcement.banner", next.text.trim() ? next : null)
-            }
-            return (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Text" className="sm:col-span-2" hint="Leave empty to show nothing">
-                  <Input maxLength={200} value={value.text} onChange={(e) => update({ text: e.target.value })} />
-                </Field>
-                <Field label="Style">
-                  <NativeSelect value={value.tone} onChange={(e) => update({ tone: e.target.value as "info" | "warning" })}>
-                    <option value="info">Information</option>
-                    <option value="warning">Warning</option>
-                  </NativeSelect>
-                </Field>
-                <Field label="Show until" hint="Empty = until removed">
-                  <Input
-                    type="date"
-                    value={value.until ? value.until.slice(0, 10) : ""}
-                    onChange={(e) => update({ until: e.target.value ? new Date(`${e.target.value}T23:59:59+05:30`).toISOString() : null })}
-                  />
-                </Field>
-              </div>
-            )
-          }}
-        </SettingCard>
-
-        <SettingCard
-          key={`billing-${v}`}
-          title="AHEAD billing details"
-          description="Printed on AHEAD's GST invoices to clients. The state code decides CGST+SGST vs IGST. Confirm SAC and rate with the CA."
-          keys={["ahead.billing", "onboarding.unpaid_cancel_days"]}
-          {...common}
-        >
-          {(d, set) => {
-            const b = d["ahead.billing"] as { legalName: string; gstin: string; stateCode: string; address: string; sac: string; gstRateBp: number }
-            const update = (patch: Partial<typeof b>) => set("ahead.billing", { ...b, ...patch })
-            return (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Legal name">
-                  <Input value={b.legalName} onChange={(e) => update({ legalName: e.target.value })} />
-                </Field>
-                <Field label="GSTIN">
-                  <Input value={b.gstin} maxLength={15} onChange={(e) => update({ gstin: e.target.value.toUpperCase() })} />
-                </Field>
-                <Field label="State">
-                  <NativeSelect value={b.stateCode} onChange={(e) => update({ stateCode: e.target.value })}>
-                    <option value="">Not set — invoicing is blocked</option>
-                    {GST_STATES.map(([code, name]) => (
-                      <option key={code} value={code}>{name}</option>
-                    ))}
-                  </NativeSelect>
-                </Field>
-                <Field label="Address">
-                  <Input value={b.address} onChange={(e) => update({ address: e.target.value })} />
-                </Field>
-                <Field label="SAC code">
-                  <Input value={b.sac} maxLength={8} onChange={(e) => update({ sac: e.target.value })} />
-                </Field>
-                <Field label="GST rate (%)">
-                  <Input type="number" min={0} max={28} value={String(b.gstRateBp / 100)} onChange={(e) => update({ gstRateBp: Math.round(num(e.target.value) * 100) })} />
-                </Field>
-                <Field label="Unpaid order lapses after (days)" hint="Sales-created clients that never pay">
-                  <Input type="number" min={1} max={60} value={String(d["onboarding.unpaid_cancel_days"])} onChange={(e) => set("onboarding.unpaid_cancel_days", num(e.target.value))} />
-                </Field>
-              </div>
-            )
-          }}
-        </SettingCard>
+    <Page title="Settings" subtitle="How AHEAD is sold and who works in this Console.">
+      <div className="grid gap-4 md:grid-cols-3">
+        {cards
+          .filter((c) => c.show)
+          .map((c) => (
+            <Link key={c.href} href={c.href} className="group flex flex-col gap-3 rounded-2xl border bg-card p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition hover:border-primary/40 hover:shadow-sm">
+              <span className="grid size-10 place-items-center rounded-xl bg-accent text-accent-foreground">
+                <c.icon className="size-5" />
+              </span>
+              <span className="text-[15px] font-semibold">{c.title}</span>
+              <span className="flex-1 text-sm text-muted-foreground">{c.text}</span>
+              <span className="inline-flex items-center gap-1 text-[13px] font-medium text-primary">
+                Open <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+              </span>
+            </Link>
+          ))}
       </div>
-    </>
+    </Page>
   )
 }

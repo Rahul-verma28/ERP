@@ -2,97 +2,176 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Building2, Plus } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { AlertTriangle, Building2, Plus } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
-import { useAuth } from "@/lib/auth"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent } from "@/components/ui/card"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { PageHeader } from "@/components/app-shell"
-import { EmptyState, LoadMore, SearchInput } from "@/components/common"
+import { SearchInput } from "@/components/common"
 import { NativeSelect } from "@/components/form"
+import { LoadMore } from "@/components/common"
+import { ClientStatus, Empty, Failed, Loading, Page, Panel, daysFrom, industryLabel, relDays } from "@/components/console/kit"
+import { useAuth } from "@/lib/auth"
 import { useDebounced, useList } from "@/lib/use-list"
 import { formatDate } from "@/lib/format"
-import { SOURCE_LABEL, STATUS_LABEL, type ClientRow } from "@/lib/console"
-import type { TenantStatus } from "@/lib/types"
+import { SOURCE_LABEL, type ClientRow } from "@/lib/console"
+import { cn } from "@/lib/utils"
 
-export default function ClientsPage() {
+// Clients: everyone you can see, newest first. Plain statuses, one click into a client.
+
+const TABS: { key: string; label: string }[] = [
+  { key: "", label: "All" },
+  { key: "trialing", label: "Free trial" },
+  { key: "active", label: "Paying" },
+  { key: "incomplete", label: "Waiting for payment" },
+  { key: "past_due", label: "Payment overdue" },
+  { key: "free", label: "Free plan" },
+]
+
+function statusSuffix(c: ClientRow) {
+  if (c.status !== "trialing" || !c.trialEndsAt) return undefined
+  const d = daysFrom(c.trialEndsAt) ?? 0
+  return d <= 0 ? "ends today" : `${d} day${d === 1 ? "" : "s"} left`
+}
+
+function ClientsList() {
+  const router = useRouter()
+  const params = useSearchParams()
+  const { me, canConsole } = useAuth()
+  const audience = me?.console?.audience ?? "team"
   const [search, setSearch] = React.useState("")
-  const [status, setStatus] = React.useState("")
+  const [status, setStatus] = React.useState(params.get("status") ?? "")
+  const [source, setSource] = React.useState("")
   const q = useDebounced(search)
-  const list = useList<ClientRow>("/console/tenants", { search: q, status })
-  const { canConsole } = useAuth()
+  const list = useList<ClientRow>("/console/tenants", { search: q, status, source })
+  const canAdd = canConsole("platform.tenant.create") && me?.console?.partner?.status !== "paused"
+  const team = audience === "team"
 
   return (
-    <>
-      <PageHeader
-        title="Clients"
-        description="Account and plan details only — business records stay private to each client."
-        actions={
-          canConsole("platform.tenant.create") && (
-            <Link href="/console/clients/new" className={buttonVariants()}>
-              <Plus /> New client
-            </Link>
-          )
-        }
-      />
-      <div className="mb-4 flex flex-wrap gap-2">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search by name or GSTIN" className="min-w-56 flex-1" />
-        <NativeSelect className="w-44" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
-          <option value="">All statuses</option>
-          {(Object.keys(STATUS_LABEL) as TenantStatus[]).filter((s) => s !== "purged").map((s) => (
-            <option key={s} value={s}>
-              {STATUS_LABEL[s]}
-            </option>
+    <Page
+      title={audience === "vendor" ? "My clients" : "Clients"}
+      subtitle={audience === "partner" ? "Businesses you look after. You are billed for them every month." : audience === "vendor" ? "Businesses you brought to AHEAD." : "Every business on AHEAD. Account and plan details only — their business data stays private."}
+      actions={
+        canAdd && (
+          <Link href="/console/clients/new" className={buttonVariants()}>
+            <Plus /> Add client
+          </Link>
+        )
+      }
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex gap-1 overflow-x-auto rounded-xl border bg-card p-1" role="tablist" aria-label="Status">
+          {TABS.map((t) => (
+            <button
+              key={t.key || "all"}
+              type="button"
+              role="tab"
+              aria-selected={status === t.key}
+              onClick={() => setStatus(t.key)}
+              className={cn("h-8 shrink-0 rounded-lg px-3 text-[13px] font-medium transition-colors", status === t.key ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground")}
+            >
+              {t.label}
+            </button>
           ))}
-        </NativeSelect>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <SearchInput value={search} onChange={setSearch} placeholder="Search by business name or GSTIN" className="min-w-60 flex-1" />
+          {team && (
+            <NativeSelect className="w-52" value={source} onChange={(e) => setSource(e.target.value)} aria-label="Brought in by">
+              <option value="">Brought in by anyone</option>
+              {(Object.keys(SOURCE_LABEL) as ClientRow["source"][]).map((s) => (
+                <option key={s} value={s}>
+                  {SOURCE_LABEL[s]}
+                </option>
+              ))}
+            </NativeSelect>
+          )}
+        </div>
       </div>
-      <Card>
-        <CardContent className="overflow-x-auto p-0">
-          {list.error && <p className="p-6 text-sm text-destructive">{list.error.message}</p>}
-          {!list.loading && !list.rows.length && !list.error ? (
-            <EmptyState icon={Building2} title="No clients here" description={q || status ? "Try a different search or status." : "Clients you can see will appear here."} />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-6">Client</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Plan</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead className="text-right">Users</TableHead>
-                  <TableHead>Joined</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+
+      <Panel padded={false}>
+        {list.error ? (
+          <div className="p-5">
+            <Failed error={list.error} onRetry={list.reload} />
+          </div>
+        ) : list.loading ? (
+          <Loading rows={6} className="p-5" />
+        ) : !list.rows.length ? (
+          <Empty
+            icon={Building2}
+            title={q || status || source ? "No clients match" : "No clients yet"}
+            text={q || status || source ? "Try another search or status." : "Clients you add, or who sign up through you, appear here."}
+            action={
+              !q && !status && canAdd && (
+                <Link href="/console/clients/new" className={buttonVariants({ size: "sm" })}>
+                  <Plus /> Add client
+                </Link>
+              )
+            }
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs font-medium whitespace-nowrap text-muted-foreground">
+                  <th className="px-5 py-3 font-medium">Business</th>
+                  <th className="px-3 py-3 font-medium">Status</th>
+                  <th className="px-3 py-3 font-medium">Plan</th>
+                  {team && <th className="px-3 py-3 font-medium">Brought in by</th>}
+                  {team && <th className="px-3 py-3 font-medium">Next step</th>}
+                  {!team && <th className="px-5 py-3 font-medium">Joined</th>}
+                </tr>
+              </thead>
+              <tbody>
                 {list.rows.map((c) => (
-                  <TableRow key={c.id}>
-                    <TableCell className="pl-6">
-                      <Link href={`/console/clients/${c.id}`} className="font-medium hover:underline">
+                  <tr key={c.id} onClick={() => router.push(`/console/clients/${c.id}`)} className="cursor-pointer border-b last:border-0 hover:bg-muted/50">
+                    <td className="px-5 py-3.5">
+                      <Link href={`/console/clients/${c.id}`} className="font-medium whitespace-nowrap hover:underline" onClick={(e) => e.stopPropagation()}>
                         {c.name}
                       </Link>
-                      {c.isInternal && <Badge variant="outline" className="ml-2 h-5 px-1.5 text-[10px]">AHEAD</Badge>}
-                      <div className="text-xs text-muted-foreground">{c.owner?.email}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={c.status === "past_due" ? "destructive" : c.status === "active" ? "default" : "secondary"}>{STATUS_LABEL[c.status]}</Badge>
-                      {c.status === "trialing" && c.trialEndsAt && <div className="mt-1 text-xs text-muted-foreground">ends {formatDate(c.trialEndsAt)}</div>}
-                    </TableCell>
-                    <TableCell className="text-sm">{c.plan ?? "—"}</TableCell>
-                    <TableCell className="text-sm">
-                      {SOURCE_LABEL[c.source]}
-                      {c.acquiredBy && <div className="text-xs text-muted-foreground">by {c.acquiredBy}</div>}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{c.activeUsers}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{formatDate(c.createdAt)}</TableCell>
-                  </TableRow>
+                      <div className="text-[13px] text-muted-foreground">{industryLabel(c.industryKey)}</div>
+                    </td>
+                    <td className="px-3 py-3.5">
+                      <div className="flex items-center gap-1.5">
+                        <ClientStatus status={c.status} suffix={statusSuffix(c)} partnerBilled={!!c.partner} />
+                        {c.health && c.health.flag !== "good" && (
+                          <span title={c.health.label} className="text-amber-600">
+                            <AlertTriangle className="size-4" aria-label={c.health.label} />
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3.5 whitespace-nowrap">{c.status === "free" ? "Free" : c.plan ?? "—"}</td>
+                    {team && <td className="px-3 py-3.5 whitespace-nowrap text-muted-foreground">{c.partner ? `${c.partner} (partner)` : c.acquiredBy ?? SOURCE_LABEL[c.source]}</td>}
+                    {team && (
+                      <td className="px-3 py-3.5">
+                        {c.next ? (
+                          <>
+                            <div className="max-w-56 truncate">{c.next.title}</div>
+                            <div className={cn("text-[13px]", new Date(c.next.dueAt) < new Date() ? "font-medium text-red-700 dark:text-red-400" : "text-muted-foreground")}>
+                              {new Date(c.next.dueAt) < new Date() ? "Overdue" : relDays(c.next.dueAt)}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    )}
+                    {!team && <td className="px-5 py-3.5 text-muted-foreground">{formatDate(c.createdAt)}</td>}
+                  </tr>
                 ))}
-              </TableBody>
-            </Table>
-          )}
-          <LoadMore hasMore={list.hasMore} loading={list.loadingMore} onClick={list.loadMore} />
-        </CardContent>
-      </Card>
-    </>
+              </tbody>
+            </table>
+          </div>
+        )}
+        <LoadMore hasMore={list.hasMore} loading={list.loadingMore} onClick={list.loadMore} />
+      </Panel>
+    </Page>
+  )
+}
+
+export default function ClientsPage() {
+  return (
+    <React.Suspense>
+      <ClientsList />
+    </React.Suspense>
   )
 }

@@ -46,7 +46,7 @@ export async function listSettings() {
 }
 
 /** Must run inside withPlatform(). */
-export async function setSetting<K extends SettingKey>(key: K, value: unknown, actorId: string | null) {
+export async function setSetting<K extends SettingKey>(key: K, value: unknown, actorId: string | null, reason?: string) {
   const definition = SETTINGS[key];
   if (!definition) throw new AppError('VALIDATION_FAILED', 'Unknown setting.', { fields: { key: 'Unknown setting' } });
   const parsed = definition.schema.safeParse(value);
@@ -60,17 +60,17 @@ export async function setSetting<K extends SettingKey>(key: K, value: unknown, a
     create: { scope: SCOPE, key, value: json, updatedBy: actorId },
     update: { value: json, updatedBy: actorId, version: { increment: 1 } },
   });
-  await audit({ tenantId: null, actorId, action: 'settings.changed', entity: 'setting', entityId: key, before: before?.value ?? SETTINGS[key].default, after: row.value });
+  await audit({ tenantId: null, actorId, action: 'settings.changed', entity: 'setting', entityId: key, before: before?.value ?? SETTINGS[key].default, after: { value: row.value, reason } });
   cache.del(CACHE_KEY);
   return row;
 }
 
 /** Drops a stored value so the code default applies again. Must run inside withPlatform(). */
-export async function resetSetting(key: SettingKey, actorId: string | null) {
+export async function resetSetting(key: SettingKey, actorId: string | null, reason?: string) {
   const tx = db();
   const before = await tx.configValue.findUnique({ where: { scope_key: { scope: SCOPE, key } } });
   if (!before) return;
   await tx.configValue.delete({ where: { scope_key: { scope: SCOPE, key } } });
-  await audit({ tenantId: null, actorId, action: 'settings.reset', entity: 'setting', entityId: key, before: before.value, after: SETTINGS[key].default });
+  await audit({ tenantId: null, actorId, action: 'settings.reset', entity: 'setting', entityId: key, before: before.value, after: { value: SETTINGS[key].default, reason } });
   cache.del(CACHE_KEY);
 }

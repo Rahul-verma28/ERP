@@ -12,6 +12,7 @@ import { OtpInput } from "@/components/onboarding"
 import { BackupCodes } from "@/components/backup-codes"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useAccountBase } from "@/lib/account-base"
 import { cn } from "@/lib/utils"
 
 // Turn on two-step verification (wireframe A3). Four steps side by side; the secret is only
@@ -29,6 +30,7 @@ export default function TwoStepSetupPage() {
 
 function TwoStepSetup() {
   const router = useRouter()
+  const base = useAccountBase()
   const params = useSearchParams()
   const { me, reload, signOut } = useAuth()
   const changing = params.get("change") === "1"
@@ -90,7 +92,7 @@ function TwoStepSetup() {
 
   const finish = async () => {
     await reload()
-    router.replace(forced ? "/app" : "/app/account/security")
+    router.replace(forced ? base.home : `${base.account}/security`)
   }
 
   const cardClass = (n: Step) =>
@@ -111,7 +113,7 @@ function TwoStepSetup() {
             <p className="text-xs text-muted-foreground">{me?.security.requiredBy.join(", ")} requires two-step verification. Set it up to continue.</p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              <Link href="/app/account/security" className="hover:underline">
+              <Link href={`${base.account}/security`} className="hover:underline">
                 My account › Security
               </Link>
             </p>

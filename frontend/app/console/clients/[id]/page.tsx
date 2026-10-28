@@ -1,324 +1,134 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { toast } from "sonner"
-import { ArrowLeft, CalendarPlus, UserCog } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { BadgeIndianRupee, CalendarPlus, Layers, MoreHorizontal, Send, UserCog } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Textarea } from "@/components/ui/textarea"
-import { PageHeader } from "@/components/app-shell"
-import { Field, FormError, NativeSelect } from "@/components/form"
-import { api, ApiError, errorMessage } from "@/lib/api"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { ConvertDialog } from "@/components/console/convert-dialog"
+import { ChangePlanDialog, ExtendDialog, SourceDialog } from "@/components/console/client-dialogs"
+import { ActivityAndNotes, NextStep, OwnerPanel, PlanAndPayments, SetupAndUsage, UsersPanel } from "@/components/console/client-sections"
+import { ClientStatus, Failed, Loading, Page, daysFrom, industryLabel } from "@/components/console/kit"
+import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
-import { formatDate, formatDateTime, formatPaise } from "@/lib/format"
-import { OrderBadge } from "@/components/order-badge"
-import { ACQUIRER_LABEL, METHOD_LABEL, SOURCE_LABEL, STATUS_LABEL, type AcquiredByType, type AcquisitionMethod, type ClientDetail, type ConsoleMember } from "@/lib/console"
+import { formatDate } from "@/lib/format"
+import { ACQUIRER_LABEL, type ClientDetail } from "@/lib/console"
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex justify-between gap-4 py-1.5 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="text-right">{children}</span>
-    </div>
-  )
+// One page per client: who they are, where they stand, and the one thing to do next.
+
+function statusSuffix(c: ClientDetail) {
+  if (c.status !== "trialing" || !c.subscription?.trialEndsAt) return undefined
+  const d = daysFrom(c.subscription.trialEndsAt) ?? 0
+  return d <= 0 ? "ends today" : `${d} day${d === 1 ? "" : "s"} left`
 }
 
-function ExtendDialog({ client, open, onOpenChange, onDone }: { client: ClientDetail; open: boolean; onOpenChange: (o: boolean) => void; onDone: () => void }) {
-  const [days, setDays] = React.useState("7")
-  const [reason, setReason] = React.useState("")
-  const [errors, setErrors] = React.useState<Record<string, string>>({})
-  const [busy, setBusy] = React.useState(false)
-  const trial = client.status === "trialing"
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setBusy(true)
-    setErrors({})
-    try {
-      await api.post(`/console/tenants/${client.id}/extend`, { days: Number(days), reason })
-      toast.success(trial ? "Trial extended" : "Grace extended")
-      onOpenChange(false)
-      setReason("")
-      onDone()
-    } catch (err) {
-      setErrors(err instanceof ApiError ? { ...err.fields, form: errorMessage(err) } : { form: errorMessage(err) })
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <form onSubmit={submit} className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>{trial ? "Extend the trial" : "Extend the payment grace"}</DialogTitle>
-            <DialogDescription>Days are added to the later of today and the current end date. The reason is kept in the audit log.</DialogDescription>
-          </DialogHeader>
-          <Field label="Extra days" error={errors.days}>
-            <Input type="number" min={1} max={30} value={days} onChange={(e) => setDays(e.target.value)} required />
-          </Field>
-          <Field label="Reason" error={errors.reason}>
-            <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Owner was travelling, asked for one more week" required />
-          </Field>
-          <FormError message={errors.form} />
-          <DialogFooter>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Add days"}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function AcquisitionDialog({ client, open, onOpenChange, onDone }: { client: ClientDetail; open: boolean; onOpenChange: (o: boolean) => void; onDone: () => void }) {
-  const { canConsole } = useAuth()
-  const members = useApi<{ data: ConsoleMember[] }>(open && canConsole("platform.member.view") ? "/console/members" : null)
-  const a = client.acquisition
-  const [form, setForm] = React.useState({ byType: (a?.byType ?? "self") as AcquiredByType, byUserId: a?.by?.id ?? "", method: (a?.method ?? "signup") as AcquisitionMethod, referralCode: a?.referralCode ?? "", couponCode: a?.couponCode ?? "", reason: "" })
-  const [errors, setErrors] = React.useState<Record<string, string>>({})
-  const [busy, setBusy] = React.useState(false)
-  const people = (members.data?.data ?? []).filter((m) => m.status === "active")
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setBusy(true)
-    setErrors({})
-    try {
-      await api.patch(`/console/tenants/${client.id}/acquisition`, {
-        byType: form.byType,
-        byUserId: form.byType === "self" ? null : form.byUserId || null,
-        method: form.method,
-        referralCode: form.referralCode || null,
-        couponCode: form.couponCode || null,
-        reason: form.reason,
-      })
-      toast.success("Updated who brought this client in")
-      onOpenChange(false)
-      onDone()
-    } catch (err) {
-      setErrors(err instanceof ApiError ? { ...err.fields, form: errorMessage(err) } : { form: errorMessage(err) })
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <form onSubmit={submit} className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>Who brought this client in</DialogTitle>
-            <DialogDescription>Locked at signup. Change it only with proof — commission reports follow this record. The client never sees it.</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Brought in by" error={errors.byType}>
-              <NativeSelect value={form.byType} onChange={(e) => setForm({ ...form, byType: e.target.value as AcquiredByType })}>
-                {(Object.keys(ACQUIRER_LABEL) as AcquiredByType[]).filter((k) => k !== "partner_user").map((k) => (
-                  <option key={k} value={k}>{ACQUIRER_LABEL[k]}</option>
-                ))}
-              </NativeSelect>
-            </Field>
-            <Field label="How" error={errors.method}>
-              <NativeSelect value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value as AcquisitionMethod })}>
-                {(Object.keys(METHOD_LABEL) as AcquisitionMethod[]).map((k) => (
-                  <option key={k} value={k}>{METHOD_LABEL[k]}</option>
-                ))}
-              </NativeSelect>
-            </Field>
-          </div>
-          {form.byType !== "self" && (
-            <Field label="Person" error={errors.byUserId} hint={people.length ? undefined : "Console users load here when you can view them."}>
-              <NativeSelect value={form.byUserId} onChange={(e) => setForm({ ...form, byUserId: e.target.value })} required>
-                <option value="">Choose…</option>
-                {a?.by && !people.some((p) => p.user.id === a.by!.id) && <option value={a.by.id}>{a.by.name}</option>}
-                {people.map((p) => (
-                  <option key={p.id} value={p.user.id}>{p.user.name} · {p.role.name}</option>
-                ))}
-              </NativeSelect>
-            </Field>
-          )}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Referral code" error={errors.referralCode}>
-              <Input value={form.referralCode} onChange={(e) => setForm({ ...form, referralCode: e.target.value })} />
-            </Field>
-            <Field label="Coupon code" error={errors.couponCode}>
-              <Input value={form.couponCode} onChange={(e) => setForm({ ...form, couponCode: e.target.value })} />
-            </Field>
-          </div>
-          <Field label="Reason for the change" error={errors.reason}>
-            <Textarea value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required />
-          </Field>
-          <FormError message={errors.form} />
-          <DialogFooter>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-export default function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default function ClientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params)
-  const { canConsole } = useAuth()
+  const { me, canConsole } = useAuth()
   const { data: c, error, reload } = useApi<ClientDetail>(`/console/tenants/${id}`)
-  const [extendOpen, setExtendOpen] = React.useState(false)
-  const [acqOpen, setAcqOpen] = React.useState(false)
+  const [dialog, setDialog] = React.useState<"extend" | "convert" | "source" | "plan" | null>(null)
+  const [sending, setSending] = React.useState(false)
+  const audience = me?.console?.audience ?? "team"
 
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>
-  if (!c) return <Skeleton className="h-96 rounded-4xl" />
-  const sub = c.subscription
-  const canExtend = canConsole("platform.grace.create") && (c.status === "trialing" || c.status === "past_due")
+  if (error) return <Failed error={error} onRetry={reload} />
+  if (!c) return <Loading rows={6} className="mx-auto max-w-6xl" />
+
+  const partnerBilled = c.billedBy === "partner"
+  const unpaid = c.orders.find((o) => o.status === "awaiting_payment")
+  const waitingApproval = c.orders.find((o) => o.status === "pending_approval")
+  const canExtend = !partnerBilled && canConsole("platform.grace.create") && (c.status === "trialing" || c.status === "past_due")
+  const canConvert = !partnerBilled && audience !== "partner" && canConsole("platform.tenant.create") && ["trialing", "free", "past_due"].includes(c.status) && !unpaid && !waitingApproval
+  const canChangePlan = audience === "partner" && canConsole("platform.tenant.edit")
+  const canSource = audience === "team" && canConsole("platform.tenant.edit") && !partnerBilled
+  const a = c.acquisition
+  const broughtBy = c.partner ? `${c.partner.name} (partner)` : a?.by ? a.by.name : a ? ACQUIRER_LABEL[a.byType] : null
+
+  async function resendLink() {
+    if (!unpaid) return
+    setSending(true)
+    try {
+      await api.post(`/console/orders/${unpaid.id}/payment-link`, { resend: true })
+      toast.success(`Payment link sent to ${c!.owner?.email || "the owner"}`)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  // The single most useful action right now goes first, as the primary button
+  const primary = unpaid && canConsole("platform.payment.view") ? (
+    <Button onClick={resendLink} disabled={sending}>
+      <Send /> {sending ? "Sending…" : "Send payment link again"}
+    </Button>
+  ) : canConvert ? (
+    <Button onClick={() => setDialog("convert")}>
+      <BadgeIndianRupee /> Convert to paid
+    </Button>
+  ) : canChangePlan ? (
+    <Button onClick={() => setDialog("plan")}>
+      <Layers /> Change plan
+    </Button>
+  ) : null
 
   return (
-    <>
-      <Link href="/console/clients" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Clients
-      </Link>
-      <PageHeader
-        title={c.name}
-        description={`${c.industryKey} · joined ${formatDate(c.createdAt)}${c.isInternal ? " · AHEAD's own workspace" : ""}`}
-        actions={
-          <>
-            {canExtend && (
-              <Button variant="outline" onClick={() => setExtendOpen(true)}>
-                <CalendarPlus /> {c.status === "trialing" ? "Extend trial" : "Extend grace"}
-              </Button>
-            )}
-            {canConsole("platform.tenant.edit") && (
-              <Button variant="outline" onClick={() => setAcqOpen(true)}>
-                <UserCog /> Change source
-              </Button>
-            )}
-          </>
-        }
-      />
+    <Page
+      back={{ href: "/console/clients", label: audience === "vendor" ? "My clients" : "Clients" }}
+      title={
+        <span className="flex flex-wrap items-center gap-3">
+          {c.name}
+          <ClientStatus status={c.status} suffix={statusSuffix(c)} partnerBilled={c.billedBy === "partner"} />
+        </span>
+      }
+      subtitle={[industryLabel(c.industryKey), `joined ${formatDate(c.createdAt)}`, broughtBy && audience === "team" ? `brought in by ${broughtBy}` : null].filter(Boolean).join(" · ")}
+      actions={
+        <>
+          {canExtend && (
+            <Button variant="outline" onClick={() => setDialog("extend")}>
+              <CalendarPlus /> {c.status === "trialing" ? "Extend trial" : "More time to pay"}
+            </Button>
+          )}
+          {primary}
+          {canSource && (
+            <DropdownMenu>
+              <DropdownMenuTrigger className="grid size-9 place-items-center rounded-lg border hover:bg-muted" aria-label="More actions">
+                <MoreHorizontal className="size-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setDialog("source")}>
+                  <UserCog className="size-4" /> Change who brought them in
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </>
+      }
+    >
+      {waitingApproval && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          The discount on this client&apos;s order is waiting for a Super Admin&apos;s approval. The payment link goes out once it&apos;s approved.
+        </div>
+      )}
+      {c.isInternal && <p className="text-sm text-muted-foreground">This is AHEAD&apos;s own workspace.</p>}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Subscription</CardTitle>
-            <CardDescription>
-              <Badge variant={c.status === "past_due" ? "destructive" : "secondary"}>{STATUS_LABEL[c.status]}</Badge>
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y">
-            <Row label="Plan">{sub?.plan?.name ?? "—"}</Row>
-            <Row label="Billing">{sub?.cycle === "yearly" ? "Yearly" : "Monthly"}</Row>
-            {sub?.trialEndsAt && c.status === "trialing" && <Row label="Trial ends">{formatDate(sub.trialEndsAt)}</Row>}
-            {sub?.currentPeriodEnd && <Row label="Renews">{formatDate(sub.currentPeriodEnd)}</Row>}
-            {sub?.graceEndsAt && <Row label="Grace ends">{formatDate(sub.graceEndsAt)}</Row>}
-            <Row label="Onboarding">{c.onboardingType === "trial" ? "Free trial" : "Paid up front"}</Row>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Account</CardTitle>
-            <CardDescription>Owner and business identity</CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y">
-            <Row label="Owner">{c.owner?.name ?? "—"}</Row>
-            <Row label="Email">
-              {c.owner?.email}
-              {c.owner && !c.owner.emailVerified && <Badge variant="outline" className="ml-2 h-5 px-1.5 text-[10px]">unverified</Badge>}
-            </Row>
-            <Row label="Mobile">{c.owner?.mobile ?? "—"}</Row>
-            <Row label="Last sign-in">{c.owner?.lastLoginAt ? formatDateTime(c.owner.lastLoginAt) : "Never"}</Row>
-            <Row label="GSTIN">{c.gstin ?? "—"}</Row>
-            <Row label="Legal name">{c.legalName ?? "—"}</Row>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Source</CardTitle>
-            <CardDescription>{SOURCE_LABEL[c.source]} — never shown to the client</CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y">
-            <Row label="Brought in by">{c.acquisition ? (c.acquisition.by ? c.acquisition.by.name : ACQUIRER_LABEL[c.acquisition.byType]) : "—"}</Row>
-            <Row label="How">{c.acquisition ? METHOD_LABEL[c.acquisition.method] : "—"}</Row>
-            {c.acquisition?.referralCode && <Row label="Referral code">{c.acquisition.referralCode}</Row>}
-            {c.acquisition?.couponCode && <Row label="Coupon">{c.acquisition.couponCode}</Row>}
-            {c.acquisition?.changeReason && <Row label="Last changed">{`${c.acquisition.changedBy ?? "Someone"}: ${c.acquisition.changeReason}`}</Row>}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Usage</CardTitle>
-            <CardDescription>Counts only</CardDescription>
-          </CardHeader>
-          <CardContent className="divide-y">
-            <Row label="Active users">{`${c.usage.activeUsers}${sub?.plan ? ` / ${sub.plan.limits.users}` : ""}`}</Row>
-            <Row label="Branches">{c.usage.branches}</Row>
-            {Object.entries(c.usage.thisMonth).map(([metric, used]) => (
-              <Row key={metric} label={`${metric} this month`}>{used}</Row>
-            ))}
-          </CardContent>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Modules</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            {c.modules.map((m) => (
-              <Badge key={m.key} variant={m.status === "active" ? "secondary" : "outline"} className={m.status === "inactive" ? "opacity-60" : undefined}>
-                {m.key}
-                {m.status === "read_only" ? " · read-only" : m.status === "active" && m.tier === "basic" ? " · basic" : ""}
-              </Badge>
-            ))}
-          </CardContent>
-        </Card>
-
-        {c.orders.length > 0 && (
-          <Card className="lg:col-span-3">
-            <CardHeader>
-              <CardTitle>Orders</CardTitle>
-              <CardDescription>What this client bought from AHEAD</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-2 text-sm">
-              {c.orders.map((o) => (
-                <div key={o.id} className="flex flex-wrap items-center justify-between gap-2">
-                  <Link href={`/console/payments/${o.id}`} className="hover:underline">
-                    {formatDate(o.createdAt)} · {o.cycle} · {formatPaise(o.totalPaise)}
-                  </Link>
-                  <span className="flex items-center gap-2">
-                    {o.invoice && <span className="font-mono text-xs">{o.invoice.number}</span>}
-                    <OrderBadge status={o.status} />
-                  </span>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
-
-        <Card className="lg:col-span-3">
-          <CardHeader>
-            <CardTitle>Extra days and changes</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-2 text-sm">
-            {!c.extensions.length && !c.history.length && <p className="text-muted-foreground">Nothing yet.</p>}
-            {c.extensions.map((e) => (
-              <p key={e.id}>
-                <span className="text-muted-foreground">{formatDateTime(e.createdAt)}</span> · {e.grantedBy ?? "Someone"} gave {e.days} extra {e.kind} day{e.days === 1 ? "" : "s"} (to {formatDate(e.newEndAt)}): {e.reason}
-              </p>
-            ))}
-            {c.history.map((h) => (
-              <p key={h.id}>
-                <span className="text-muted-foreground">{formatDateTime(h.at)}</span> · {h.actor ?? "System"} · {h.action}
-              </p>
-            ))}
-          </CardContent>
-        </Card>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid content-start gap-6 lg:col-span-2">
+          <PlanAndPayments client={c} />
+          <ActivityAndNotes tenantId={c.id} />
+        </div>
+        <div className="grid content-start gap-6">
+          <OwnerPanel client={c} showContact={audience !== "vendor"} />
+          {audience === "team" && canConsole("platform.prospect.view") && <NextStep tenantId={c.id} />}
+          {audience !== "vendor" && <SetupAndUsage tenantId={c.id} />}
+          {audience !== "vendor" && <UsersPanel tenantId={c.id} />}
+        </div>
       </div>
 
-      <ExtendDialog client={c} open={extendOpen} onOpenChange={setExtendOpen} onDone={reload} />
-      {acqOpen && <AcquisitionDialog client={c} open={acqOpen} onOpenChange={setAcqOpen} onDone={reload} />}
-    </>
+      {dialog === "extend" && <ExtendDialog client={c} open onOpenChange={(o) => !o && setDialog(null)} onDone={reload} />}
+      {dialog === "convert" && <ConvertDialog client={c} open onOpenChange={(o) => !o && setDialog(null)} />}
+      {dialog === "source" && <SourceDialog client={c} open onOpenChange={(o) => !o && setDialog(null)} onDone={reload} />}
+      {dialog === "plan" && <ChangePlanDialog client={c} open onOpenChange={(o) => !o && setDialog(null)} onDone={reload} />}
+    </Page>
   )
 }

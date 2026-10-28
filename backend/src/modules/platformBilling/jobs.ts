@@ -63,7 +63,8 @@ export async function runLapseUnpaid(now = new Date()) {
 export async function runRenewals(now = new Date()) {
   const subs = await withPlatform(() =>
     db().subscription.findMany({
-      where: { status: 'active', cycle: { in: ['monthly', 'yearly'] }, currentPeriodEnd: { gt: now, lte: new Date(now.getTime() + RENEW_AHEAD_DAYS * DAY) } },
+      // Partner clients are on the partner's monthly bill, never on AHEAD renewals
+      where: { status: 'active', cycle: { in: ['monthly', 'yearly'] }, currentPeriodEnd: { gt: now, lte: new Date(now.getTime() + RENEW_AHEAD_DAYS * DAY) }, tenant: { billingOwner: 'self' } },
       include: { items: true },
     }),
   );
@@ -112,7 +113,7 @@ export async function runRenewals(now = new Date()) {
 
 /** Period over without payment → past_due with grace; grace over → Free plan (paid modules read-only). */
 export async function runDunning(now = new Date()) {
-  const lapsed = await withPlatform(() => db().subscription.findMany({ where: { status: 'active', currentPeriodEnd: { lte: now } }, select: { tenantId: true } }));
+  const lapsed = await withPlatform(() => db().subscription.findMany({ where: { status: 'active', currentPeriodEnd: { lte: now }, tenant: { billingOwner: 'self' } }, select: { tenantId: true } }));
   const failed = await each('renewal-failed', lapsed, async (s) => {
     await transition(s.tenantId, 'renewal_failed', { now });
     const { tenant, user } = await owner(s.tenantId);

@@ -9,9 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { PageHeader } from "@/components/app-shell"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -20,6 +18,8 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { paiseToRupees, rupeesToPaise } from "@/lib/money"
 import type { Catalog } from "@/lib/console"
 import type { PlanLimits } from "@/lib/types"
+import { ConfirmDialog } from "@/components/common"
+import { Failed, Loading, Page } from "@/components/console/kit"
 
 type Plan = Catalog["plans"][number]
 
@@ -44,10 +44,10 @@ function PlanDialog({ plan, modules, onClose, onSaved }: { plan: Plan; modules: 
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
-    setBusy(true)
     setError(null)
+    const parsed = Object.fromEntries(LIMIT_FIELDS.map((f) => [f.key, limits[f.key] === "" && f.nullable ? null : Number(limits[f.key])])) as unknown as PlanLimits
+    setBusy(true)
     try {
-      const parsed = Object.fromEntries(LIMIT_FIELDS.map((f) => [f.key, limits[f.key] === "" && f.nullable ? null : Number(limits[f.key])])) as unknown as PlanLimits
       const r = await api.patch<{ recomputed: number }>(`/console/plans/${plan.key}`, {
         name,
         tagline: tagline || null,
@@ -119,7 +119,7 @@ function PlanDialog({ plan, modules, onClose, onSaved }: { plan: Plan; modules: 
           )}
           <FormError message={error} />
           <DialogFooter>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save plan"}</Button>
+            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Review changes"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -127,10 +127,22 @@ function PlanDialog({ plan, modules, onClose, onSaved }: { plan: Plan; modules: 
   )
 }
 
-function PriceCell({ price, editable, onSaved }: { price: Catalog["prices"][number]; editable: boolean; onSaved: () => void }) {
+function PriceCell({ price, label, editable, onSaved }: { price: Catalog["prices"][number]; label: string; editable: boolean; onSaved: () => void }) {
   const [value, setValue] = React.useState(paiseToRupees(price.amountPaise))
   const [busy, setBusy] = React.useState(false)
-  if (!editable) return <span className="tabular-nums">{formatPaise(price.amountPaise)}</span>
+  const [editing, setEditing] = React.useState(false)
+  // View-first: the price reads as text until Edit is pressed
+  if (!editable || !editing)
+    return (
+      <span className="flex items-center justify-end gap-1">
+        <span className="tabular-nums">{formatPaise(price.amountPaise)}</span>
+        {editable && (
+          <Button size="icon" variant="ghost" className="size-7" onClick={() => setEditing(true)} aria-label={`Edit ${label} ${price.cycle} price`}>
+            <Pencil className="size-3.5" />
+          </Button>
+        )}
+      </span>
+    )
   const changed = rupeesToPaise(value) !== price.amountPaise
   return (
     <form
@@ -151,8 +163,19 @@ function PriceCell({ price, editable, onSaved }: { price: Catalog["prices"][numb
         }
       }}
     >
-      <Input className="h-8 w-28 text-right tabular-nums" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} aria-label="Price in rupees" />
-      {changed && <Button size="sm" type="submit" disabled={busy}>Save</Button>}
+      <Input className="h-8 w-28 text-right tabular-nums" inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} aria-label="Price in rupees" autoFocus />
+      <Button size="sm" type="submit" disabled={busy || !changed}>Save</Button>
+      <Button
+        size="sm"
+        type="button"
+        variant="ghost"
+        onClick={() => {
+          setValue(paiseToRupees(price.amountPaise))
+          setEditing(false)
+        }}
+      >
+        Cancel
+      </Button>
     </form>
   )
 }
@@ -163,8 +186,8 @@ function CouponDialog({ open, onOpenChange, onSaved }: { open: boolean; onOpenCh
   const [busy, setBusy] = React.useState(false)
   async function save(e: React.FormEvent) {
     e.preventDefault()
-    setBusy(true)
     setErrors({})
+    setBusy(true)
     try {
       await api.post("/console/coupons", {
         code: form.code,
@@ -228,16 +251,16 @@ export default function PlansPage() {
   const [editing, setEditing] = React.useState<Plan | null>(null)
   const [couponOpen, setCouponOpen] = React.useState(false)
   const canEdit = canConsole("platform.plan.edit")
+  const [ending, setEnding] = React.useState<string | null>(null)
 
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>
-  if (!data) return <Skeleton className="h-96 rounded-4xl" />
+  if (error) return <Failed error={error} onRetry={reload} />
+  if (!data) return <Loading rows={6} className="mx-auto max-w-6xl" />
   const moduleName = (key: string) => data.modules.find((m) => m.key === key)?.name ?? key
   const itemName = (p: Catalog["prices"][number]) =>
     p.itemType === "plan" ? data.plans.find((x) => x.key === p.itemRef)?.name ?? p.itemRef : p.itemType === "extra_user" ? "Extra user" : `${moduleName(p.itemRef)} add-on`
 
   return (
-    <>
-      <PageHeader title="Plans & prices" description="Stored in the database — a deploy never overwrites these. Prices exclude GST." />
+    <Page title="Plans & prices" subtitle="Prices are before GST. A new price applies to new orders and renewals; clients keep what they already paid for." back={{ href: "/console/settings", label: "Settings" }}>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {data.plans.map((p) => (
@@ -292,7 +315,7 @@ export default function PlansPage() {
                   <TableCell className="capitalize">{p.cycle}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{formatDate(p.activeFrom)}</TableCell>
                   <TableCell className="pr-6 text-right">
-                    <PriceCell key={`${p.id}-${p.amountPaise}`} price={p} editable={canEdit} onSaved={reload} />
+                    <PriceCell key={`${p.id}-${p.amountPaise}`} price={p} label={itemName(p)} editable={canEdit} onSaved={reload} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -339,15 +362,7 @@ export default function PlansPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() =>
-                              api
-                                .post(`/console/coupons/${c.code}/end`)
-                                .then(() => {
-                                  toast.success("Coupon ended")
-                                  return reload()
-                                })
-                                .catch((e) => toast.error(errorMessage(e)))
-                            }
+                            onClick={() => setEnding(c.code)}
                           >
                             End now
                           </Button>
@@ -368,6 +383,23 @@ export default function PlansPage() {
 
       {editing && <PlanDialog plan={editing} modules={data.modules} onClose={() => setEditing(null)} onSaved={reload} />}
       <CouponDialog open={couponOpen} onOpenChange={setCouponOpen} onSaved={reload} />
-    </>
+      <ConfirmDialog
+        open={!!ending}
+        onOpenChange={(o) => !o && setEnding(null)}
+        title={`End coupon ${ending}?`}
+        description="It stops working at checkout now. Orders already placed keep their discount."
+        confirmLabel="End coupon"
+        destructive
+        onConfirm={async () => {
+          try {
+            await api.post(`/console/coupons/${ending}/end`)
+            toast.success("Coupon ended")
+            reload()
+          } catch (e) {
+            toast.error(errorMessage(e))
+          }
+        }}
+      />
+    </Page>
   )
 }

@@ -3,6 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
+import { captureReferral, referralFields } from "@/lib/referral"
 import { ArrowLeft, Check, Loader2, Search, Sparkles } from "lucide-react"
 import {
   BUSINESS_TYPES,
@@ -144,6 +145,8 @@ function SignupFlow() {
   const { status, me, signIn } = useAuth()
   const addBusiness = params.get("mode") === "business"
   const catalog = useApi<IndustriesResponse>("/public/industries")
+  // A vendor's referral link credits them, even if the visitor signs up days later
+  React.useEffect(() => captureReferral(), [])
   const steps: StepKey[] = addBusiness ? ["business", "industry", "goals", "verify"] : ["account", "business", "industry", "goals", "verify"]
   const [stepIndex, setStepIndex] = React.useState(0)
   const [returnToReview, setReturnToReview] = React.useState(false)
@@ -248,6 +251,7 @@ function SignupFlow() {
     modules: v.modules.length ? v.modules : recommendModules(v.goals, template),
     heardFrom: v.heardFrom,
     couponCode: v.couponCode,
+    ...referralFields(),
     marketingOptIn: v.marketingOptIn,
     termsAccepted: addBusiness ? true : v.terms,
   })
