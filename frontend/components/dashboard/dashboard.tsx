@@ -19,6 +19,7 @@ import { queryFor, splitWidgetKey, usePrefsSaver, useTabData, type DashboardConf
 import { cn } from "@/lib/utils"
 import { TAB_WIDGETS, type WidgetCtx } from "./tabs"
 import { FinishSetupCard } from "./finish-setup"
+import { HandoverCard } from "./handover-card"
 
 // Dashboard v2 (wireframes 5.1–5.8): one range for every tab, a tab per module the person
 // can see, per-person widget layout.
@@ -104,6 +105,7 @@ function DashboardView({ config }: { config: DashboardConfig }) {
 
   return (
     <div className="flex flex-col gap-3">
+      <HandoverCard />
       <FinishSetupCard />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">

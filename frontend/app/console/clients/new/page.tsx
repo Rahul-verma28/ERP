@@ -7,7 +7,8 @@ import Link from "next/link"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FormError, NativeSelect } from "@/components/form"
-import { Failed, Loading, Page, Panel, Steps, money } from "@/components/console/kit"
+import { Failed, Loading, Page, Panel, money } from "@/components/console/kit"
+import { WizardRail, type OnboardingStepKey, type RailState } from "@/components/console/wizard-rail"
 import { LoginLinkBox, type LoginLink } from "@/components/console/login-link"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -25,7 +26,7 @@ import { useConsoleBase } from "@/lib/console-base"
 interface Created {
   tenantId: string
   status: string
-  loginLink: LoginLink
+  loginLink: LoginLink | null
   owner: { name: string; mobile: string; email: string }
 }
 
@@ -46,7 +47,6 @@ interface Form {
 }
 
 const EMPTY: Form = { name: "", industryKey: "", stateCode: "", gstin: "", ownerName: "", ownerEmail: "", ownerMobile: "", start: "paid", planKey: "", cycle: "yearly", extraUsers: "0", discountPercent: "0", couponCode: "" }
-const STEPS = ["Business", "Owner", "How to start"]
 
 // Server field errors → the step that has the field
 const FIELD_STEP: Record<string, number> = { name: 0, industryKey: 0, stateCode: 0, gstin: 0, address: 0, ownerName: 1, email: 1, mobile: 1, planKey: 2, cycle: 2, extraUsers: 2, discountPercent: 2, couponCode: 2 }
@@ -123,8 +123,11 @@ export default function NewClientPage() {
   }
 
   const next = () => check(step) && setStep((s) => s + 1)
+  const order: OnboardingStepKey[] = ["business", "owner", "plan"]
+  const railStates: Partial<Record<OnboardingStepKey, RailState>> = Object.fromEntries(order.map((k, i) => [k, i < step ? "done" : i === step ? "current" : "todo"]))
 
-  async function submit() {
+  /** setup = continue in the onboarding wizard (steps 4–7); otherwise send the login link now */
+  async function submit(setup: boolean) {
     if (!check(0) || !check(1)) return
     setBusy(true)
     setErrors({})
@@ -132,13 +135,18 @@ export default function NewClientPage() {
     const owner = { name: form.ownerName, email: form.ownerEmail, mobile: form.ownerMobile }
     try {
       const r = partner
-        ? await api.post<Created>("/console/partner-clients", { business, owner, planKey, cycle })
+        ? await api.post<Created>("/console/partner-clients", { business, owner, planKey, cycle, setup })
         : await api.post<Created>("/console/clients", {
             business,
             owner,
             start: form.start,
+            setup,
             order: trial ? undefined : { planKey, cycle: form.cycle, addOns: [], extraUsers: Number(form.extraUsers) || 0, discountPercent: Number(form.discountPercent) || 0, couponCode: form.couponCode || null },
           })
+      if (setup) {
+        router.push(`${base}/onboarding/${r.tenantId}`)
+        return
+      }
       setCreated(r)
       setBusy(false)
     } catch (err) {
@@ -168,9 +176,9 @@ export default function NewClientPage() {
                 {created.status === "pending_approval" ? " The discount waits for an Admin's approval before they can pay." : trial ? " Their free trial has started." : partner ? "" : " They pay on the same screen after setting up their login."}
               </p>
             </div>
-            <LoginLinkBox link={created.loginLink} mobile={created.owner.mobile} message={`Hi ${created.owner.name}, set up your login for ${form.name} on AHEAD:`} className="text-left" />
+            {created.loginLink && <LoginLinkBox link={created.loginLink} mobile={created.owner.mobile} message={`Hi ${created.owner.name}, set up your login for ${form.name} on AHEAD:`} className="text-left" />}
             <div className="flex flex-wrap justify-center gap-2">
-              <Link href={`${base}/clients/${created.tenantId}`} className={buttonVariants({ variant: "outline" })}>Open client</Link>
+              <Link href={`${base}/clients/${created.tenantId}`} className={buttonVariants({ variant: "outline" })}>Open business</Link>
               <Button type="button" variant="ghost" onClick={() => (setCreated(null), setForm(EMPTY), setStep(0), setQuote(null))}>Add another</Button>
             </div>
           </div>
@@ -180,10 +188,13 @@ export default function NewClientPage() {
 
   return (
     <Page title="Onboard a business" subtitle={partner ? "The client goes live as soon as you finish. It appears on your next monthly bill." : "The owner gets a login link by SMS and email and sets their own password."} back={{ href: `${base}/clients`, label: "Businesses" }}>
-      <Steps steps={partner ? ["Business", "Owner", "Plan"] : STEPS} current={step} />
+
       {catalog.error && <Failed error={catalog.error} onRetry={catalog.reload} />}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+      <div className="grid gap-6 lg:grid-cols-[17rem_1fr] xl:grid-cols-[17rem_1fr_19rem]">
+        <div className="lg:sticky lg:top-20 lg:self-start">
+          <WizardRail states={railStates} />
+        </div>
         <Panel title={step === 0 ? "About the business" : step === 1 ? "Who owns it" : partner ? "Choose a plan" : "How to start"} description={step === 1 ? "We send the login link to this mobile and email. If the email already has an AHEAD account, that person becomes the owner." : undefined}>
           {step === 0 && (
             <div className="grid gap-4 sm:grid-cols-2">
@@ -322,14 +333,19 @@ export default function NewClientPage() {
                 Continue
               </Button>
             ) : (
-              <Button type="button" onClick={submit} disabled={busy || (!trial && (!planKey || (!partner && !quote)))}>
-                {busy ? "Adding…" : trial ? "Start trial & send login link" : quote?.needsApproval ? "Add and ask for approval" : "Create & send login link"}
-              </Button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => submit(false)} disabled={busy || (!trial && (!planKey || (!partner && !quote)))}>
+                  Create &amp; send login link now
+                </Button>
+                <Button type="button" onClick={() => submit(true)} disabled={busy || (!trial && (!planKey || (!partner && !quote)))}>
+                  {busy ? "Creating…" : quote?.needsApproval ? "Create (needs approval) & continue set-up" : "Create & continue set-up"}
+                </Button>
+              </div>
             )}
           </div>
         </Panel>
 
-        <div className="lg:sticky lg:top-8 lg:self-start">
+        <div className="lg:col-start-2 xl:col-start-3 xl:sticky xl:top-20 xl:self-start">
           <Panel title="Summary">
             <div className="grid gap-1 text-sm">
               <Line label="Business" value={form.name || "—"} />

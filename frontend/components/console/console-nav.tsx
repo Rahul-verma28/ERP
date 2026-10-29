@@ -1,6 +1,6 @@
 "use client"
 
-import { Building2, CreditCard, Handshake, LayoutDashboard, Link2, ReceiptText, Settings2, Tags, Users, type LucideIcon } from "lucide-react"
+import { Building2, ClipboardCheck, CreditCard, Handshake, LayoutDashboard, Link2, ReceiptText, Settings2, Tags, Users, type LucideIcon } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 
 // The Console menu per role (blueprint Phase A). Groups and items appear only when the role
@@ -31,6 +31,7 @@ export function useNav(): { groups: NavGroup[]; settings: NavItem | null } {
           items: [
             { href: "/partner", label: "Overview", icon: LayoutDashboard, show: true },
             { href: "/partner/clients", label: "Businesses", icon: Building2, show: canConsole("platform.tenant.view") },
+            { href: "/partner/onboarding", label: "Onboarding", icon: ClipboardCheck, show: canConsole("platform.tenant.create") },
             { href: "/partner/billing", label: "Monthly bill", icon: ReceiptText, show: canConsole("platform.partner.view") },
           ],
         },
@@ -48,6 +49,7 @@ export function useNav(): { groups: NavGroup[]; settings: NavItem | null } {
           items: [
             { href: "/console", label: "Overview", icon: LayoutDashboard, show: true },
             { href: "/console/clients", label: "My businesses", icon: Building2, show: canConsole("platform.tenant.view") },
+            { href: "/console/onboarding", label: "Onboarding", icon: ClipboardCheck, show: canConsole("platform.tenant.create") },
             { href: "/console/referral", label: "My link & code", icon: Link2, show: true },
           ],
         },
@@ -62,6 +64,7 @@ export function useNav(): { groups: NavGroup[]; settings: NavItem | null } {
         items: [
           { href: "/console", label: "Overview", icon: LayoutDashboard, show: true },
           { href: "/console/clients", label: "Businesses", icon: Building2, show: canConsole("platform.tenant.view") },
+          { href: "/console/onboarding", label: "Onboarding", icon: ClipboardCheck, show: canConsole("platform.tenant.create") },
           { href: "/console/payments", label: "Billing", icon: CreditCard, show: canConsole("platform.payment.view") },
           { href: "/console/partners", label: "Partners", icon: Handshake, show: canConsole("platform.partner.view") },
         ],

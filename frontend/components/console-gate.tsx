@@ -34,7 +34,7 @@ export function ConsoleGate({ portal, children }: { portal: "console" | "partner
     const other = isPartner ? "/partner" : "/console"
     const rest = pathname.replace(/^\/(console|partner)/, "")
     // Only pages both places share keep their path; anything else opens the other place's home
-    const shared = /^(\/clients(\/.*)?|\/team|\/account(\/.*)?)?$/.test(rest)
+    const shared = /^(\/clients(\/.*)?|\/onboarding(\/.*)?|\/team|\/account(\/.*)?)?$/.test(rest)
     router.replace(shared ? `${other}${rest}` : other)
   }, [wrongPlace, isPartner, pathname, router])
   // Once the Console has been shown, a tenant session means the user switched away: never switch back

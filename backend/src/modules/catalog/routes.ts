@@ -169,8 +169,13 @@ router.post(
   requirePermission('catalog.item.create'),
   validate(z.object({ rows: z.array(z.record(z.unknown())).min(1).max(1000), onDuplicate: z.enum(['skip', 'update']).default('skip') })),
   tx(async (req, res) => {
-    const ctx = req.ctx!;
-    const { rows, onDuplicate } = req.body as { rows: Record<string, unknown>[]; onDuplicate: 'skip' | 'update' };
+    res.json(await importItems(req.ctx!, req.body));
+  }),
+);
+
+/** Import rows for one business (used by the ERP and by the Console's onboarding import). */
+export async function importItems(ctx: Pick<TenantCtx, 'tenantId' | 'userId'>, input: { rows: Record<string, unknown>[]; onDuplicate: 'skip' | 'update' }) {
+    const { rows, onDuplicate } = input;
     const existing = await db().item.findMany({ select: { id: true, name: true, sku: true } });
     const byName = new Map(existing.map((e) => [e.name.trim().toLowerCase(), e.id]));
     const bySku = new Map(existing.filter((e) => e.sku).map((e) => [e.sku!.toLowerCase(), e.id]));
@@ -211,8 +216,7 @@ router.post(
     for (const u of toUpdate) await db().item.update({ where: { id: u.id }, data: u.data });
     result.updated = toUpdate.length;
     await audit({ action: 'catalog.item.import', entity: 'item', after: { onDuplicate, created: result.created, updated: result.updated, duplicates: result.duplicates.length, errors: result.errors.length } });
-    res.json(result);
-  }),
-);
+    return result;
+}
 
 export default router;

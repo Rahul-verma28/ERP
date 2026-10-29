@@ -85,6 +85,7 @@ export interface ClientDetail {
   partner: { id: string; name: string } | null
   onboardedBy: OnboardedBy | null
   progress: ClientProgress | null
+  handover: (OnboardingDetail["handover"] & { progress: HandoverProgress }) | null
   billedBy: "self" | "partner"
   history: { id: string; action: string; at: string; actor: string | null }[]
 }
@@ -382,4 +383,51 @@ export interface PartnerDetail extends Omit<PartnerRow, "clients" | "liveClients
 export const MODULE_SHORT: Record<string, string> = {
   crm: "CRM", catalog: "Products", sales: "Sales", billing: "Billing", inventory: "Stock", hr: "HR", tasks: "Tasks",
   finance: "Finance", bookings: "Bookings", support: "Support", reports: "Reports", ai: "AI", automation: "Automation",
+}
+
+// ── Onboarding & handover (blueprint Phase B) ──
+
+export type HandoverStep = "branding" | "config" | "import"
+
+export interface HandoverProgress {
+  stage: "setting_up" | "sent" | "signed_in" | "accepted"
+  nextStep: HandoverStep | "handover" | null
+  percent: number
+  steps: Partial<Record<HandoverStep, "done" | "skipped">>
+  sentAt: string | null
+  acceptedAt: string | null
+}
+
+export interface OnboardingRow extends HandoverProgress {
+  id: string
+  name: string
+  industryKey: string
+  status: TenantStatus
+  createdAt: string
+  owner: string | null
+}
+
+export interface OnboardingDetail {
+  id: string
+  name: string
+  status: TenantStatus
+  owner: { name: string; email: string; mobile: string; lastLoginAt: string | null }
+  handover: { startedAt: string; steps: Partial<Record<HandoverStep, "done" | "skipped">>; imported?: { contacts?: number; items?: number }; sentAt?: string | null; acceptedAt?: string | null }
+  progress: HandoverProgress
+  branding: { brandColor: string; font: string; theme: "light" | "dark" | "system"; density: "comfortable" | "compact" }
+  config: {
+    fyStartMonth: number
+    timezone: string
+    fy: string
+    documents: { invoicePrefix: string; quotationPrefix: string; receiptPrefix: string; template: string }
+    sequences: { docType: "invoice" | "quotation" | "receipt"; label: string; prefix: string; nextNo: number; lastIssued: string | null }[]
+  }
+  counts: { contacts: number; items: number }
+}
+
+export interface ImportResult {
+  created: number
+  updated: number
+  duplicates: { row: number; name: string; reason: string }[]
+  errors: { row: number; message: string }[]
 }

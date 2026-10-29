@@ -23,6 +23,7 @@ import { adminResetMfa } from '../account/service';
 import { zReason } from '../../kernel/zodRules';
 import { INDUSTRIES, INDUSTRY_GROUPS } from '../../contracts/workspace';
 import { zEmail, zMobileIN } from '../../kernel/zodRules';
+import { acceptHandover, handoverForOwner } from '../console/onboarding';
 
 // Platform routes for the signed-in tenant (LLD §10.2, §10.3) plus a few public lookups.
 
@@ -116,6 +117,13 @@ router.get('/tenant', requirePermission('tenant.settings.view'), tx(async (req, 
 }));
 router.patch('/tenant', requirePermission('tenant.settings.edit'), validate(tenancy.TenantPatch), tx(async (req, res) => {
   res.json(await tenancy.updateTenant(req.ctx!.tenantId, req.body));
+}));
+// Console handover (blueprint Phase B): the owner sees "your workspace is ready" and accepts it
+router.get('/tenant/handover', tx(async (req, res) => {
+  res.json({ handover: await handoverForOwner(req.ctx!.tenantId, req.ctx!.userId) });
+}));
+router.post('/tenant/handover/accept', tx(async (req, res) => {
+  res.json(await acceptHandover(req.ctx!.tenantId, req.ctx!.userId));
 }));
 router.get('/tenant/onboarding', requirePermission('tenant.settings.view'), tx(async (req, res) => {
   res.json(await tenancy.onboardingStatus(req.ctx!.tenantId));

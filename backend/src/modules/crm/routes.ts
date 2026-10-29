@@ -1,3 +1,4 @@
+import type { TenantCtx } from '../../kernel/context';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
@@ -280,8 +281,13 @@ router.post(
     }),
   ),
   tx(async (req, res) => {
-    const ctx = req.ctx!;
-    const { type, rows, onDuplicate } = req.body as { type: Kind; rows: Record<string, unknown>[]; onDuplicate: 'skip' | 'update' };
+    res.json(await importContacts(req.ctx!, req.body));
+  }),
+);
+
+/** Import rows for one business (used by the ERP and by the Console's onboarding import). */
+export async function importContacts(ctx: Pick<TenantCtx, 'tenantId' | 'userId'>, input: { type: Kind; rows: Record<string, unknown>[]; onDuplicate: 'skip' | 'update' }) {
+    const { type, rows, onDuplicate } = input;
     const existing = await db().contact.findMany({ select: { id: true, phone: true, email: true } });
     const byPhone = new Map(existing.filter((e) => e.phone).map((e) => [e.phone!, e.id]));
     const byEmail = new Map(existing.filter((e) => e.email).map((e) => [e.email!, e.id]));
@@ -333,8 +339,7 @@ router.post(
     for (const u of toUpdate) await db().contact.update({ where: { id: u.id }, data: u.data });
     result.updated = toUpdate.length;
     await audit({ action: 'crm.contact.import', entity: 'contact', after: { type, onDuplicate, created: result.created, updated: result.updated, duplicates: result.duplicates.length, errors: result.errors.length } });
-    res.json(result);
-  }),
-);
+    return result;
+}
 
 export default router;

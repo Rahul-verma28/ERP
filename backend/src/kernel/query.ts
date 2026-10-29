@@ -54,7 +54,7 @@ export function page<T extends { id: string }>(rows: T[], limit: number) {
 }
 
 /** Records limit on create (contacts, items) — LLD §6.4 */
-export async function assertRecordLimit(ctx: TenantCtx, key: keyof PlanLimits, count: () => Promise<number>, label: string) {
+export async function assertRecordLimit(ctx: Pick<TenantCtx, 'tenantId'>, key: keyof PlanLimits, count: () => Promise<number>, label: string) {
   const ent = await getEntitlements(ctx.tenantId);
   const limit = ent.limits[key];
   if (limit === null || limit === undefined) return;
@@ -97,7 +97,7 @@ export async function canWriteField(ctx: TenantCtx, entity: string, field: strin
 }
 
 /** Mark an onboarding checklist step as done (merges into tenants.onboarding). */
-export async function markOnboarding(ctx: TenantCtx, key: 'firstCustomer' | 'firstItem' | 'firstInvoice') {
+export async function markOnboarding(ctx: Pick<TenantCtx, 'tenantId'>, key: 'firstCustomer' | 'firstItem' | 'firstInvoice') {
   await db().$executeRaw`UPDATE tenants SET onboarding = onboarding || jsonb_build_object(${key}::text, true) WHERE id = ${ctx.tenantId}::uuid AND NOT (onboarding ? ${key}::text)`;
 }
 

@@ -9,6 +9,7 @@ import { audit } from '../audit/service';
 import { getSetting } from '../settings/service';
 import { createTenant } from '../tenancy/createTenant';
 import { sendAccessLink } from '../identity/accessLinks';
+import { startHandover } from './onboarding';
 import { transition } from '../subscription/stateMachine';
 import { persistEntitlements } from '../subscription/entitlements';
 import { addMember } from './members';
@@ -129,6 +130,8 @@ export const PartnerClientInput = z
     owner: z.object({ name: zPersonName, email: zEmail, mobile: zMobileIN }),
     planKey: z.string().max(40),
     cycle: z.enum(['monthly', 'yearly']),
+    /** Continue set-up in the onboarding wizard; the login link goes out at hand-over */
+    setup: z.boolean().default(false),
   })
   .superRefine((b, c) => {
     const mismatch = gstinStateMismatch(b.business.gstin, b.business.stateCode);
@@ -165,7 +168,8 @@ export async function createPartnerClient(ctx: ConsoleCtx, input: z.infer<typeof
   // No AHEAD period: the partner's monthly bill covers it, so renewals and dunning never touch it
   await tx.subscription.update({ where: { tenantId: created.tenant.id }, data: { currentPeriodEnd: null } });
 
-  const loginLink = await sendAccessLink({ kind: 'client_owner', userId: created.user.id, tenantId: created.tenant.id, createdBy: ctx.userId, extra: `${partner.name} has set up your business software.` });
+  if (input.setup) await startHandover(created.tenant.id, ctx.userId);
+  const loginLink = input.setup ? null : await sendAccessLink({ kind: 'client_owner', userId: created.user.id, tenantId: created.tenant.id, createdBy: ctx.userId, extra: `${partner.name} has set up your business software.` });
   await audit({ tenantId: null, action: 'console.partner_client_created', entity: 'tenant', entityId: created.tenant.id, after: { partnerId: partner.id, plan: plan.key, cycle: input.cycle } });
   return { tenantId: created.tenant.id, loginLink, owner: { name: created.user.name, mobile: created.user.mobile, email: created.user.email } };
 }

@@ -16,6 +16,7 @@ import { assertClientInScope, clientDetail, extendClient, listClients, vendorVie
 import { catalogAdmin, createCoupon, endCoupon, setPrice, updatePlan } from './catalogAdmin';
 import { addMember, consoleRoles, listMembers, resendMemberLink, updateMember } from './members';
 import { sendAccessLink } from '../identity/accessLinks';
+import * as onboarding from './onboarding';
 import { accountHealth, consoleHome, type Audience } from './insights';
 import { clientSummary, clientTimeline, clientUsers } from './client360';
 import { addNote, closeFollowup, createFollowup, createProspect, FollowupInput, listFollowups, listNotes, listProspects, NoteInput, ProspectInput, ProspectPatch, STAGES, updateProspect } from './sales';
@@ -174,6 +175,7 @@ const NewClientBody = z.object({
   owner: z.object({ name: zPersonName, email: zEmail, mobile: zMobileIN }),
   start: z.enum(['trial', 'paid']).default('paid'),
   order: OrderInput.optional(),
+  setup: z.boolean().default(false),
 }).superRefine((b, c) => {
   const mismatch = gstinStateMismatch(b.business.gstin, b.business.stateCode);
   if (mismatch) c.addIssue({ code: z.ZodIssueCode.custom, path: ['business', 'gstin'], message: mismatch });
@@ -284,6 +286,29 @@ router.put('/settings/:key', requirePlatformPermission('platform.setting.edit'),
 router.delete('/settings/:key', requirePlatformPermission('platform.setting.edit'), validate(SettingParam, 'params'), consoleTx(async (req, res) => {
   await resetSetting(req.params.key as SettingKey, ctx(req).userId);
   res.status(204).end();
+}));
+
+// ── Onboarding & handover (blueprint Phase B): whoever can add a business can set it up ──
+router.get('/onboarding', requirePlatformPermission('platform.tenant.create'), consoleTx(async (req, res) => {
+  res.json({ data: await onboarding.listOnboarding(ctx(req)) });
+}));
+router.get('/onboarding/:id', requirePlatformPermission('platform.tenant.create'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  res.json(await onboarding.onboardingDetail(ctx(req), String(req.params.id)));
+}));
+router.put('/onboarding/:id/branding', requirePlatformPermission('platform.tenant.create'), validate(IdParam, 'params'), validate(onboarding.BrandingInput), consoleTx(async (req, res) => {
+  res.json(await onboarding.saveBranding(ctx(req), String(req.params.id), req.body));
+}));
+router.put('/onboarding/:id/config', requirePlatformPermission('platform.tenant.create'), validate(IdParam, 'params'), validate(onboarding.ConfigInput), consoleTx(async (req, res) => {
+  res.json(await onboarding.saveConfig(ctx(req), String(req.params.id), req.body));
+}));
+router.post('/onboarding/:id/import', requirePlatformPermission('platform.tenant.create'), validate(IdParam, 'params'), validate(onboarding.ImportInput), consoleTx(async (req, res) => {
+  res.json(await onboarding.importForBusiness(ctx(req), String(req.params.id), req.body));
+}));
+router.post('/onboarding/:id/skip', requirePlatformPermission('platform.tenant.create'), validate(IdParam, 'params'), validate(z.object({ step: z.enum(onboarding.HANDOVER_STEPS) })), consoleTx(async (req, res) => {
+  res.json(await onboarding.skipStep(ctx(req), String(req.params.id), req.body.step));
+}));
+router.post('/onboarding/:id/handover', requirePlatformPermission('platform.tenant.create'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  res.json(await onboarding.handOver(ctx(req), String(req.params.id)));
 }));
 
 // ── Team (AHEAD's, or a partner's own) ──

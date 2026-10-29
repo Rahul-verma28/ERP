@@ -8,6 +8,7 @@ import { audit } from '../audit/service';
 import { getSetting } from '../settings/service';
 import { createTenant } from '../tenancy/createTenant';
 import { sendAccessLink } from '../identity/accessLinks';
+import { startHandover } from '../console/onboarding';
 import { transition } from '../subscription/stateMachine';
 
 // design v2 Step 4: what AHEAD sells to a client. One order = plan + add-on modules + extra
@@ -190,6 +191,8 @@ export interface NewClientInput {
   /** Console v3: start on the free trial, or on a paid plan the owner pays for after signing in */
   start: 'trial' | 'paid';
   order?: Omit<QuoteInput, 'billTo'>;
+  /** Blueprint Phase B: continue set-up in the onboarding wizard; the login link goes out at hand-over */
+  setup?: boolean;
 }
 
 async function roleKeyOf(ctx: ConsoleCtx) {
@@ -233,6 +236,11 @@ export async function createClient(ctx: ConsoleCtx, input: NewClientInput) {
   if (q) {
     const cancelDays = await getSetting('onboarding.unpaid_cancel_days');
     order = await saveOrder(q, { tenantId: created.tenant.id, kind: 'fresh', billTo, createdBy: ctx.userId, expiresAt: new Date(Date.now() + cancelDays * DAY) });
+  }
+  if (input.setup) {
+    await startHandover(created.tenant.id, ctx.userId);
+    await audit({ tenantId: null, action: 'console.client_created', entity: 'tenant', entityId: created.tenant.id, after: { start: input.start, orderId: order?.id, plan: q?.plan.key, setup: true } });
+    return { tenantId: created.tenant.id, orderId: order?.id ?? null, status: order?.status ?? 'trialing', totalPaise: q?.totalPaise ?? 0, loginLink: null, owner: { name: created.user.name, mobile: created.user.mobile, email: created.user.email } };
   }
   const loginLink = await sendAccessLink({
     kind: 'client_owner',

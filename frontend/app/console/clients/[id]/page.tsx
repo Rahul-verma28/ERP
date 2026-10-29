@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ConvertDialog } from "@/components/console/convert-dialog"
 import { ChangePlanDialog, ExtendDialog, SourceDialog } from "@/components/console/client-dialogs"
-import { ActivityAndNotes, GettingStarted, ModulesPanel, OwnerPanel, PlanAndPayments, SetupAndUsage, UsersPanel } from "@/components/console/client-sections"
+import { ActivityAndNotes, GettingStarted, HandoverPanel, ModulesPanel, OwnerPanel, PlanAndPayments, SetupAndUsage, UsersPanel } from "@/components/console/client-sections"
 import { ClientStateChip, Failed, Loading, Page, PageTabs, Stat, StatGrid, industryLabel } from "@/components/console/kit"
 import { useRouter, useSearchParams } from "next/navigation"
 import { api, errorMessage } from "@/lib/api"
@@ -20,7 +20,7 @@ import { useConsoleBase } from "@/lib/console-base"
 // Business page (blueprint S2): a header with the actions, then tabs with their own links
 // (?tab=…): Overview, Plan & billing, Users, Activity & notes. One button per action.
 
-type Tab = "overview" | "plan" | "users" | "activity"
+type Tab = "overview" | "plan" | "handover" | "users" | "activity"
 
 const of = (used: number, max: number | null | undefined) => `${formatNumber(used)} / ${max === null || max === undefined ? "∞" : formatNumber(max)}`
 
@@ -46,6 +46,7 @@ function BusinessPage({ params }: { params: Promise<{ id: string }> }) {
   const tabs: { key: Tab; label: string }[] = [
     { key: "overview", label: "Overview" },
     { key: "plan", label: "Plan & billing" },
+    ...(canConsole("platform.tenant.create") ? [{ key: "handover" as const, label: "Handover" }] : []),
     ...(vendor ? [] : [{ key: "users" as const, label: "Users" }, { key: "activity" as const, label: "Activity & notes" }]),
   ]
   const asked = search.get("tab") as Tab | null
@@ -162,6 +163,7 @@ function BusinessPage({ params }: { params: Promise<{ id: string }> }) {
           <ModulesPanel client={c} />
         </div>
       )}
+      {tab === "handover" && <HandoverPanel client={c} base={base} />}
       {tab === "users" && <UsersPanel tenantId={c.id} />}
       {tab === "activity" && <ActivityAndNotes tenantId={c.id} />}
 

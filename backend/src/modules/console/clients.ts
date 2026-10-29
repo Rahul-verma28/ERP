@@ -8,6 +8,7 @@ import { scopedTenantFilter } from './service';
 import { clientOrders } from '../platformBilling/orders';
 import { healthFor } from './insights';
 import { clientFacts, type OnboardedKind } from './clientFacts';
+import { progressOf, readHandover } from './onboarding';
 
 // Console → Clients (design v2 §3). Only account metadata: plan, status, usage counts and who
 // brought the client in. Business records (customers, invoices, salaries) are never read here.
@@ -180,6 +181,11 @@ export async function clientDetail(ctx: ConsoleCtx, id: string) {
     billedBy: tenant.billingOwner,
     onboardedBy: facts.by.get(id) ?? null,
     progress: facts.progress.get(id) ?? null,
+    // Blueprint Phase B: set-up and handover through the onboarding wizard (null if never used)
+    handover: (() => {
+      const h = readHandover(tenant);
+      return h && { ...h, progress: progressOf(h, !!owner?.lastLoginAt) };
+    })(),
     owner: owner && { name: owner.name, email: owner.email, mobile: owner.mobile, emailVerified: !!owner.emailVerifiedAt, lastLoginAt: owner.lastLoginAt },
     subscription: subscription && {
       status: subscription.status, cycle: subscription.cycle, plan,

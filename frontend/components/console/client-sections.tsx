@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import { Check, CircleDashed, Clock, CreditCard, FileText, Megaphone, MessageSquare, Plus, Sparkles, UserRound } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { FormError } from "@/components/form"
@@ -355,6 +355,52 @@ export function UsersPanel({ tenantId }: { tenantId: string }) {
           <Empty icon={UserRound} title="No users yet" />
         )}
       </div>
+    </Panel>
+  )
+}
+
+const HANDOVER_ROWS: { key: "branding" | "config" | "import"; label: string }[] = [
+  { key: "branding", label: "Branding" },
+  { key: "config", label: "Configuration (financial year, numbering)" },
+  { key: "import", label: "Data import" },
+]
+
+/** Blueprint Phase B: the handover checklist and where it stands, with "Continue set-up" */
+export function HandoverPanel({ client, base }: { client: ClientDetail; base: string }) {
+  const h = client.handover
+  if (!h) {
+    return (
+      <Panel title="Handover" description="This business wasn't set up through the onboarding wizard.">
+        <Link href={`${base}/onboarding/${client.id}`} className={buttonVariants({ size: "sm", variant: "outline" })}>Start set-up now</Link>
+      </Panel>
+    )
+  }
+  const p = h.progress
+  const rows: { label: string; state: "done" | "skipped" | "todo"; detail?: string }[] = [
+    { label: "Business, owner and plan", state: "done", detail: formatDate(h.startedAt) },
+    ...HANDOVER_ROWS.map((r) => ({ label: r.label, state: h.steps[r.key] ?? ("todo" as const), detail: r.key === "import" && h.imported ? `${h.imported.contacts ?? 0} customers · ${h.imported.items ?? 0} products` : undefined })),
+    { label: "Handed over (login link sent)", state: h.sentAt ? "done" : "todo", detail: h.sentAt ? formatDate(h.sentAt) : undefined },
+    { label: "Owner signed in", state: client.progress?.loggedIn && h.sentAt ? "done" : "todo" },
+    { label: "Owner accepted the handover", state: h.acceptedAt ? "done" : "todo", detail: h.acceptedAt ? formatDate(h.acceptedAt) : undefined },
+  ]
+  return (
+    <Panel
+      title="Handover"
+      description={p.stage === "accepted" ? "Accepted by the owner. Set-up is complete." : p.stage === "signed_in" ? "Handed over · the owner has signed in and hasn't accepted yet" : p.stage === "sent" ? "Handed over · waiting for the owner to sign in" : `${p.percent}% set up`}
+      action={p.nextStep && <Link href={`${base}/onboarding/${client.id}?step=${p.nextStep}`} className={buttonVariants({ size: "sm" })}>Continue set-up</Link>}
+    >
+      <div className="mb-4 h-2 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary" style={{ width: `${p.stage === "accepted" ? 100 : p.percent}%` }} />
+      </div>
+      <ul className="grid gap-2">
+        {rows.map((r) => (
+          <li key={r.label} className="flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm">
+            {r.state === "done" ? <Check className="size-4 text-emerald-600" /> : <CircleDashed className="size-4 text-muted-foreground" />}
+            <span className="flex-1">{r.label}</span>
+            <span className="text-xs text-muted-foreground">{r.state === "skipped" ? "Skipped" : r.state === "todo" ? "Not yet" : r.detail}</span>
+          </li>
+        ))}
+      </ul>
     </Panel>
   )
 }
