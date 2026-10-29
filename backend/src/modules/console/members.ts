@@ -4,10 +4,11 @@ import type { ConsoleCtx } from '../../kernel/context';
 import { normaliseEmail, normaliseMobile } from '../../kernel/crypto';
 import { audit } from '../audit/service';
 import { invalidatePlatformMember, teamOf } from './service';
+import { sendAccessLink } from '../identity/accessLinks';
 
 // Console → Team (design v2 §2). Runs inside consoleTx. Rules:
-// only a Super Admin grants or changes Super Admin; nobody changes their own role or status;
-// the last active Super Admin stays; the reporting tree never loops. Partner people only ever
+// only an Admin grants or changes Admin; nobody changes their own role or status;
+// the last active Admin stays; the reporting tree never loops. Partner people only ever
 // see and manage their own partner's team, with partner roles.
 
 const layerOf = (ctx: ConsoleCtx) => (ctx.partnerId ? 'partner' : 'platform') as 'partner' | 'platform';
@@ -77,7 +78,7 @@ export async function addMember(ctx: ConsoleCtx, input: NewMember, opts: { partn
   const tx = db();
   const partnerId = ctx.partnerId ?? opts.partnerId ?? null;
   const role = await consoleRole(input.roleKey, partnerId ? 'partner' : 'platform');
-  if (role.key === 'super_admin' && (await actorRoleKey(ctx)) !== 'super_admin') throw new AppError('PERMISSION_DENIED', 'Only a Super Admin can add another Super Admin.');
+  if (role.key === 'super_admin' && (await actorRoleKey(ctx)) !== 'super_admin') throw new AppError('PERMISSION_DENIED', 'Only an Admin can add another Admin.');
   const reportsTo = partnerId ? null : await checkManager(input.reportsTo);
 
   const email = normaliseEmail(input.email);
@@ -97,7 +98,16 @@ export async function addMember(ctx: ConsoleCtx, input: NewMember, opts: { partn
     : await tx.platformMember.create({ data: { userId: user.id, ...data } });
   await audit({ tenantId: null, action: 'console.member_added', entity: 'platform_member', entityId: member.id, after: { email, role: role.key, reportsTo, partnerId } });
   invalidatePlatformMember(user.id);
-  return { id: member.id, newUser: !existing && !user.passwordHash };
+  const loginLink = await sendAccessLink({ kind: 'console_member', userId: user.id, createdBy: ctx.userId });
+  return { id: member.id, newUser: !existing && !user.passwordHash, loginLink };
+}
+
+/** Send a Console user a fresh login link (the old one stops working). */
+export async function resendMemberLink(ctx: ConsoleCtx, id: string) {
+  const member = await db().platformMember.findUnique({ where: { id }, select: { userId: true, partnerId: true, status: true } });
+  if (!member || (ctx.partnerId && member.partnerId !== ctx.partnerId)) throw notFound('Console user');
+  if (member.status !== 'active') throw new AppError('INVALID_TRANSITION', 'Turn this person back on first.');
+  return sendAccessLink({ kind: 'console_member', userId: member.userId, createdBy: ctx.userId });
 }
 
 export async function updateMember(ctx: ConsoleCtx, id: string, patch: { roleKey?: string; reportsTo?: string | null; status?: 'active' | 'deactivated'; reason?: string }) {
@@ -110,12 +120,12 @@ export async function updateMember(ctx: ConsoleCtx, id: string, patch: { roleKey
 
   const actorIsSuper = (await actorRoleKey(ctx)) === 'super_admin';
   const newRole = patch.roleKey ? await consoleRole(patch.roleKey, member.partnerId ? 'partner' : 'platform') : null;
-  if (!actorIsSuper && (member.role.key === 'super_admin' || newRole?.key === 'super_admin')) throw new AppError('PERMISSION_DENIED', 'Only a Super Admin can change a Super Admin.');
+  if (!actorIsSuper && (member.role.key === 'super_admin' || newRole?.key === 'super_admin')) throw new AppError('PERMISSION_DENIED', 'Only an Admin can change an Admin.');
 
   const losesSuper = member.role.key === 'super_admin' && member.status === 'active' && ((newRole && newRole.key !== 'super_admin') || patch.status === 'deactivated');
   if (losesSuper) {
     const supers = await tx.platformMember.count({ where: { status: 'active', role: { key: 'super_admin', tenantId: null } } });
-    if (supers <= 1) throw new AppError('CONFLICT', 'Keep at least one active Super Admin.');
+    if (supers <= 1) throw new AppError('CONFLICT', 'Keep at least one active Admin.');
   }
   const reportsTo = patch.reportsTo !== undefined ? await checkManager(patch.reportsTo, member.userId) : undefined;
 

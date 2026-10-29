@@ -57,7 +57,7 @@ describe('R4: seed keeps commercial data edited in the database', () => {
 
       await syncCatalog(tx, { resetCommercials: true });
 
-      expect(((await tx.plan.findUniqueOrThrow({ where: { key: 'free' } })).limits as { users: number }).users).toBe(3);
+      expect(((await tx.plan.findUniqueOrThrow({ where: { key: 'free' } })).limits as { users: number }).users).toBe(2);
     });
   });
 });
@@ -65,8 +65,8 @@ describe('R4: seed keeps commercial data edited in the database', () => {
 describe('R2: platform settings', () => {
   it('falls back to the code default when nothing (or something invalid) is stored', () => {
     expect(resolveSetting('trial.days', undefined)).toBe(SETTINGS['trial.days'].default);
-    expect(resolveSetting('trial.days', 'fifteen')).toBe(15);
-    expect(resolveSetting('trial.days', 500)).toBe(15);
+    expect(resolveSetting('trial.days', 'fifteen')).toBe(14);
+    expect(resolveSetting('trial.days', 500)).toBe(14);
     expect(resolveSetting('grace.days_yearly', 21)).toBe(21);
   });
 

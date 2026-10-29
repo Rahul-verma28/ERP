@@ -39,7 +39,7 @@ const mobile = () => `9${String(Math.floor(Math.random() * 1e9)).padStart(9, '0'
 describe('Sales workspace', () => {
   it('a new prospect gets a first-call follow-up and a mobile can be used only once', async () => {
     await rolledBack(async () => {
-      const exec = await consoleUser('console_sales_executive', 'own');
+      const exec = await consoleUser('console_sales', 'own');
       const m = mobile();
       const p = await createProspect(exec, { name: 'Asha Rao', businessName: 'Rao Salon', mobile: `+91${m}` });
       expect(await db().consoleFollowup.count({ where: { prospectId: p.id, doneAt: null } })).toBe(1);
@@ -49,7 +49,7 @@ describe('Sales workspace', () => {
 
   it('lost needs a reason; won or lost closes open follow-ups', async () => {
     await rolledBack(async () => {
-      const exec = await consoleUser('console_sales_executive', 'own');
+      const exec = await consoleUser('console_sales', 'own');
       const p = await createProspect(exec, { name: 'Ravi', businessName: 'Ravi Traders' });
       await expect(updateProspect(exec, p.id, { stage: 'lost' })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
       await updateProspect(exec, p.id, { stage: 'lost', lostReason: 'Went with a local vendor' });
@@ -59,9 +59,9 @@ describe('Sales workspace', () => {
 
   it('an executive sees only their own prospects; a manager sees the team', async () => {
     await rolledBack(async () => {
-      const mgr = await consoleUser('console_sales_manager', 'team');
-      const a = await consoleUser('console_sales_executive', 'own', mgr.userId);
-      const b = await consoleUser('console_sales_executive', 'own', mgr.userId);
+      const mgr = await consoleUser('console_sales', 'team');
+      const a = await consoleUser('console_sales', 'own', mgr.userId);
+      const b = await consoleUser('console_sales', 'own', mgr.userId);
       const pa = await createProspect(a, { name: 'A', businessName: 'Alpha Shop' });
       await createProspect(b, { name: 'B', businessName: 'Beta Shop' });
       expect((await listProspects(a, {})).some((p: { id: string }) => p.id === pa.id)).toBe(true);
@@ -76,12 +76,12 @@ describe('Sales workspace', () => {
   it('a note private to the team is hidden from other teams', async () => {
     await rolledBack(async () => {
       const tenant = await db().tenant.findFirstOrThrow({ where: { isInternal: false } });
-      const mgr1 = await consoleUser('console_sales_manager', 'team');
-      const mgr2 = await consoleUser('console_sales_manager', 'team');
+      const mgr1 = await consoleUser('console_sales', 'team');
+      const mgr2 = await consoleUser('console_sales', 'team');
       await addNote(mgr1, tenant.id, { body: 'Owner prefers calls after 6 pm', privateToTeam: true });
       expect((await listNotes(mgr1, tenant.id)).some((n) => n.body.startsWith('Owner prefers'))).toBe(true);
       expect((await listNotes(mgr2, tenant.id)).some((n) => n.body.startsWith('Owner prefers'))).toBe(false);
-      const ops = await consoleUser('platform_ops', 'all');
+      const ops = await consoleUser('console_staff', 'all');
       expect((await listNotes(ops, tenant.id)).some((n) => n.body.startsWith('Owner prefers'))).toBe(true);
     });
   });
@@ -115,8 +115,8 @@ describe('Clients list filters', () => {
   it('the owner filter never shows clients outside your scope', async () => {
     await rolledBack(async () => {
       const tenant = await db().tenant.findFirstOrThrow({ where: { isInternal: false } });
-      const other = await consoleUser('console_sales_executive', 'own');
-      const me = await consoleUser('console_sales_executive', 'own');
+      const other = await consoleUser('console_sales', 'own');
+      const me = await consoleUser('console_sales', 'own');
       await db().tenantAcquisition.update({ where: { tenantId: tenant.id }, data: { acquiredByType: 'sales_user', acquiredByUserId: other.userId, method: 'manual' } });
       expect((await listClients(other, { ownerId: other.userId, limit: 50 })).data.map((c) => c.id)).toContain(tenant.id);
       expect((await listClients(me, { ownerId: other.userId, limit: 50 })).data).toHaveLength(0);
@@ -169,7 +169,7 @@ describe('Partners', () => {
       const b = await newPartner(admin, `Beta Partners ${mobile()}`);
       const industryKey = await industry();
       const { tenantId } = await createPartnerClient(a.ctx, { business: { name: 'Alpha Client', industryKey, stateCode: '27' }, owner: owner(), planKey: 'starter', cycle: 'monthly' });
-      const ids = async (ctx: ConsoleCtx) => (await listClients(ctx, { limit: 200 })).data.map((c) => c.id);
+      const ids = async (ctx: ConsoleCtx) => (await listClients(ctx, { limit: 200, partners: 'include' })).data.map((c) => c.id);
       expect(await ids(a.ctx)).toEqual([tenantId]);
       expect(await ids(b.ctx)).toEqual([]);
       expect(await ids(admin)).toContain(tenantId);
@@ -209,7 +209,7 @@ describe('Referral codes', () => {
       expect((await myReferral(vendor)).code).toBe(first.code);
       expect(await referralAcquisition(first.code.toLowerCase(), 'link')).toMatchObject({ byType: 'vendor', byUserId: vendor.userId, method: 'referral_link' });
       expect(await referralAcquisition('NOPE000', 'code')).toBeNull();
-      const support = await consoleUser('platform_support');
+      const support = await consoleUser('console_staff');
       await expect(myReferral(support)).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
     });
   });
@@ -217,7 +217,7 @@ describe('Referral codes', () => {
   it('a vendor Home shows their link, not AHEAD’s income', async () => {
     await rolledBack(async () => {
       const vendor = await consoleUser('vendor', 'own');
-      const home = await consoleHome(vendor, 'vendor', { discount: false, income: false, payments: true, leads: false });
+      const home = await consoleHome(vendor, 'vendor', { discount: false, income: false, payments: true, leads: false, referral: true });
       expect(home.referral?.code).toBeTruthy();
       expect(home.stats.some((s) => s.key === 'income')).toBe(false);
       expect(home.stats[0].key).toBe('clients');

@@ -3,19 +3,22 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { AlertTriangle, Building2, Plus } from "lucide-react"
-import { buttonVariants } from "@/components/ui/button"
-import { SearchInput } from "@/components/common"
+import { Building2, Download, Plus } from "lucide-react"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { LoadMore, SearchInput } from "@/components/common"
 import { NativeSelect } from "@/components/form"
-import { LoadMore } from "@/components/common"
-import { ClientStatus, Empty, Failed, Loading, Page, Panel, daysFrom, industryLabel, relDays } from "@/components/console/kit"
+import { ClientStateChip, Empty, Failed, Loading, OnboardedChip, Page, Panel, ago, industryLabel, money } from "@/components/console/kit"
 import { useAuth } from "@/lib/auth"
+import { useApi } from "@/lib/use-api"
 import { useDebounced, useList } from "@/lib/use-list"
+import { downloadCsv } from "@/lib/csv"
 import { formatDate } from "@/lib/format"
-import { SOURCE_LABEL, type ClientRow } from "@/lib/console"
+import { MODULE_SHORT, type Catalog, type ClientRow } from "@/lib/console"
 import { cn } from "@/lib/utils"
+import { useConsoleBase } from "@/lib/console-base"
 
-// Clients: everyone you can see, newest first. Plain statuses, one click into a client.
+// Clients (Console v3): one table with every account detail; click a row for the full client
+// page. Partner clients live under Partners, so the AHEAD team's list leaves them out.
 
 const TABS: { key: string; label: string }[] = [
   { key: "", label: "All" },
@@ -26,35 +29,99 @@ const TABS: { key: string; label: string }[] = [
   { key: "free", label: "Free plan" },
 ]
 
-function statusSuffix(c: ClientRow) {
-  if (c.status !== "trialing" || !c.trialEndsAt) return undefined
-  const d = daysFrom(c.trialEndsAt) ?? 0
-  return d <= 0 ? "ends today" : `${d} day${d === 1 ? "" : "s"} left`
+const ONBOARDED_FILTER: [string, string][] = [
+  ["", "Onboarded by anyone"],
+  ["team", "AHEAD team"],
+  ["sales", "Sales"],
+  ["vendor", "Vendor"],
+  ["website", "Website"],
+]
+
+/** The next date that matters for this client */
+function nextDate(c: ClientRow) {
+  if (c.progress && !c.progress.loggedIn && c.progress.linkSentAt) return `Link sent ${formatDate(c.progress.linkSentAt)}`
+  if (c.status === "trialing" && c.trialEndsAt) return `Trial ends ${formatDate(c.trialEndsAt)}`
+  if (c.status === "active" && c.renewsAt) return `Renews ${formatDate(c.renewsAt)}`
+  return "—"
+}
+
+const planText = (c: ClientRow) => (c.status === "free" ? "Free" : c.status === "trialing" ? "Trial" : c.plan ?? "—")
+
+function Modules({ keys }: { keys: string[] }) {
+  if (!keys.length) return <span className="text-muted-foreground">—</span>
+  const shown = keys.slice(0, 2)
+  return (
+    <div className="flex gap-1 whitespace-nowrap" title={keys.map((k) => MODULE_SHORT[k] ?? k).join(", ")}>
+      {shown.map((k) => (
+        <span key={k} className="rounded bg-muted px-1.5 text-[11px] leading-5 text-muted-foreground">{MODULE_SHORT[k] ?? k}</span>
+      ))}
+      {keys.length > shown.length && <span className="rounded bg-muted px-1.5 text-[11px] leading-5 text-muted-foreground">+{keys.length - shown.length}</span>}
+    </div>
+  )
+}
+
+function Users({ used, limit }: { used: number; limit: number | null }) {
+  const pct = limit ? Math.min(100, Math.round((used / limit) * 100)) : 0
+  return (
+    <div className="flex items-center gap-2 whitespace-nowrap tabular-nums">
+      {limit ? (
+        <span className="h-1.5 w-12 overflow-hidden rounded-full bg-muted">
+          <span className={cn("block h-full", pct >= 90 ? "bg-amber-500" : "bg-primary")} style={{ width: `${pct}%` }} />
+        </span>
+      ) : null}
+      {used}
+      {limit ? `/${limit}` : ""}
+    </div>
+  )
 }
 
 function ClientsList() {
   const router = useRouter()
   const params = useSearchParams()
+  const base = useConsoleBase()
   const { me, canConsole } = useAuth()
   const audience = me?.console?.audience ?? "team"
+  const team = audience === "team"
   const [search, setSearch] = React.useState("")
   const [status, setStatus] = React.useState(params.get("status") ?? "")
-  const [source, setSource] = React.useState("")
+  const [planKey, setPlanKey] = React.useState("")
+  const [onboarded, setOnboarded] = React.useState("")
+  const [industryKey, setIndustryKey] = React.useState("")
   const q = useDebounced(search)
-  const list = useList<ClientRow>("/console/tenants", { search: q, status, source })
+  const list = useList<ClientRow>("/console/tenants", { search: q, status, planKey, onboarded, industryKey })
+  const catalog = useApi<Catalog>("/console/catalog")
+  const industries = useApi<{ data: { key: string; name: string }[] }>("/public/industries")
   const canAdd = canConsole("platform.tenant.create") && me?.console?.partner?.status !== "paused"
-  const team = audience === "team"
+  const filtered = !!(q || status || planKey || onboarded || industryKey)
+
+  function exportCsv() {
+    downloadCsv("clients.csv", [
+      ["Business", "Industry", "Owner", "Mobile", "Email", "Status", "Plan", "Cycle", "Modules", "Users", "User limit", "Per month (₹)", "Onboarded by", "Created", "Last active"],
+      ...list.rows.map((c) => [
+        c.name, industryLabel(c.industryKey), c.owner?.name ?? "", c.owner?.mobile ?? "", c.owner?.email ?? "", c.progress && !c.progress.loggedIn ? "Not logged in" : c.status,
+        planText(c), c.cycle ?? "", c.modules.map((k) => MODULE_SHORT[k] ?? k).join(" "), c.activeUsers, c.userLimit ?? "", c.mrrPaise ? c.mrrPaise / 100 : "",
+        c.onboardedBy ? [c.onboardedBy.kind, c.onboardedBy.name].filter(Boolean).join(" · ") : "", c.createdAt.slice(0, 10), c.progress?.lastActiveAt?.slice(0, 10) ?? "",
+      ]),
+    ])
+  }
 
   return (
     <Page
-      title={audience === "vendor" ? "My clients" : "Clients"}
-      subtitle={audience === "partner" ? "Businesses you look after. You are billed for them every month." : audience === "vendor" ? "Businesses you brought to AHEAD." : "Every business on AHEAD. Account and plan details only — their business data stays private."}
+      title={audience === "vendor" || me?.console?.role.key === "console_sales" ? "My clients" : "Clients"}
+      subtitle={audience === "partner" ? "Businesses you look after. You are billed for them every month." : audience === "vendor" || me?.console?.role.key === "console_sales" ? "Businesses you brought to AHEAD." : "Every business AHEAD bills directly. Partner clients are under Partners."}
       actions={
-        canAdd && (
-          <Link href="/console/clients/new" className={buttonVariants()}>
-            <Plus /> Add client
-          </Link>
-        )
+        <>
+          {team && list.rows.length > 0 && (
+            <Button variant="outline" onClick={exportCsv}>
+              <Download /> Export
+            </Button>
+          )}
+          {canAdd && (
+            <Link href={`${base}/clients/new`} className={buttonVariants()}>
+              <Plus /> Add client
+            </Link>
+          )}
+        </>
       }
     >
       <div className="flex flex-col gap-3">
@@ -73,17 +140,26 @@ function ClientsList() {
           ))}
         </div>
         <div className="flex flex-wrap gap-2">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search by business name or GSTIN" className="min-w-60 flex-1" />
+          <SearchInput value={search} onChange={setSearch} placeholder="Search business, owner, mobile or GSTIN" className="min-w-60 flex-1" />
+          <NativeSelect className="w-40" value={planKey} onChange={(e) => setPlanKey(e.target.value)} aria-label="Plan">
+            <option value="">Any plan</option>
+            {catalog.data?.plans.map((p) => (
+              <option key={p.key} value={p.key}>{p.name}</option>
+            ))}
+          </NativeSelect>
           {team && (
-            <NativeSelect className="w-52" value={source} onChange={(e) => setSource(e.target.value)} aria-label="Brought in by">
-              <option value="">Brought in by anyone</option>
-              {(Object.keys(SOURCE_LABEL) as ClientRow["source"][]).map((s) => (
-                <option key={s} value={s}>
-                  {SOURCE_LABEL[s]}
-                </option>
+            <NativeSelect className="w-48" value={onboarded} onChange={(e) => setOnboarded(e.target.value)} aria-label="Onboarded by">
+              {ONBOARDED_FILTER.map(([k, label]) => (
+                <option key={k} value={k}>{label}</option>
               ))}
             </NativeSelect>
           )}
+          <NativeSelect className="w-44" value={industryKey} onChange={(e) => setIndustryKey(e.target.value)} aria-label="Industry">
+            <option value="">Any industry</option>
+            {industries.data?.data.map((i) => (
+              <option key={i.key} value={i.key}>{i.name}</option>
+            ))}
+          </NativeSelect>
         </div>
       </div>
 
@@ -97,11 +173,11 @@ function ClientsList() {
         ) : !list.rows.length ? (
           <Empty
             icon={Building2}
-            title={q || status || source ? "No clients match" : "No clients yet"}
-            text={q || status || source ? "Try another search or status." : "Clients you add, or who sign up through you, appear here."}
+            title={filtered ? "No clients match" : "No clients yet"}
+            text={filtered ? "Try another search or filter." : "Clients you add, or who sign up through you, appear here."}
             action={
-              !q && !status && canAdd && (
-                <Link href="/console/clients/new" className={buttonVariants({ size: "sm" })}>
+              !filtered && canAdd && (
+                <Link href={`${base}/clients/new`} className={buttonVariants({ size: "sm" })}>
                   <Plus /> Add client
                 </Link>
               )
@@ -111,51 +187,53 @@ function ClientsList() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b text-left text-xs font-medium whitespace-nowrap text-muted-foreground">
+                <tr className="border-b text-left text-xs whitespace-nowrap text-muted-foreground">
                   <th className="px-5 py-3 font-medium">Business</th>
+                  <th className="px-3 py-3 font-medium">Owner</th>
                   <th className="px-3 py-3 font-medium">Status</th>
                   <th className="px-3 py-3 font-medium">Plan</th>
-                  {team && <th className="px-3 py-3 font-medium">Brought in by</th>}
-                  {team && <th className="px-3 py-3 font-medium">Next step</th>}
-                  {!team && <th className="px-5 py-3 font-medium">Joined</th>}
+                  <th className="px-3 py-3 font-medium">Modules</th>
+                  <th className="px-3 py-3 font-medium">Users</th>
+                  {audience !== "partner" && <th className="px-3 py-3 text-right font-medium">Per month</th>}
+                  <th className="px-3 py-3 font-medium">Next date</th>
+                  {team && <th className="px-3 py-3 font-medium">Onboarded by</th>}
+                  <th className="px-5 py-3 font-medium">Last active</th>
                 </tr>
               </thead>
               <tbody>
                 {list.rows.map((c) => (
-                  <tr key={c.id} onClick={() => router.push(`/console/clients/${c.id}`)} className="cursor-pointer border-b last:border-0 hover:bg-muted/50">
-                    <td className="px-5 py-3.5">
-                      <Link href={`/console/clients/${c.id}`} className="font-medium whitespace-nowrap hover:underline" onClick={(e) => e.stopPropagation()}>
+                  <tr key={c.id} onClick={() => router.push(`${base}/clients/${c.id}`)} className="cursor-pointer border-b align-top last:border-0 hover:bg-muted/50">
+                    <td className="px-5 py-3">
+                      <Link href={`${base}/clients/${c.id}`} className="font-medium whitespace-nowrap hover:underline" onClick={(e) => e.stopPropagation()}>
                         {c.name}
                       </Link>
                       <div className="text-[13px] text-muted-foreground">{industryLabel(c.industryKey)}</div>
                     </td>
-                    <td className="px-3 py-3.5">
-                      <div className="flex items-center gap-1.5">
-                        <ClientStatus status={c.status} suffix={statusSuffix(c)} partnerBilled={!!c.partner} />
-                        {c.health && c.health.flag !== "good" && (
-                          <span title={c.health.label} className="text-amber-600">
-                            <AlertTriangle className="size-4" aria-label={c.health.label} />
-                          </span>
-                        )}
-                      </div>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      {c.owner?.name ?? "—"}
+                      <div className="text-[13px] text-muted-foreground tabular-nums">{c.owner?.mobile.replace(/^\+91/, "") ?? ""}</div>
                     </td>
-                    <td className="px-3 py-3.5 whitespace-nowrap">{c.status === "free" ? "Free" : c.plan ?? "—"}</td>
-                    {team && <td className="px-3 py-3.5 whitespace-nowrap text-muted-foreground">{c.partner ? `${c.partner} (partner)` : c.acquiredBy ?? SOURCE_LABEL[c.source]}</td>}
+                    <td className="px-3 py-3">
+                      <ClientStateChip status={c.status} progress={c.progress} trialEndsAt={c.trialEndsAt} partnerBilled={!!c.partner} />
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      {planText(c)}
+                      {c.status !== "trialing" && c.status !== "free" && c.cycle && <div className="text-[13px] text-muted-foreground">{c.cycle === "yearly" ? "Yearly" : "Monthly"}</div>}
+                    </td>
+                    <td className="px-3 py-3">
+                      <Modules keys={c.modules} />
+                    </td>
+                    <td className="px-3 py-3">
+                      <Users used={c.activeUsers} limit={c.userLimit} />
+                    </td>
+                    {audience !== "partner" && <td className="px-3 py-3 text-right whitespace-nowrap tabular-nums">{c.mrrPaise ? money(c.mrrPaise) : "—"}</td>}
+                    <td className="px-3 py-3 whitespace-nowrap text-muted-foreground">{nextDate(c)}</td>
                     {team && (
-                      <td className="px-3 py-3.5">
-                        {c.next ? (
-                          <>
-                            <div className="max-w-56 truncate">{c.next.title}</div>
-                            <div className={cn("text-[13px]", new Date(c.next.dueAt) < new Date() ? "font-medium text-red-700 dark:text-red-400" : "text-muted-foreground")}>
-                              {new Date(c.next.dueAt) < new Date() ? "Overdue" : relDays(c.next.dueAt)}
-                            </div>
-                          </>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
+                      <td className="px-3 py-3">
+                        <OnboardedChip by={c.onboardedBy} />
                       </td>
                     )}
-                    {!team && <td className="px-5 py-3.5 text-muted-foreground">{formatDate(c.createdAt)}</td>}
+                    <td className="px-5 py-3 whitespace-nowrap text-muted-foreground">{c.progress?.lastActiveAt ? ago(c.progress.lastActiveAt) : "Never"}</td>
                   </tr>
                 ))}
               </tbody>

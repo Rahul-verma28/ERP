@@ -23,7 +23,7 @@ describe('subscription state machine (LLD §6.2)', () => {
 });
 
 describe('entitlement resolver (LLD §6.3)', () => {
-  const growth = new Set(PLANS.find((p) => p.key === 'growth')!.fullModules);
+  const growth = new Set(PLANS.find((p) => p.key === 'professional')!.fullModules);
   const freeTier = new Set(MODULES.filter((m) => m.freeTier).map((m) => m.key));
   const free = PLANS.find((p) => p.key === 'free')!.limits;
 
@@ -49,10 +49,10 @@ describe('entitlement resolver (LLD §6.3)', () => {
   });
 
   it('uses trial limits while trialing and Free limits after', () => {
-    const growthLimits = PLANS.find((p) => p.key === 'growth')!.limits;
+    const growthLimits = PLANS.find((p) => p.key === 'professional')!.limits;
     const defaults = { trial: TRIAL_LIMITS, free };
     expect(resolveLimits('trialing', growthLimits, defaults)).toEqual(TRIAL_LIMITS);
-    expect(resolveLimits('free', growthLimits, defaults).users).toBe(3);
+    expect(resolveLimits('free', growthLimits, defaults).users).toBe(2);
     expect(resolveLimits('active', growthLimits, defaults)).toEqual(growthLimits);
   });
 

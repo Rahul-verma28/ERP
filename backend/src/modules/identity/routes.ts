@@ -20,6 +20,7 @@ import { BusinessSignup, signupToTenant } from '../tenancy/workspace';
 import { referralAcquisition } from '../console/referral';
 import { REFRESH_COOKIE, clearRefreshCookie, rotateSession, signAccessToken, signPurposeToken, startSession, verifyPurposeToken } from './tokens';
 import { buildMe, checkPassword, completeLogin, sendEmailVerification } from './service';
+import { linkInfo, usableLink, useLink } from './accessLinks';
 
 const router = Router();
 
@@ -224,6 +225,45 @@ router.post(
       await applyNewPassword(p.sub, req.body.password);
       await audit({ tenantId: null, actorId: p.sub, action: 'auth.password_expired_change', ip: req.ip });
       return afterFirstFactor(req, res, p.sub, `${p.method}+renewed`);
+    });
+    res.json(out);
+  },
+);
+
+// ── Login links (Console v3): set up your own login from the link someone sent you ──
+
+const LinkParam = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{10,64}$/, 'Not a valid link') });
+
+router.get('/start/:token', publicRoute, validate(LinkParam, 'params'), async (req, res) => {
+  res.json(await withPlatform(() => linkInfo(req.params.token as string)));
+});
+
+router.post('/start/:token/otp', publicRoute, otpLimiter, validate(LinkParam, 'params'), async (req, res) => {
+  const out = await withPlatform(async () => {
+    const link = await usableLink(req.params.token as string);
+    return sendOtp(link.user.mobile, 'invite');
+  });
+  res.json({ sent: true, ...out });
+});
+
+router.post(
+  '/start/:token',
+  publicRoute,
+  loginLimiter,
+  validate(LinkParam, 'params'),
+  validate(z.object({ code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code'), password: z.string().max(128).optional() })),
+  async (req, res) => {
+    const out = await withPlatform(async () => {
+      const link = await usableLink(req.params.token as string);
+      if (!link.user.passwordHash && !req.body.password) throw new AppError('VALIDATION_FAILED', 'Choose a password.', { fields: { password: 'Choose a password' } });
+      await consumeOtp(link.user.mobile, 'invite', req.body.code);
+      if (!link.user.passwordHash) await applyNewPassword(link.userId, req.body.password);
+      await useLink(link.id, link.userId);
+      await audit({ tenantId: link.tenantId, actorId: link.userId, action: 'auth.access_link_used', entity: 'access_link', entityId: link.id, ip: req.ip });
+      // An account that already uses two-step signs in the normal way
+      const user = await db().user.findUniqueOrThrow({ where: { id: link.userId }, select: { mfaEnabled: true } });
+      if (user.mfaEnabled) return { signInRequired: true };
+      return completeLogin(req, res, link.userId, 'access_link', link.kind === 'console_member' ? { console: true } : { tenantId: link.tenantId });
     });
     res.json(out);
   },

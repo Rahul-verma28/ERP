@@ -1,16 +1,17 @@
 // Adds (or updates, or deactivates) a member of the AHEAD team in the Console.
-// Used to create the first Super Admin; after that, Console users are managed from the Console (Step 3).
+// Used to create the first Admin; after that, Console users are managed from the Console (Step 3).
 //
 //   npm run console:member -- --email you@aheaderp.in --role super_admin
-//   npm run console:member -- --email new@aheaderp.in --name "New Person" --mobile +919800000000 --role console_sales_executive --reports-to manager@aheaderp.in
+//   npm run console:member -- --email new@aheaderp.in --name "New Person" --mobile +919800000000 --role console_sales
 //   npm run console:member -- --email old@aheaderp.in --deactivate
 //
-// A new user is created without a password: they sign in with mobile OTP or use "Forgot password".
+// A person without a password gets a login link (printed here and sent by SMS/email) to set their own.
 import 'dotenv/config';
 import { prisma, withPlatform, db } from '../src/kernel/db';
 import { normaliseEmail, normaliseMobile } from '../src/kernel/crypto';
 import { audit } from '../src/modules/audit/service';
 import { ROLES } from '../src/contracts/roles';
+import { sendAccessLink } from '../src/modules/identity/accessLinks';
 
 const CONSOLE_ROLES = ROLES.filter((r) => r.layer === 'platform').map((r) => r.key);
 
@@ -40,7 +41,7 @@ async function main() {
       const mobile = arg('mobile') ? normaliseMobile(arg('mobile')!) : fail(hint);
       if (await tx.user.findUnique({ where: { mobile } })) fail(`Mobile ${mobile} already belongs to another user`);
       user = await tx.user.create({ data: { name, email, mobile, passwordHash: null } });
-      console.log(`• created user ${email} (no password: sign in with mobile OTP or "Forgot password")`);
+      console.log(`• created user ${email}`);
     }
 
     const existing = await tx.platformMember.findUnique({ where: { userId: user.id } });
@@ -68,6 +69,10 @@ async function main() {
       : await tx.platformMember.create({ data: { userId: user.id, ...data } });
     await audit({ tenantId: null, actorId: null, action: existing ? 'console.member_updated' : 'console.member_added', entity: 'platform_member', entityId: member.id, after: { email, role: roleKey, reportsTo } });
     console.log(`✔ ${email} is a Console ${role.name}${reportsTo ? ` reporting to ${arg('reports-to')}` : ''}`);
+    if (!user.passwordHash) {
+      const link = await sendAccessLink({ kind: 'console_member', userId: user.id, createdBy: null });
+      console.log(`• login link (7 days): ${link.url}`);
+    }
   }, { kind: 'platform' }, { timeoutMs: 60_000 });
 }
 

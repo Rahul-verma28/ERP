@@ -6,9 +6,9 @@ import { normaliseEmail, normaliseMobile } from '../../kernel/crypto';
 import { optionalText, zEmail, zGstin, zMobileIN, zPersonName, zStateCode } from '../../kernel/zodRules';
 import { gstinStateMismatch } from '../../contracts/validation';
 import { audit } from '../audit/service';
-import { sendMessage } from '../notifications/service';
 import { getSetting } from '../settings/service';
 import { createTenant } from '../tenancy/createTenant';
+import { sendAccessLink } from '../identity/accessLinks';
 import { transition } from '../subscription/stateMachine';
 import { persistEntitlements } from '../subscription/entitlements';
 import { addMember } from './members';
@@ -93,23 +93,16 @@ export async function partnerDetail(id: string) {
   return { id: p.id, name: p.name, contactName: p.contactName, email: p.email, mobile: p.mobile, gstin: p.gstin, stateCode: p.stateCode, discountPercent: p.discountBp / 100, status: p.status, createdAt: p.createdAt, people, bill };
 }
 
-/** A new partner and its first admin, who signs in with mobile OTP. */
+/** A new partner and its owner, who gets a login link to the partner portal. */
 export async function createPartner(ctx: ConsoleCtx, input: z.infer<typeof PartnerInput>) {
   const tx = db();
   if (await tx.partner.findFirst({ where: { name: { equals: input.name, mode: 'insensitive' } } })) throw new AppError('CONFLICT', 'A partner with this name already exists.', { fields: { name: 'Already a partner' } });
   const partner = await tx.partner.create({
     data: { name: input.name, contactName: input.contactName, email: normaliseEmail(input.email), mobile: normaliseMobile(input.mobile), gstin: input.gstin?.toUpperCase() ?? null, stateCode: input.stateCode ?? null, discountBp: Math.round(input.discountPercent * 100), createdBy: ctx.userId },
   });
-  await addMember(ctx, { email: input.email, name: input.contactName, mobile: input.mobile, roleKey: 'partner_admin' }, { partnerId: partner.id });
-  await sendMessage({
-    channel: 'email',
-    to: normaliseEmail(input.email),
-    template: 'partner.welcome',
-    subject: `${partner.name} is now an AHEAD partner`,
-    text: `Hi ${input.contactName}, your AHEAD partner panel is ready. Sign in at /login with your mobile (OTP) to add your clients.`,
-  });
+  const owner = await addMember(ctx, { email: input.email, name: input.contactName, mobile: input.mobile, roleKey: 'partner_admin' }, { partnerId: partner.id });
   await audit({ tenantId: null, action: 'console.partner_created', entity: 'partner', entityId: partner.id, after: { name: partner.name, discountBp: partner.discountBp } });
-  return { id: partner.id };
+  return { id: partner.id, loginLink: owner.loginLink };
 }
 
 export async function updatePartner(id: string, patch: z.infer<typeof PartnerPatch>) {
@@ -172,15 +165,9 @@ export async function createPartnerClient(ctx: ConsoleCtx, input: z.infer<typeof
   // No AHEAD period: the partner's monthly bill covers it, so renewals and dunning never touch it
   await tx.subscription.update({ where: { tenantId: created.tenant.id }, data: { currentPeriodEnd: null } });
 
-  await sendMessage({
-    channel: 'email',
-    to: email,
-    template: 'onboarding.partner_client',
-    subject: `Your workspace for ${input.business.name} is ready`,
-    text: `Hi ${input.owner.name}, ${partner.name} has set up your business software. Sign in at /login with your mobile ${mobile} (OTP).`,
-  });
+  const loginLink = await sendAccessLink({ kind: 'client_owner', userId: created.user.id, tenantId: created.tenant.id, createdBy: ctx.userId, extra: `${partner.name} has set up your business software.` });
   await audit({ tenantId: null, action: 'console.partner_client_created', entity: 'tenant', entityId: created.tenant.id, after: { partnerId: partner.id, plan: plan.key, cycle: input.cycle } });
-  return { tenantId: created.tenant.id };
+  return { tenantId: created.tenant.id, loginLink, owner: { name: created.user.name, mobile: created.user.mobile, email: created.user.email } };
 }
 
 /** A partner moves its client to another plan; it shows on the next monthly bill. */

@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { toast } from "sonner"
 import { Handshake, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -14,6 +13,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { GST_STATES, formatNumber } from "@/lib/format"
 import type { PartnerRow } from "@/lib/console"
+import { LoginLinkBox, type LoginLink } from "@/components/console/login-link"
 
 // Partners: resellers who bring and look after their own clients. AHEAD bills each partner
 // monthly for its live clients at the list price minus the partner's discount.
@@ -23,27 +23,44 @@ function AddPartnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const [form, setForm] = React.useState({ name: "", contactName: "", email: "", mobile: "", gstin: "", stateCode: "", discountPercent: "20" })
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [busy, setBusy] = React.useState(false)
+  const [added, setAdded] = React.useState<{ id: string; loginLink: LoginLink } | null>(null)
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value })
   async function save(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     setErrors({})
     try {
-      const r = await api.post<{ id: string }>("/console/partners", { ...form, gstin: form.gstin || null, stateCode: form.stateCode || null, discountPercent: Number(form.discountPercent) || 0 })
-      toast.success(`${form.name} added — ${form.contactName} can sign in with their mobile`)
-      router.push(`/console/partners/${r.id}`)
+      const r = await api.post<{ id: string; loginLink: LoginLink }>("/console/partners", { ...form, gstin: form.gstin || null, stateCode: form.stateCode || null, discountPercent: Number(form.discountPercent) || 0 })
+      setAdded(r)
+      setBusy(false)
     } catch (err) {
       setErrors(err instanceof ApiError ? { ...err.fields, form: errorMessage(err) } : { form: errorMessage(err) })
       setBusy(false)
     }
   }
+  if (added)
+    return (
+      <Dialog open={open} onOpenChange={(o) => !o && router.push(`/console/partners/${added.id}`)}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{form.name} is a partner</DialogTitle>
+            <DialogDescription>We sent {form.contactName} a login link to the partner portal by SMS and email. They set their own password there.</DialogDescription>
+          </DialogHeader>
+          <LoginLinkBox link={added.loginLink} mobile={form.mobile} message={`Hi ${form.contactName}, set up your AHEAD partner portal login here:`} />
+          <DialogFooter>
+            <Button type="button" onClick={() => router.push(`/console/partners/${added.id}`)}>Open partner</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
         <form onSubmit={save} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>Add a partner</DialogTitle>
-            <DialogDescription>The contact person becomes the partner&apos;s admin and gets their own panel to add clients.</DialogDescription>
+            <DialogDescription>The contact person becomes the partner owner and gets a login link to their own partner portal.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Partner name" required error={errors.name} className="sm:col-span-2">

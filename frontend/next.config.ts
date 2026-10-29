@@ -7,7 +7,7 @@ const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url))
 const BACKEND_URL = process.env.BACKEND_URL ?? "http://localhost:5000"
 
 // Signed-in areas and one-off links must never show up in search results
-const NOINDEX = ["/app", "/app/:path*", "/console", "/console/:path*", "/d/:path*", "/pay/:path*", "/print/:path*", "/invite/:path*", "/verify-email", "/forgot-password"]
+const NOINDEX = ["/app", "/app/:path*", "/console", "/console/:path*", "/partner", "/partner/:path*", "/start/:path*", "/d/:path*", "/pay/:path*", "/print/:path*", "/invite/:path*", "/verify-email", "/forgot-password"]
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,

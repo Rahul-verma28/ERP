@@ -11,7 +11,8 @@
     "db:generate": "prisma generate",
     "test": "vitest run",
     "db:migrate:tcp": "prisma migrate deploy",
-    "console:member": "tsx scripts/console-member.ts"
+    "console:member": "tsx scripts/console-member.ts",
+    "entitlements:recompute": "tsx scripts/recompute-entitlements.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",

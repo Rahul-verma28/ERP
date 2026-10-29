@@ -13,13 +13,14 @@ import { changeAcquisition } from '../tenancy/acquisition';
 import { consoleAccess } from './service';
 import { assertClientInScope, clientDetail, extendClient, listClients, vendorView } from './clients';
 import { catalogAdmin, createCoupon, endCoupon, setPrice, updatePlan } from './catalogAdmin';
-import { addMember, consoleRoles, listMembers, updateMember } from './members';
+import { addMember, consoleRoles, listMembers, resendMemberLink, updateMember } from './members';
+import { sendAccessLink } from '../identity/accessLinks';
 import { accountHealth, consoleHome, type Audience } from './insights';
 import { clientSummary, clientTimeline, clientUsers } from './client360';
 import { addNote, closeFollowup, createFollowup, createProspect, FollowupInput, listFollowups, listNotes, listProspects, NoteInput, ProspectInput, ProspectPatch, STAGES, updateProspect } from './sales';
 import { changePartnerClientPlan, createPartner, createPartnerClient, listPartners, partnerBill, partnerDetail, PartnerClientInput, PartnerInput, PartnerPatch, updatePartner } from './partners';
 import { myReferral } from './referral';
-import { approveOrder, cancelOrder, capturePayment, convertClient, createPaidClient, quote } from '../platformBilling/service';
+import { approveOrder, cancelOrder, capturePayment, convertClient, createClient, quote, welcomePercentFor } from '../platformBilling/service';
 import { invoiceDetail, listOrders, orderDetail } from '../platformBilling/orders';
 import { issueCreditNote, sendPaymentLink } from '../platformBilling/online';
 
@@ -43,7 +44,8 @@ router.get('/home', requirePlatformPermission('platform.dashboard.view'), consol
   const access = await consoleAccess(ctx(req).userId);
   const p = (access?.permissions ?? {}) as Record<string, string>;
   res.json(await consoleHome(ctx(req), (access?.audience ?? 'team') as Audience, {
-    discount: !!p['platform.discount.approve'], income: !!p['platform.revenue.view'], payments: !!p['platform.payment.view'], leads: !!p['platform.prospect.view'],
+    discount: !!p['platform.discount.approve'], income: !!p['platform.revenue.view'], payments: !!p['platform.payment.view'], leads: false, // Console v3: Leads is hidden for now
+    referral: ['vendor', 'console_sales'].includes(access?.role.key ?? ''),
   }));
 }));
 
@@ -58,6 +60,11 @@ const ClientQuery = ListQuery.extend({
   status: z.enum(['incomplete', 'trialing', 'active', 'past_due', 'free', 'closed', 'purged']).optional(),
   source: z.enum(['direct', 'vendor', 'sales', 'partner']).optional(),
   ownerId: z.string().uuid().optional(),
+  planKey: z.string().max(40).optional(),
+  industryKey: z.string().max(40).optional(),
+  onboarded: z.enum(['website', 'team', 'sales', 'vendor', 'partner']).optional(),
+  partners: z.enum(['exclude', 'include', 'only']).optional(),
+  partnerId: z.string().uuid().optional(),
 });
 
 router.get('/tenants', requirePlatformPermission('platform.tenant.view'), validate(ClientQuery, 'query'), consoleTx(async (req, res) => {
@@ -70,6 +77,13 @@ router.get('/tenants/:id', requirePlatformPermission('platform.tenant.view'), va
 }));
 
 const inScope = async (req: Request) => assertClientInScope(ctx(req), String(req.params.id));
+
+// Console v3: send the owner a fresh login link (the old one stops working)
+router.post('/tenants/:id/login-link', requirePlatformPermission('platform.tenant.view'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  await inScope(req);
+  const tenant = await db().tenant.findUniqueOrThrow({ where: { id: String(req.params.id) }, select: { id: true, ownerUserId: true } });
+  res.json(await sendAccessLink({ kind: 'client_owner', userId: tenant.ownerUserId, tenantId: tenant.id, createdBy: ctx(req).userId }));
+}));
 
 router.get('/tenants/:id/summary', requirePlatformPermission('platform.tenant.view'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
   await inScope(req);
@@ -114,7 +128,7 @@ const AcquisitionBody = z.object({
 });
 
 router.patch('/tenants/:id/acquisition', requirePlatformPermission('platform.tenant.edit'), validate(IdParam, 'params'), validate(AcquisitionBody), consoleTx(async (req, res) => {
-  if (ctx(req).partnerId) throw new AppError('PERMISSION_DENIED', 'Only AHEAD changes who brought a client in.');
+  if ((await consoleAccess(ctx(req).userId))?.role.key !== 'super_admin') throw new AppError('PERMISSION_DENIED', 'Only an Admin changes who onboarded a client.');
   const id = String(req.params.id);
   await assertClientInScope(ctx(req), id);
   const b = req.body as z.infer<typeof AcquisitionBody>;
@@ -140,10 +154,11 @@ const OrderInput = z.object({
   couponCode: z.string().trim().max(20).nullish(),
 });
 
-router.post('/quote', requirePlatformPermission('platform.tenant.create'), validate(OrderInput.extend({ stateCode: zStateCode })), consoleTx(async (req, res) => {
-  const { stateCode, ...order } = req.body as z.infer<typeof OrderInput> & { stateCode: string };
+router.post('/quote', requirePlatformPermission('platform.tenant.create'), validate(OrderInput.extend({ stateCode: zStateCode, tenantId: z.string().uuid().optional() })), consoleTx(async (req, res) => {
+  const { stateCode, tenantId, ...order } = req.body as z.infer<typeof OrderInput> & { stateCode: string; tenantId?: string };
   const role = await db().role.findUniqueOrThrow({ where: { id: ctx(req).roleId }, select: { key: true } });
-  res.json(await quote({ ...order, billTo: { name: '', stateCode } }, { actorRoleKey: role.key }));
+  if (tenantId) await assertClientInScope(ctx(req), tenantId);
+  res.json(await quote({ ...order, billTo: { name: '', stateCode } }, { actorRoleKey: role.key, welcomePercent: tenantId ? await welcomePercentFor(tenantId) : 0 }));
 }));
 
 const NewClientBody = z.object({
@@ -155,7 +170,8 @@ const NewClientBody = z.object({
     address: z.string().trim().max(300).nullish(),
   }),
   owner: z.object({ name: zPersonName, email: zEmail, mobile: zMobileIN }),
-  order: OrderInput,
+  start: z.enum(['trial', 'paid']).default('paid'),
+  order: OrderInput.optional(),
 }).superRefine((b, c) => {
   const mismatch = gstinStateMismatch(b.business.gstin, b.business.stateCode);
   if (mismatch) c.addIssue({ code: z.ZodIssueCode.custom, path: ['business', 'gstin'], message: mismatch });
@@ -163,7 +179,7 @@ const NewClientBody = z.object({
 
 router.post('/clients', requirePlatformPermission('platform.tenant.create'), validate(NewClientBody), consoleTx(async (req, res) => {
   if (ctx(req).partnerId) throw new AppError('PERMISSION_DENIED', 'Partners add clients from their own panel.');
-  res.status(201).json(await createPaidClient(ctx(req), req.body));
+  res.status(201).json(await createClient(ctx(req), req.body));
 }));
 
 router.post('/partner-clients', requirePlatformPermission('platform.tenant.create'), validate(PartnerClientInput), consoleTx(async (req, res) => {
@@ -287,6 +303,10 @@ const MemberBody = z.object({
 
 router.post('/members', requirePlatformPermission('platform.member.create'), validate(MemberBody), consoleTx(async (req, res) => {
   res.status(201).json(await addMember(ctx(req), req.body));
+}));
+
+router.post('/members/:id/login-link', requirePlatformPermission('platform.member.create'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  res.json(await resendMemberLink(ctx(req), String(req.params.id)));
 }));
 
 const MemberPatch = z.object({

@@ -16,7 +16,7 @@ import { Pencil } from "lucide-react"
 
 type Announcement = { text: string; tone: "info" | "warning"; until: string | null } | null
 
-const ROLE_LABEL: Record<string, string> = { console_sales_executive: "Sales Executive", console_sales_manager: "Sales Manager", vendor: "Vendor" }
+const ROLE_LABEL: Record<string, string> = { console_staff: "Staff", console_sales: "Sales", vendor: "Vendor" }
 const LIMITS: { key: keyof PlanLimits; label: string }[] = [
   { key: "users", label: "Users" },
   { key: "branches", label: "Branches" },
@@ -123,7 +123,7 @@ export default function ConsoleSettingsPage() {
   const common = { rows, canEdit, onSaved: settings.reload }
 
   return (
-    <Page title="Rules & billing details" subtitle="Free trial, discount limits and the details printed on AHEAD's invoices. Changes apply to everyone within a minute." back={{ href: "/console/settings", label: "Settings" }}>
+    <Page title="Company details & rules" subtitle="Free trial, discount limits and the details printed on AHEAD's invoices. Changes apply to everyone within a minute." back={{ href: "/console/settings", label: "Settings" }}>
       <div className="grid gap-6 lg:grid-cols-2">
         <SettingCard key={`trial-${v}`} title="Free trial" description="How long a new signup can try AHEAD, and the grace period after a missed renewal" keys={["trial.days", "trial.plan_key", "grace.days_monthly", "grace.days_yearly"]} {...common}>
           {(d, set) => (
@@ -172,7 +172,7 @@ export default function ConsoleSettingsPage() {
           }}
         </SettingCard>
 
-        <SettingCard key={`discount-${v}`} title="Discount limits" description="The highest discount each person can give. Anything above waits for a Super Admin's approval." keys={["sales.discount_limits"]} {...common}>
+        <SettingCard key={`discount-${v}`} title="Discount limits" description="The highest discount each person can give. Anything above waits for an Admin's approval." keys={["sales.discount_limits"]} {...common}>
           {(d, set) => {
             const limits = d["sales.discount_limits"] as Record<string, number>
             return (
@@ -185,6 +185,14 @@ export default function ConsoleSettingsPage() {
               </div>
             )
           }}
+        </SettingCard>
+
+        <SettingCard key={`welcome-${v}`} title="Referral welcome discount" description="Off the first payment of a client who signed up with a vendor's or salesperson's link or code. It's used only when the order has no other discount or coupon." keys={["referral.welcome_discount_percent"]} {...common}>
+          {(d, set) => (
+            <Field label="Welcome discount (%)" className="max-w-56">
+              <Input type="number" min={0} max={50} value={String(d["referral.welcome_discount_percent"] ?? 0)} onChange={(e) => set("referral.welcome_discount_percent", num(e.target.value))} />
+            </Field>
+          )}
         </SettingCard>
 
         <SettingCard key={`banner-${v}`} title="Announcement" description="One line shown at the top of every client's app — e.g. planned maintenance" keys={["announcement.banner"]} {...common}>

@@ -5,7 +5,7 @@ import { prisma, withTenant, db } from '../kernel/db';
 // Requires DATABASE_URL and at least two tenants (run the signup smoke test first).
 
 // Platform tables that carry tenant_id but are only reachable with platform privileges
-const PLATFORM_TABLES = ['trial_registry', 'console_prospects', 'console_followups', 'console_notes', 'user_sessions', 'sign_in_events', 'tenant_acquisitions', 'grace_periods', 'platform_orders', 'platform_payments', 'platform_invoices', 'platform_credit_notes'];
+const PLATFORM_TABLES = ['trial_registry', 'access_links', 'console_prospects', 'console_followups', 'console_notes', 'user_sessions', 'sign_in_events', 'tenant_acquisitions', 'grace_periods', 'platform_orders', 'platform_payments', 'platform_invoices', 'platform_credit_notes'];
 
 describe('row-level security', () => {
   afterAll(() => prisma.$disconnect());
@@ -53,7 +53,7 @@ describe('row-level security', () => {
   });
 
   it('acquisition records and platform settings are not readable by app_user', async () => {
-    for (const read of [(tx: typeof prisma) => tx.tenantAcquisition.findMany(), (tx: typeof prisma) => tx.configValue.findMany()]) {
+    for (const read of [(tx: typeof prisma) => tx.tenantAcquisition.findMany(), (tx: typeof prisma) => tx.configValue.findMany(), (tx: typeof prisma) => tx.accessLink.findMany()]) {
       await expect(
         prisma.$transaction(async (tx) => {
           await tx.$executeRawUnsafe('SET LOCAL ROLE app_user');

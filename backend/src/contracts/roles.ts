@@ -2,7 +2,7 @@ import type { PermissionScope, RoleLayer, RoleType } from '@prisma/client';
 import { PERMISSIONS } from './permissions';
 import type { ModuleKey } from './modules';
 
-// Predefined roles: 7 Console roles (design v2) + 2 partner roles (v2, unused) + 4 core + 17 module roles.
+// Predefined roles: 4 Console roles + 2 partner roles (Console v3) + 4 core + 17 module roles.
 // Grants use patterns: "crm.*", "crm.contact.*", "*.view", "billing.invoice.create".
 
 type Grant = [pattern: string, scope: PermissionScope];
@@ -30,18 +30,14 @@ const SENSITIVE_ALL = [
 ];
 
 export const ROLES: RoleDef[] = [
-  // ── Platform, partner & vendor (permissions for these layers arrive with the admin console) ──
-  // Console roles (design v2 §2)
-  { key: 'super_admin', name: 'Super Admin', layer: 'platform', roleType: 'admin', description: 'Everything in the Console: clients, plans, prices, settings, payments, Console users', requiredModules: [], isSystem: true, grants: [['platform.*', 'all']] },
-  { key: 'platform_ops', name: 'Operations / Support', layer: 'platform', roleType: 'user', description: 'Clients, onboarding help, trial extensions, leads and partners (view)', requiredModules: [], grants: [['platform.dashboard.view', 'all'], ['platform.tenant.*', 'all'], ['platform.grace.create', 'all'], ['platform.plan.view', 'all'], ['platform.setting.view', 'all'], ['platform.member.view', 'all'], ['platform.audit.view', 'all'], ['platform.prospect.*', 'all'], ['platform.note.*', 'all'], ['platform.partner.view', 'all']] },
-  { key: 'platform_support', name: 'Support Agent', layer: 'platform', roleType: 'user', description: 'Read client account and subscription status; internal notes', requiredModules: [], grants: [['platform.dashboard.view', 'all'], ['platform.tenant.view', 'all'], ['platform.note.*', 'all']] },
-  { key: 'finance_payout_admin', name: 'Finance', layer: 'platform', roleType: 'user', description: 'Payments, offline payments, AHEAD invoices, refunds, commission reports', requiredModules: [], grants: [['platform.dashboard.view', 'all'], ['platform.tenant.view', 'all'], ['platform.payment.*', 'all'], ['platform.plan.view', 'all'], ['platform.commission.view', 'all'], ['platform.audit.view', 'all'], ['platform.revenue.view', 'all'], ['platform.note.view', 'all']] },
-  { key: 'console_sales_manager', name: 'Sales Manager', layer: 'platform', roleType: 'salesperson', description: 'New clients, payment links and the pipeline of the whole sales team', requiredModules: [], grants: [['platform.dashboard.view', 'team'], ['platform.tenant.view', 'team'], ['platform.tenant.create', 'team'], ['platform.payment.view', 'team'], ['platform.commission.view', 'team'], ['platform.plan.view', 'all'], ['platform.member.view', 'team'], ['platform.revenue.view', 'team'], ['platform.prospect.*', 'team'], ['platform.note.*', 'team']] },
-  { key: 'console_sales_executive', name: 'Sales Executive', layer: 'platform', roleType: 'salesperson', description: 'New clients (within own discount limit) and payment links for own clients', requiredModules: [], grants: [['platform.dashboard.view', 'own'], ['platform.tenant.view', 'own'], ['platform.tenant.create', 'own'], ['platform.payment.view', 'own'], ['platform.commission.view', 'own'], ['platform.plan.view', 'all'], ['platform.revenue.view', 'own'], ['platform.prospect.*', 'own'], ['platform.note.*', 'own']] },
+  // ── Console v3: six roles across the AHEAD Console, the vendor panel and the partner portal ──
+  { key: 'super_admin', name: 'Admin', layer: 'platform', roleType: 'admin', description: 'Everything: clients, partners, payments, people, plans, prices, coupons and company details', requiredModules: [], isSystem: true, grants: [['platform.*', 'all']] },
+  { key: 'console_staff', name: 'Staff', layer: 'platform', roleType: 'user', description: 'All clients: add, change plan, extend, record payments; partners (view)', requiredModules: [], grants: [['platform.dashboard.view', 'all'], ['platform.tenant.*', 'all'], ['platform.grace.create', 'all'], ['platform.plan.view', 'all'], ['platform.payment.view', 'all'], ['platform.payment.create', 'all'], ['platform.revenue.view', 'all'], ['platform.note.*', 'all'], ['platform.partner.view', 'all']] },
+  { key: 'console_sales', name: 'Sales', layer: 'platform', roleType: 'salesperson', description: 'Own clients: add, change plan, extend trial; own referral link and code', requiredModules: [], grants: [['platform.dashboard.view', 'own'], ['platform.tenant.*', 'own'], ['platform.grace.create', 'own'], ['platform.plan.view', 'all'], ['platform.payment.view', 'own'], ['platform.note.*', 'own']] },
+  { key: 'vendor', name: 'Vendor', layer: 'platform', roleType: 'user', description: 'Own clients: add and send the login link; own referral link and code', requiredModules: [], grants: [['platform.dashboard.view', 'own'], ['platform.tenant.view', 'own'], ['platform.tenant.create', 'own'], ['platform.payment.view', 'own'], ['platform.plan.view', 'all']] },
   // Partner people are Console members linked to a partner: every client query is limited to that partner (scopedTenantFilter)
-  { key: 'partner_admin', name: 'Partner Admin', layer: 'partner', roleType: 'admin', description: "The partner's clients, their plans, the partner's team and the monthly bill from AHEAD", requiredModules: [], grants: [['platform.dashboard.view', 'all'], ['platform.tenant.*', 'all'], ['platform.plan.view', 'all'], ['platform.member.*', 'all'], ['platform.partner.view', 'all']] },
-  { key: 'partner_staff', name: 'Partner Staff', layer: 'partner', roleType: 'user', description: "Add and look after the partner's clients; no bill or team", requiredModules: [], grants: [['platform.dashboard.view', 'all'], ['platform.tenant.view', 'all'], ['platform.tenant.create', 'all'], ['platform.plan.view', 'all']] },
-  { key: 'vendor', name: 'Vendor', layer: 'platform', roleType: 'user', description: 'Own referral link and code; adds clients (within the vendor discount limit) and sees their plan, status and payments', requiredModules: [], grants: [['platform.dashboard.view', 'own'], ['platform.tenant.view', 'own'], ['platform.tenant.create', 'own'], ['platform.payment.view', 'own'], ['platform.plan.view', 'all'], ['platform.commission.view', 'own']] },
+  { key: 'partner_admin', name: 'Partner owner', layer: 'partner', roleType: 'admin', description: "The partner's clients and plans, the partner's team and the monthly bill from AHEAD", requiredModules: [], grants: [['platform.dashboard.view', 'all'], ['platform.tenant.*', 'all'], ['platform.plan.view', 'all'], ['platform.member.*', 'all'], ['platform.partner.view', 'all']] },
+  { key: 'partner_staff', name: 'Partner staff', layer: 'partner', roleType: 'user', description: "Add and look after the partner's clients; no bill or team", requiredModules: [], grants: [['platform.dashboard.view', 'all'], ['platform.tenant.view', 'all'], ['platform.tenant.create', 'all'], ['platform.plan.view', 'all']] },
 
   // ── Tenant core roles (always visible) ──
   {
@@ -183,6 +179,15 @@ const matches = (pattern: string, key: string) => {
   const k = key.split('.');
   if (p.length === 2 && p[0] === '*') return k[2] === p[1]; // "*.view"
   return p.every((part, i) => part === '*' || part === k[i]);
+};
+
+/** Console roles removed in Console v3 and the role their members move to (applied by the seed). */
+export const RETIRED_ROLES: Record<string, string> = {
+  platform_ops: 'console_staff',
+  platform_support: 'console_staff',
+  finance_payout_admin: 'console_staff',
+  console_sales_manager: 'console_sales',
+  console_sales_executive: 'console_sales',
 };
 
 /** Expand a role's grant patterns to concrete permission keys (most specific grant wins). */

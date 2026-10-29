@@ -1,8 +1,8 @@
 import type { ModuleKey } from './modules';
 import { MODULE_KEYS } from './modules';
 
-// Plans, limits and demo prices (Module Catalogue §13; prices are the client's demo pricing
-// in paise, excluding GST). Module sets per plan are a proposal for the client to finalise.
+// Plans, limits and prices in paise, excluding GST (Console v3 option A). These are first-install
+// defaults: plans and prices are edited in Console › Settings and live in the database.
 
 export interface PlanLimits {
   users: number;
@@ -15,50 +15,53 @@ export interface PlanLimits {
 }
 
 export interface PlanDef {
-  key: 'free' | 'starter' | 'growth' | 'business_pro' | 'enterprise';
+  key: 'free' | 'standard' | 'professional' | 'enterprise';
   name: string;
   tagline: string;
   limits: PlanLimits;
-  /** Modules unlocked at full tier. Free-tier modules not listed stay at basic tier. */
+  /** Modules the plan switches on. The Free plan's modules come from the modules' free-tier flag. */
   fullModules: ModuleKey[];
   monthlyPaise: number | null;
   yearlyPaise: number | null;
   isPublic: boolean;
 }
 
-const BASE_PAID: ModuleKey[] = ['crm', 'catalog', 'sales', 'billing', 'tasks', 'bookings', 'reports', 'finance', 'automation'];
+// Console v3 pricing (option A, approved 29 Oct 2026): Free + three plans, each a fixed set of
+// modules and users. The only extra is users. Every paid plan includes the Free modules, so a
+// client never sees a "basic" and a "full" version of the same module.
+export const FREE_MODULES: ModuleKey[] = ['crm', 'catalog', 'billing', 'tasks'];
+const STANDARD: ModuleKey[] = [...FREE_MODULES, 'sales', 'inventory', 'finance', 'bookings', 'reports'];
+const PROFESSIONAL: ModuleKey[] = [...STANDARD, 'hr', 'support', 'automation'];
 
 export const PLANS: PlanDef[] = [
   {
-    key: 'free', name: 'Free', tagline: 'Run the basics, free forever', isPublic: true,
-    limits: { users: 3, branches: 1, contacts: 1000, items: 500, invoicesPerMonth: 100, storageMb: 1024, aiCredits: 0 },
+    key: 'free', name: 'Free', tagline: 'CRM, products, billing and tasks — free forever', isPublic: true,
+    limits: { users: 2, branches: 1, contacts: 1000, items: 500, invoicesPerMonth: 100, storageMb: 1024, aiCredits: 0 },
     fullModules: [], monthlyPaise: 0, yearlyPaise: 0,
   },
   {
-    key: 'starter', name: 'Starter', tagline: 'Full core modules plus inventory', isPublic: true,
+    key: 'standard', name: 'Standard', tagline: 'Everything a small business runs on, with stock', isPublic: true,
     limits: { users: 5, branches: 1, contacts: 10000, items: 5000, invoicesPerMonth: null, storageMb: 5120, aiCredits: 0 },
-    fullModules: [...BASE_PAID, 'inventory'], monthlyPaise: 99900, yearlyPaise: 999000,
+    fullModules: STANDARD, monthlyPaise: 99900, yearlyPaise: 999000,
   },
   {
-    key: 'growth', name: 'Growth', tagline: 'For growing teams: HR, support and automation', isPublic: true,
-    limits: { users: 10, branches: 3, contacts: null, items: null, invoicesPerMonth: null, storageMb: 20480, aiCredits: 200 },
-    fullModules: [...BASE_PAID, 'inventory', 'hr', 'support'], monthlyPaise: 249900, yearlyPaise: 2499000,
+    key: 'professional', name: 'Professional', tagline: 'For growing teams: HR, customer service and automation', isPublic: true,
+    limits: { users: 15, branches: 3, contacts: null, items: null, invoicesPerMonth: null, storageMb: 20480, aiCredits: 0 },
+    fullModules: PROFESSIONAL, monthlyPaise: 249900, yearlyPaise: 2499000,
   },
   {
-    key: 'business_pro', name: 'Business Pro', tagline: 'Every module, AI and multi-location', isPublic: true,
-    limits: { users: 25, branches: 10, contacts: null, items: null, invoicesPerMonth: null, storageMb: 102400, aiCredits: 1000 },
-    fullModules: [...MODULE_KEYS], monthlyPaise: 599900, yearlyPaise: 5999000,
-  },
-  {
-    key: 'enterprise', name: 'Enterprise', tagline: 'Custom limits, SSO and dedicated support', isPublic: true,
+    key: 'enterprise', name: 'Enterprise', tagline: 'Any users and branches, every module including AI — quoted by AHEAD', isPublic: true,
     limits: { users: 50, branches: 50, contacts: null, items: null, invoicesPerMonth: null, storageMb: 512000, aiCredits: 5000 },
-    fullModules: [...MODULE_KEYS], monthlyPaise: 1500000, yearlyPaise: null,
+    fullModules: [...MODULE_KEYS], monthlyPaise: null, yearlyPaise: null,
   },
 ];
 
-/** Trial: all 12 modules at full tier, Growth-level users, small usage allowance (TRL-02) */
-export const TRIAL_LIMITS: PlanLimits = { users: 10, branches: 3, contacts: null, items: null, invoicesPerMonth: null, storageMb: 5120, aiCredits: 50 };
-export const TRIAL_PLAN_KEY = 'growth';
+/** Plans sold before Console v3: kept for the clients on them (until they renew), hidden from sale. */
+export const RETIRED_PLAN_KEYS = ['starter', 'growth', 'business_pro'];
+
+/** Trial: 14 days of Professional (TRL-02) */
+export const TRIAL_LIMITS: PlanLimits = { users: 15, branches: 3, contacts: null, items: null, invoicesPerMonth: null, storageMb: 5120, aiCredits: 0 };
+export const TRIAL_PLAN_KEY = 'professional';
 
 /** Module add-on prices (monthly, paise) from the catalogue */
 export const ADDON_MONTHLY_PAISE: Partial<Record<ModuleKey, number>> = {

@@ -3,13 +3,14 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Building2, CreditCard, Handshake, Home, LogOut, Menu, ReceiptText, Settings2, ShieldCheck, Target, UserRound, Users, X, type LucideIcon } from "lucide-react"
+import { Building2, CreditCard, Handshake, Home, Link2, LogOut, Menu, ReceiptText, Settings2, ShieldCheck, UserRound, Users, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/lib/auth"
 import { initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { useConsoleBase } from "@/lib/console-base"
 
 // The Console: one app, three panels. The AHEAD team runs everything; a vendor sees and adds
 // its own clients; a partner looks after its clients and its monthly bill. Each person sees
@@ -27,40 +28,42 @@ function useNav(): NavItem[] {
   const audience = me?.console?.audience ?? "team"
   if (audience === "partner") {
     return [
-      { href: "/console", label: "Home", icon: Home, show: true },
-      { href: "/console/clients", label: "Clients", icon: Building2, show: canConsole("platform.tenant.view") },
-      { href: "/console/billing", label: "Billing", icon: ReceiptText, show: canConsole("platform.partner.view") },
-      { href: "/console/team", label: "Team", icon: Users, show: canConsole("platform.member.view") },
+      { href: "/partner", label: "Home", icon: Home, show: true },
+      { href: "/partner/clients", label: "Clients", icon: Building2, show: canConsole("platform.tenant.view") },
+      { href: "/partner/team", label: "Team", icon: Users, show: canConsole("platform.member.view") },
+      { href: "/partner/billing", label: "Monthly bill", icon: ReceiptText, show: canConsole("platform.partner.view") },
     ]
   }
-  if (audience === "vendor") {
+  // Console v3: vendors and salespeople get the same small menu
+  if (audience === "vendor" || me?.console?.role.key === "console_sales") {
     return [
       { href: "/console", label: "Home", icon: Home, show: true },
       { href: "/console/clients", label: "My clients", icon: Building2, show: canConsole("platform.tenant.view") },
-      { href: "/console/payments", label: "Payments", icon: CreditCard, show: canConsole("platform.payment.view") },
+      { href: "/console/referral", label: "My link & code", icon: Link2, show: true },
     ]
   }
   return [
     { href: "/console", label: "Home", icon: Home, show: true },
     { href: "/console/clients", label: "Clients", icon: Building2, show: canConsole("platform.tenant.view") },
-    { href: "/console/leads", label: "Leads", icon: Target, show: canConsole("platform.prospect.view") },
-    { href: "/console/payments", label: "Payments", icon: CreditCard, show: canConsole("platform.payment.view") },
     { href: "/console/partners", label: "Partners", icon: Handshake, show: canConsole("platform.partner.view") },
-    { href: "/console/settings", label: "Settings", icon: Settings2, show: canConsole("platform.plan.view") || canConsole("platform.setting.view") || canConsole("platform.member.view") },
+    { href: "/console/payments", label: "Payments", icon: CreditCard, show: canConsole("platform.payment.view") },
+    { href: "/console/team", label: "People", icon: Users, show: canConsole("platform.member.view") },
+    { href: "/console/settings", label: "Settings", icon: Settings2, show: canConsole("platform.plan.edit") || canConsole("platform.setting.edit") },
   ]
 }
 
 function Brand() {
   const { me } = useAuth()
+  const base = useConsoleBase()
   const partner = me?.console?.partner
   return (
-    <Link href="/console" className="flex items-center gap-3 px-2 py-1">
+    <Link href={base} className="flex items-center gap-3 px-2 py-1">
       <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
         {partner ? <span className="text-xs font-bold">{initials(partner.name)}</span> : <ShieldCheck className="size-4.5" />}
       </span>
       <span className="min-w-0">
         <span className="block truncate text-[15px] font-semibold">{partner ? partner.name : "AHEAD Console"}</span>
-        <span className="block truncate text-xs text-muted-foreground">{partner ? "Partner panel" : me?.console?.audience === "vendor" ? "Vendor panel" : me?.console?.role.name}</span>
+        <span className="block truncate text-xs text-muted-foreground">{partner ? `Partner portal · ${me?.console?.role.name}` : me?.console?.audience === "vendor" ? "Vendor panel" : me?.console?.role.name}</span>
       </span>
     </Link>
   )
@@ -68,8 +71,9 @@ function Brand() {
 
 function Nav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
+  const base = useConsoleBase()
   const items = useNav().filter((i) => i.show)
-  const active = (href: string) => (href === "/console" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`))
+  const active = (href: string) => (href === base ? pathname === href : pathname === href || pathname.startsWith(`${href}/`))
   return (
     <nav className="flex flex-col gap-1" aria-label="Console">
       {items.map((item) => (
@@ -93,6 +97,7 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
 function AccountMenu() {
   const { me, signOut } = useAuth()
   const router = useRouter()
+  const base = useConsoleBase()
   if (!me) return null
   return (
     <DropdownMenu>
@@ -113,10 +118,10 @@ function AccountMenu() {
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push("/console/account")}>
+        <DropdownMenuItem onClick={() => router.push(`${base}/account`)}>
           <UserRound className="size-4" /> My account
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/console/account/security")}>
+        <DropdownMenuItem onClick={() => router.push(`${base}/account/security`)}>
           <ShieldCheck className="size-4" /> Password &amp; two-step
         </DropdownMenuItem>
         {me.memberships.length > 0 && (
@@ -153,9 +158,11 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const { me } = useAuth()
+  // The partner portal is a separate place with its own colour (globals.css [data-portal="partner"])
+  const portal = useConsoleBase() === "/partner" ? "partner" : "console"
   return (
-    <div className="flex min-h-svh bg-background">
-      <aside className="sticky top-0 hidden h-svh w-64 shrink-0 border-r bg-card lg:block print:hidden">
+    <div className="flex min-h-svh bg-background" data-portal={portal}>
+      <aside className={cn("sticky top-0 hidden h-svh w-64 shrink-0 border-r lg:block print:hidden", portal === "partner" ? "bg-accent/50" : "bg-card")}>
         <SidebarBody />
       </aside>
 

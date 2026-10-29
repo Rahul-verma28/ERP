@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { prisma, db, withPlatform } from '../kernel/db';
 import { cache } from '../kernel/cache';
 import type { ConsoleCtx } from '../kernel/context';
-import { capturePayment, createPaidClient } from '../modules/platformBilling/service';
+import { capturePayment, createClient } from '../modules/platformBilling/service';
 import { handleWebhook, issueCreditNote, sendPaymentLink } from '../modules/platformBilling/online';
 import { parseRazorpay, testWebhook, verifySignature } from '../modules/platformBilling/gateway';
 import { runDunning, runLapseUnpaid, runRenewals, runTrialReminders } from '../modules/platformBilling/jobs';
@@ -42,9 +42,10 @@ async function superAdmin(): Promise<ConsoleCtx> {
 
 async function paidClientOrder(boss: ConsoleCtx) {
   const n = String(Math.floor(Math.random() * 1e9)).padStart(9, '0');
-  return createPaidClient(boss, {
+  return createClient(boss, {
     business: { name: `Online Client ${n}`, industryKey: 'retail', stateCode: '09' },
     owner: { name: 'Online Owner', email: `oowner-${n}@example.test`, mobile: `+914${n}` },
+    start: 'paid',
     order: { planKey: 'starter', cycle: 'monthly', addOns: [], extraUsers: 0, discountPercent: 0 },
   });
 }

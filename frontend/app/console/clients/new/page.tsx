@@ -2,12 +2,13 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { toast } from "sonner"
-import { AlertTriangle, Check, ChevronDown } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { AlertTriangle, Check, CheckCircle2, ChevronDown } from "lucide-react"
+import Link from "next/link"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { Failed, Loading, Page, Panel, Steps, money } from "@/components/console/kit"
+import { LoginLinkBox, type LoginLink } from "@/components/console/login-link"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
@@ -15,10 +16,18 @@ import { useDebounced } from "@/lib/use-list"
 import { formatPaise, GST_STATES } from "@/lib/format"
 import type { Catalog, Quote } from "@/lib/console"
 import { cn } from "@/lib/utils"
+import { useConsoleBase } from "@/lib/console-base"
 
-// Add client: three short steps — Business, Owner, Plan. The AHEAD team and vendors create a
-// paid order and the owner gets a payment link; a partner's client goes live straight away and
-// is added to the partner's monthly bill.
+// Add client (Console v3): Business → Owner → How to start (free trial or a paid plan). The owner
+// gets a login link by SMS and email and sets their own password; a paid client pays after
+// signing in. A partner's client goes live straight away and is added to the partner's bill.
+
+interface Created {
+  tenantId: string
+  status: string
+  loginLink: LoginLink
+  owner: { name: string; mobile: string; email: string }
+}
 
 interface Form {
   name: string
@@ -28,6 +37,7 @@ interface Form {
   ownerName: string
   ownerEmail: string
   ownerMobile: string
+  start: "trial" | "paid"
   planKey: string
   cycle: "monthly" | "yearly"
   extraUsers: string
@@ -35,8 +45,8 @@ interface Form {
   couponCode: string
 }
 
-const EMPTY: Form = { name: "", industryKey: "", stateCode: "", gstin: "", ownerName: "", ownerEmail: "", ownerMobile: "", planKey: "", cycle: "yearly", extraUsers: "0", discountPercent: "0", couponCode: "" }
-const STEPS = ["Business", "Owner", "Plan"]
+const EMPTY: Form = { name: "", industryKey: "", stateCode: "", gstin: "", ownerName: "", ownerEmail: "", ownerMobile: "", start: "paid", planKey: "", cycle: "yearly", extraUsers: "0", discountPercent: "0", couponCode: "" }
+const STEPS = ["Business", "Owner", "How to start"]
 
 // Server field errors → the step that has the field
 const FIELD_STEP: Record<string, number> = { name: 0, industryKey: 0, stateCode: 0, gstin: 0, address: 0, ownerName: 1, email: 1, mobile: 1, planKey: 2, cycle: 2, extraUsers: 2, discountPercent: 2, couponCode: 2 }
@@ -52,6 +62,7 @@ function Line({ label, value, strong }: { label: string; value: string; strong?:
 
 export default function NewClientPage() {
   const router = useRouter()
+  const base = useConsoleBase()
   const { me } = useAuth()
   const partner = me?.console?.partner ?? null
   const catalog = useApi<Catalog>("/console/catalog")
@@ -63,6 +74,8 @@ export default function NewClientPage() {
   const [more, setMore] = React.useState(false)
   const [quote, setQuote] = React.useState<Quote | null>(null)
   const [quoteError, setQuoteError] = React.useState<string | null>(null)
+  const [created, setCreated] = React.useState<Created | null>(null)
+  const trial = !partner && form.start === "trial"
   const set = <K extends keyof Form>(k: K, v: Form[K]) => {
     setForm((f) => ({ ...f, [k]: v }))
     setErrors((e) => ({ ...e, [k]: "" }))
@@ -81,7 +94,7 @@ export default function NewClientPage() {
   const pricing = useDebounced(JSON.stringify({ planKey, cycle: form.cycle, extraUsers: form.extraUsers, discountPercent: form.discountPercent, couponCode: form.couponCode, stateCode: form.stateCode }), 350)
   React.useEffect(() => {
     const p = JSON.parse(pricing) as Form
-    if (partner || step !== 2 || !p.planKey || !p.stateCode) return
+    if (partner || trial || step !== 2 || !p.planKey || !p.stateCode) return
     let cancelled = false
     api
       .post<Quote>("/console/quote", { planKey: p.planKey, cycle: p.cycle, addOns: [], extraUsers: Number(p.extraUsers) || 0, discountPercent: Number(p.discountPercent) || 0, couponCode: p.couponCode || null, stateCode: p.stateCode })
@@ -90,7 +103,7 @@ export default function NewClientPage() {
     return () => {
       cancelled = true
     }
-  }, [pricing, partner, step])
+  }, [pricing, partner, trial, step])
 
   function check(s: number) {
     const e: Record<string, string> = {}
@@ -118,28 +131,16 @@ export default function NewClientPage() {
     const business = { name: form.name, industryKey: form.industryKey, gstin: form.gstin || null, stateCode: form.stateCode }
     const owner = { name: form.ownerName, email: form.ownerEmail, mobile: form.ownerMobile }
     try {
-      if (partner) {
-        const r = await api.post<{ tenantId: string }>("/console/partner-clients", { business, owner, planKey, cycle })
-        toast.success(`${form.name} is live — the owner can sign in now`)
-        router.push(`/console/clients/${r.tenantId}`)
-        return
-      }
-      const r = await api.post<{ tenantId: string; orderId: string; status: string }>("/console/clients", {
-        business,
-        owner,
-        order: { planKey: planKey, cycle: form.cycle, addOns: [], extraUsers: Number(form.extraUsers) || 0, discountPercent: Number(form.discountPercent) || 0, couponCode: form.couponCode || null },
-      })
-      if (r.status === "pending_approval") {
-        toast.success("Client added — the discount is waiting for approval, then the payment link goes out")
-      } else {
-        try {
-          await api.post(`/console/orders/${r.orderId}/payment-link`, { resend: false })
-          toast.success(`Client added — payment link sent to ${form.ownerEmail}`)
-        } catch (e) {
-          toast.warning(`Client added, but the payment link wasn't sent: ${errorMessage(e)}`)
-        }
-      }
-      router.push(`/console/clients/${r.tenantId}`)
+      const r = partner
+        ? await api.post<Created>("/console/partner-clients", { business, owner, planKey, cycle })
+        : await api.post<Created>("/console/clients", {
+            business,
+            owner,
+            start: form.start,
+            order: trial ? undefined : { planKey, cycle: form.cycle, addOns: [], extraUsers: Number(form.extraUsers) || 0, discountPercent: Number(form.discountPercent) || 0, couponCode: form.couponCode || null },
+          })
+      setCreated(r)
+      setBusy(false)
     } catch (err) {
       if (err instanceof ApiError) {
         const fields = Object.fromEntries(Object.entries(err.fields).map(([k, v]) => [k.split(".").pop()!, v]))
@@ -154,13 +155,36 @@ export default function NewClientPage() {
   const listPrice = planKey ? priceOf(planKey, form.cycle) : null
   const partnerMonthly = planKey ? priceOf(planKey, "monthly") ?? Math.round((priceOf(planKey, "yearly") ?? 0) / 12) : 0
 
+  if (created)
+    return (
+      <Page title="Add client" back={{ href: `${base}/clients`, label: "Clients" }}>
+        <Panel className="mx-auto w-full max-w-xl">
+          <div className="grid gap-4 py-2 text-center">
+            <CheckCircle2 className="mx-auto size-11 text-emerald-600" />
+            <div>
+              <h2 className="text-lg font-semibold text-balance">{form.name} is ready</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                We sent a login link to {created.owner.name} on {created.owner.mobile} (SMS) and {created.owner.email}.
+                {created.status === "pending_approval" ? " The discount waits for an Admin's approval before they can pay." : trial ? " Their free trial has started." : partner ? "" : " They pay on the same screen after setting up their login."}
+              </p>
+            </div>
+            <LoginLinkBox link={created.loginLink} mobile={created.owner.mobile} message={`Hi ${created.owner.name}, set up your login for ${form.name} on AHEAD:`} className="text-left" />
+            <div className="flex flex-wrap justify-center gap-2">
+              <Link href={`${base}/clients/${created.tenantId}`} className={buttonVariants({ variant: "outline" })}>Open client</Link>
+              <Button type="button" variant="ghost" onClick={() => (setCreated(null), setForm(EMPTY), setStep(0), setQuote(null))}>Add another</Button>
+            </div>
+          </div>
+        </Panel>
+      </Page>
+    )
+
   return (
-    <Page title="Add client" subtitle={partner ? "The client goes live as soon as you finish. It appears on your next monthly bill." : "The owner gets a payment link by email. Their workspace opens as soon as they pay."} back={{ href: "/console/clients", label: "Clients" }}>
-      <Steps steps={STEPS} current={step} />
+    <Page title="Add client" subtitle={partner ? "The client goes live as soon as you finish. It appears on your next monthly bill." : "The owner gets a login link by SMS and email and sets their own password."} back={{ href: `${base}/clients`, label: "Clients" }}>
+      <Steps steps={partner ? ["Business", "Owner", "Plan"] : STEPS} current={step} />
       {catalog.error && <Failed error={catalog.error} onRetry={catalog.reload} />}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
-        <Panel title={STEPS[step] === "Business" ? "About the business" : STEPS[step] === "Owner" ? "Who owns it" : "Choose a plan"} description={step === 1 ? "They sign in with this mobile number (one-time code). If the email already has an AHEAD account, that person becomes the owner." : undefined}>
+        <Panel title={step === 0 ? "About the business" : step === 1 ? "Who owns it" : partner ? "Choose a plan" : "How to start"} description={step === 1 ? "We send the login link to this mobile and email. If the email already has an AHEAD account, that person becomes the owner." : undefined}>
           {step === 0 && (
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Business name" required error={errors.name} className="sm:col-span-2">
@@ -209,6 +233,19 @@ export default function NewClientPage() {
           {step === 2 && (
             <div className="grid gap-5">
               {!partner && (
+                <div className="grid gap-3 sm:grid-cols-2" role="group" aria-label="How to start">
+                  {([
+                    ["trial", "Free trial", "All modules for the trial period. No payment now."],
+                    ["paid", "Paid plan", "Choose a plan. The owner pays after setting up their login."],
+                  ] as const).map(([key, title, text]) => (
+                    <button key={key} type="button" onClick={() => set("start", key)} aria-pressed={form.start === key} className={cn("rounded-2xl border p-4 text-left transition", form.start === key ? "border-primary bg-accent/40 ring-2 ring-primary/30" : "hover:border-primary/40")}>
+                      <div className="font-semibold">{title}</div>
+                      <div className="mt-0.5 text-[13px] text-muted-foreground">{text}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!partner && !trial && (
               <div className="flex w-fit rounded-xl border p-1" role="group" aria-label="Billing">
                 {(["yearly", "monthly"] as const).map((c) => (
                   <button key={c} type="button" onClick={() => set("cycle", c)} aria-pressed={form.cycle === c} className={cn("h-8 rounded-lg px-4 text-[13px] font-medium", form.cycle === c ? "bg-accent text-accent-foreground" : "text-muted-foreground")}>
@@ -217,7 +254,7 @@ export default function NewClientPage() {
                 ))}
               </div>
               )}
-              {!catalog.data ? (
+              {trial ? null : !catalog.data ? (
                 <Loading rows={2} />
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -251,7 +288,7 @@ export default function NewClientPage() {
                   })}
                 </div>
               )}
-              {!partner && (
+              {!partner && !trial && (
                 <div>
                   <button type="button" onClick={() => setMore((m) => !m)} className="inline-flex items-center gap-1 text-[13px] font-medium text-primary">
                     <ChevronDown className={cn("size-4 transition", more && "rotate-180")} /> Extra users, discount or coupon
@@ -261,11 +298,12 @@ export default function NewClientPage() {
                       <Field label="Extra users" error={errors.extraUsers}>
                         <Input type="number" min={0} max={500} value={form.extraUsers} onChange={(e) => set("extraUsers", e.target.value)} />
                       </Field>
-                      <Field label="Discount %" hint={quote ? `Up to ${quote.discountLimitPercent}% without approval` : undefined} error={errors.discountPercent}>
-                        <Input type="number" min={0} max={100} value={form.discountPercent} onChange={(e) => set("discountPercent", e.target.value)} />
+                      {/* Console v3: one discount per order — a manual discount or a coupon */}
+                      <Field label="Discount %" hint={form.couponCode ? "Not with a coupon" : quote ? `Up to ${quote.discountLimitPercent}% without approval` : undefined} error={errors.discountPercent}>
+                        <Input type="number" min={0} max={100} value={form.discountPercent} disabled={!!form.couponCode} onChange={(e) => set("discountPercent", e.target.value)} />
                       </Field>
-                      <Field label="Coupon" error={errors.couponCode}>
-                        <Input value={form.couponCode} onChange={(e) => set("couponCode", e.target.value.toUpperCase())} />
+                      <Field label="Coupon" hint={Number(form.discountPercent) > 0 ? "Not with a discount" : undefined} error={errors.couponCode}>
+                        <Input value={form.couponCode} disabled={Number(form.discountPercent) > 0} onChange={(e) => set("couponCode", e.target.value.toUpperCase().replace(/\s/g, ""))} />
                       </Field>
                     </div>
                   )}
@@ -276,7 +314,7 @@ export default function NewClientPage() {
 
           <FormError message={errors.form} />
           <div className="mt-6 flex items-center justify-between gap-2 border-t pt-4">
-            <Button type="button" variant="ghost" onClick={() => (step ? setStep(step - 1) : router.push("/console/clients"))}>
+            <Button type="button" variant="ghost" onClick={() => (step ? setStep(step - 1) : router.push(`${base}/clients`))}>
               {step ? "Back" : "Cancel"}
             </Button>
             {step < 2 ? (
@@ -284,8 +322,8 @@ export default function NewClientPage() {
                 Continue
               </Button>
             ) : (
-              <Button type="button" onClick={submit} disabled={busy || !planKey || (!partner && !quote)}>
-                {busy ? "Adding…" : partner ? "Add client" : quote?.needsApproval ? "Add and ask for approval" : "Add and send payment link"}
+              <Button type="button" onClick={submit} disabled={busy || (!trial && (!planKey || (!partner && !quote)))}>
+                {busy ? "Adding…" : trial ? "Start trial & send login link" : quote?.needsApproval ? "Add and ask for approval" : "Create & send login link"}
               </Button>
             )}
           </div>
@@ -296,9 +334,11 @@ export default function NewClientPage() {
             <div className="grid gap-1 text-sm">
               <Line label="Business" value={form.name || "—"} />
               <Line label="Owner" value={form.ownerName || "—"} />
-              <Line label="Plan" value={plans.find((p) => p.key === planKey)?.name ?? "—"} />
+              <Line label="Plan" value={trial ? "Free trial" : plans.find((p) => p.key === planKey)?.name ?? "—"} />
               <div className="my-2 border-t" />
-              {partner ? (
+              {trial ? (
+                <p className="text-sm text-muted-foreground">Nothing to pay now. When the trial ends, the client chooses a plan or moves to Free.</p>
+              ) : partner ? (
                 <>
                   <Line label="List price / month" value={money(partnerMonthly)} />
                   <Line label={`Your discount`} value={`${partner.discountPercent}%`} />
@@ -317,7 +357,7 @@ export default function NewClientPage() {
                   <Line label="Total" value={formatPaise(quote.totalPaise)} strong />
                   {quote.needsApproval && (
                     <p className="mt-2 flex gap-2 rounded-xl bg-amber-50 p-3 text-xs text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
-                      <AlertTriangle className="size-4 shrink-0" /> Above your {quote.discountLimitPercent}% limit — a Super Admin approves it before the link is sent.
+                      <AlertTriangle className="size-4 shrink-0" /> Above your {quote.discountLimitPercent}% limit — an Admin approves it before the link is sent.
                     </p>
                   )}
                 </>

@@ -27,7 +27,7 @@ const grants = (key: string) => expandGrants(ROLES.find((r) => r.key === key)!);
 const platformKeys = PERMISSIONS.filter((p) => p.moduleKey === 'platform').map((p) => p.key);
 
 describe('Console roles and tenant roles never mix', () => {
-  it('Super Admin gets every Console key and nothing from the ERP', () => {
+  it('Admin gets every Console key and nothing from the ERP', () => {
     const g = grants('super_admin');
     expect([...g.keys()].sort()).toEqual([...platformKeys].sort());
     expect([...g.values()].every((s) => s === 'all')).toBe(true);
@@ -39,14 +39,16 @@ describe('Console roles and tenant roles never mix', () => {
     }
   });
 
-  it('sales and vendor scopes: manager = team, executive and vendor = own, none can edit plans', () => {
-    expect(grants('console_sales_manager').get('platform.tenant.view')).toBe('team');
-    expect(grants('console_sales_executive').get('platform.tenant.view')).toBe('own');
+  it('Console v3 scopes: staff = all, sales and vendor = own, only Admin edits plans or approves discounts', () => {
+    expect(grants('console_staff').get('platform.tenant.view')).toBe('all');
+    expect(grants('console_sales').get('platform.tenant.view')).toBe('own');
     expect(grants('vendor').get('platform.tenant.view')).toBe('own');
-    for (const key of ['console_sales_manager', 'console_sales_executive', 'vendor', 'platform_support']) {
+    for (const key of ['console_staff', 'console_sales', 'vendor', 'partner_admin', 'partner_staff']) {
       expect(grants(key).has('platform.plan.edit')).toBe(false);
       expect(grants(key).has('platform.setting.edit')).toBe(false);
+      expect(grants(key).has('platform.discount.approve')).toBe(false);
     }
+    expect(ROLES.filter((r) => r.layer !== 'tenant').map((r) => r.key).sort()).toEqual(['console_sales', 'console_staff', 'partner_admin', 'partner_staff', 'super_admin', 'vendor']);
   });
 
   it('route guards reject keys from the other workspace at startup', () => {

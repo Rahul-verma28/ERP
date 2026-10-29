@@ -7,6 +7,7 @@ import { cache } from '../../kernel/cache';
 import { scopedTenantFilter } from './service';
 import { clientOrders } from '../platformBilling/orders';
 import { healthFor } from './insights';
+import { clientFacts, type OnboardedKind } from './clientFacts';
 
 // Console → Clients (design v2 §3). Only account metadata: plan, status, usage counts and who
 // brought the client in. Business records (customers, invoices, salaries) are never read here.
@@ -21,14 +22,56 @@ async function scopedTenant(ctx: ConsoleCtx, id: string) {
   return tenant;
 }
 
-export async function listClients(ctx: ConsoleCtx, q: { search?: string; status?: TenantStatus; source?: TenantSource; ownerId?: string; limit: number; cursor?: string }) {
+export interface ClientQuery {
+  search?: string;
+  status?: TenantStatus;
+  source?: TenantSource;
+  ownerId?: string;
+  planKey?: string;
+  industryKey?: string;
+  onboarded?: OnboardedKind;
+  /** Console v3: partner clients live under Partners; the AHEAD list leaves them out unless asked */
+  partners?: 'exclude' | 'include' | 'only';
+  /** One partner's clients (Partners › partner page) */
+  partnerId?: string;
+  limit: number;
+  cursor?: string;
+}
+
+/** Filter on "Onboarded by" (sales vs AHEAD team depends on the acquirer's Console role). */
+async function onboardedFilter(kind: OnboardedKind): Promise<Prisma.TenantWhereInput> {
+  if (kind === 'website') return { acquisition: { acquiredByType: 'self' }, partnerId: null };
+  if (kind === 'partner') return { partnerId: { not: null } };
+  if (kind === 'vendor') return { acquisition: { acquiredByType: 'vendor' } };
+  const roles = kind === 'sales' ? ['console_sales'] : ['super_admin', 'console_staff'];
+  const people = await db().platformMember.findMany({ where: { role: { key: { in: roles }, tenantId: null } }, select: { userId: true } });
+  return { partnerId: null, acquisition: { acquiredByType: 'sales_user', acquiredByUserId: { in: people.map((m) => m.userId) } } };
+}
+
+export async function listClients(ctx: ConsoleCtx, q: ClientQuery) {
+  const partners = ctx.partnerId ? 'include' : q.partners ?? 'exclude';
+  const and: Prisma.TenantWhereInput[] = [];
+  // Owner (sales) = the Console user who brought the client in; ANDed so it never widens the scope
+  if (q.ownerId) and.push({ acquisition: { acquiredByUserId: q.ownerId } });
+  if (q.onboarded) and.push(await onboardedFilter(q.onboarded));
+  if (q.search) {
+    const digits = q.search.replace(/\D/g, '');
+    and.push({
+      OR: [
+        { name: { contains: q.search, mode: 'insensitive' } },
+        { gstin: { contains: q.search.toUpperCase() } },
+        { members: { some: { user: { OR: [{ name: { contains: q.search, mode: 'insensitive' } }, ...(digits.length >= 4 ? [{ mobile: { contains: digits } }] : [])] } } } },
+      ],
+    });
+  }
   const where: Prisma.TenantWhereInput = {
     ...(await scopedTenantFilter(ctx)),
     ...(q.status ? { status: q.status } : {}),
     ...(q.source ? { source: q.source } : {}),
-    // Owner (sales) = the Console user who brought the client in; ANDed so it never widens the scope
-    ...(q.ownerId ? { AND: [{ acquisition: { acquiredByUserId: q.ownerId } }] } : {}),
-    ...(q.search ? { OR: [{ name: { contains: q.search, mode: 'insensitive' } }, { gstin: { contains: q.search.toUpperCase() } }] } : {}),
+    ...(q.industryKey ? { industryKey: q.industryKey } : {}),
+    ...(q.planKey ? { subscription: { planId: (await db().plan.findUnique({ where: { key: q.planKey }, select: { id: true } }))?.id ?? '00000000-0000-0000-0000-000000000000' } } : {}),
+    ...(q.partnerId && !ctx.partnerId ? { partnerId: q.partnerId } : partners === 'exclude' ? { partnerId: null } : partners === 'only' ? { partnerId: { not: null } } : {}),
+    ...(and.length ? { AND: and } : {}),
   };
   const rows = await db().tenant.findMany({
     where,
@@ -44,16 +87,20 @@ export async function listClients(ctx: ConsoleCtx, q: { search?: string; status?
   });
   const pageRows = rows.slice(0, q.limit);
   const ids = pageRows.map((t) => t.id);
-  const [plans, people, health, lastPaid, nextSteps] = await Promise.all([
-    db().plan.findMany({ select: { id: true, key: true, name: true } }),
+  const [plans, people, health, lastPaid, nextSteps, facts, modules] = await Promise.all([
+    db().plan.findMany({ select: { id: true, key: true, name: true, limits: true } }),
     db().user.findMany({
       where: { id: { in: [...new Set(pageRows.flatMap((t) => [t.ownerUserId, t.acquisition?.acquiredByUserId].filter(Boolean) as string[]))] } },
-      select: { id: true, name: true, email: true },
+      select: { id: true, name: true, email: true, mobile: true },
     }),
     healthFor(ids),
     db().platformOrder.findMany({ where: { tenantId: { in: ids }, status: 'paid' }, orderBy: { paidAt: 'desc' }, distinct: ['tenantId'], select: { tenantId: true, taxablePaise: true, cycle: true } }),
     db().consoleFollowup.findMany({ where: { tenantId: { in: ids }, doneAt: null }, orderBy: { dueAt: 'asc' }, distinct: ['tenantId'], select: { tenantId: true, title: true, dueAt: true } }),
+    clientFacts(ids),
+    db().tenantEntitlement.findMany({ where: { tenantId: { in: ids }, status: 'active' }, select: { tenantId: true, moduleKey: true } }),
   ]);
+  const modulesOf = new Map<string, string[]>();
+  for (const m of modules) modulesOf.set(m.tenantId, [...(modulesOf.get(m.tenantId) ?? []), m.moduleKey]);
   const plan = new Map(plans.map((p) => [p.id, p]));
   const mrr = new Map(lastPaid.map((o) => [o.tenantId, Math.round(Number(o.taxablePaise) / (o.cycle === 'yearly' ? 12 : 1))]));
   const next = new Map(nextSteps.map((f) => [f.tenantId, { title: f.title, dueAt: f.dueAt }]));
@@ -68,6 +115,12 @@ export async function listClients(ctx: ConsoleCtx, q: { search?: string; status?
       isInternal: t.isInternal,
       createdAt: t.createdAt,
       plan: t.subscription ? plan.get(t.subscription.planId)?.name ?? null : null,
+      planKey: t.subscription ? plan.get(t.subscription.planId)?.key ?? null : null,
+      cycle: t.subscription?.cycle ?? null,
+      userLimit: t.subscription ? ((plan.get(t.subscription.planId)?.limits as { users?: number } | undefined)?.users ?? null) : null,
+      modules: modulesOf.get(t.id) ?? [],
+      onboardedBy: facts.by.get(t.id) ?? null,
+      progress: facts.progress.get(t.id) ?? null,
       trialEndsAt: t.subscription?.trialEndsAt ?? null,
       renewsAt: t.subscription?.currentPeriodEnd ?? null,
       owner: person.get(t.ownerUserId) ?? null,
@@ -101,9 +154,10 @@ export async function clientDetail(ctx: ConsoleCtx, id: string) {
       take: 20,
     }),
   ]);
-  const [orders, partner] = await Promise.all([
+  const [orders, partner, facts] = await Promise.all([
     clientOrders(id),
     tenant.partnerId ? tx.partner.findUnique({ where: { id: tenant.partnerId }, select: { id: true, name: true } }) : null,
+    clientFacts([id]),
   ]);
   const plan = subscription ? await tx.plan.findUnique({ where: { id: subscription.planId }, select: { key: true, name: true, limits: true } }) : null;
   const peopleIds = [acquisition?.acquiredByUserId, acquisition?.changedBy, ...extensions.map((e) => e.grantedBy), ...history.map((h) => h.actorId)].filter(Boolean) as string[];
@@ -124,6 +178,8 @@ export async function clientDetail(ctx: ConsoleCtx, id: string) {
     // Partner clients are billed to the partner, never through AHEAD orders
     partner,
     billedBy: tenant.billingOwner,
+    onboardedBy: facts.by.get(id) ?? null,
+    progress: facts.progress.get(id) ?? null,
     owner: owner && { name: owner.name, email: owner.email, mobile: owner.mobile, emailVerified: !!owner.emailVerifiedAt, lastLoginAt: owner.lastLoginAt },
     subscription: subscription && {
       status: subscription.status, cycle: subscription.cycle, plan,
@@ -172,8 +228,9 @@ export async function extendClient(ctx: ConsoleCtx, id: string, input: { days: n
 
 /** Vendors see a client's name, plan, status and payments — not usage, modules or contact details (platform design §1). */
 export function vendorView(c: Awaited<ReturnType<typeof clientDetail>>) {
-  const { usage: _u, modules: _m, history: _h, extensions: _e, owner, ...rest } = c;
-  return { ...rest, owner: owner && { name: owner.name, email: '', mobile: '', emailVerified: owner.emailVerified, lastLoginAt: owner.lastLoginAt }, usage: null, modules: [], history: [], extensions: [] };
+  // Vendors added these owners themselves, so they keep the contact details to resend the login link
+  const { usage: _u, history: _h, extensions: _e, ...rest } = c;
+  return { ...rest, usage: null, history: [], extensions: [] };
 }
 
 /** Scope check for actions that call other services with a tenant id (e.g. changeAcquisition). */

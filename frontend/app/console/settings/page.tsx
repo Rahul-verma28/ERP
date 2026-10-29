@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { ArrowRight, FileSliders, Tags, Users, type LucideIcon } from "lucide-react"
+import { ArrowRight, FileSliders, Tags, type LucideIcon } from "lucide-react"
 import { Page } from "@/components/console/kit"
 import { useAuth } from "@/lib/auth"
 
@@ -19,12 +19,11 @@ export default function SettingsPage() {
   const { canConsole } = useAuth()
   const cards: Card[] = [
     { href: "/console/settings/plans", icon: Tags, title: "Plans & prices", text: "What each plan includes, its monthly and yearly price, and coupons.", show: canConsole("platform.plan.view") },
-    { href: "/console/settings/rules", icon: FileSliders, title: "Rules & billing details", text: "Free trial length, discount limits, AHEAD's invoice details and the announcement banner.", show: canConsole("platform.setting.view") },
-    { href: "/console/team", icon: Users, title: "Team", text: "The AHEAD team and vendors who use this Console, and what each person can do.", show: canConsole("platform.member.view") },
+    { href: "/console/settings/rules", icon: FileSliders, title: "Company details & rules", text: "AHEAD's invoice details, free trial length, discount limits and the announcement banner.", show: canConsole("platform.setting.view") },
   ]
   return (
-    <Page title="Settings" subtitle="How AHEAD is sold and who works in this Console.">
-      <div className="grid gap-4 md:grid-cols-3">
+    <Page title="Settings" subtitle="How AHEAD is sold. People who use the Console are under People.">
+      <div className="grid gap-4 md:grid-cols-2">
         {cards
           .filter((c) => c.show)
           .map((c) => (

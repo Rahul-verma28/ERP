@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { FormError } from "@/components/form"
-import { Chip, Empty, Facts, Failed, Loading, Panel, Row, ago, money, relDays, tomorrowAt11, type Tone } from "@/components/console/kit"
+import { Chip, Empty, Facts, Failed, Loading, OnboardedChip, Panel, ProgressSteps, Row, ago, money, relDays, tomorrowAt11, type Tone } from "@/components/console/kit"
+import { SendNewLink } from "@/components/console/login-link"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatDateTime, formatNumber } from "@/lib/format"
-import { ORDER_STATUS_LABEL, type AccountHealth, type ClientDetail, type ClientSummary, type ClientUser, type OrderStatus, type TimelineEvent, type TimelineKind } from "@/lib/console"
+import { MODULE_SHORT, ORDER_STATUS_LABEL, type AccountHealth, type Catalog, type ClientDetail, type ClientSummary, type ClientUser, type OrderStatus, type TimelineEvent, type TimelineKind } from "@/lib/console"
 import { cn } from "@/lib/utils"
 
 // The one-page client view: plan & payments, activity & notes, owner, next step, setup and users.
@@ -56,6 +57,58 @@ export function PlanAndPayments({ client }: { client: ClientDetail }) {
           )}
         </div>
       )}
+    </Panel>
+  )
+}
+
+/** Every module, on or off for this client (Console v3: modules visible at a glance) */
+export function ModulesPanel({ client }: { client: ClientDetail }) {
+  const catalog = useApi<Catalog>("/console/catalog")
+  const status = new Map(client.modules.map((m) => [m.key, m.status]))
+  const order = Object.keys(MODULE_SHORT)
+  const all = (catalog.data?.modules ?? client.modules)
+    .map((m) => ({ key: m.key, name: MODULE_SHORT[m.key] ?? m.key, full: "name" in m ? m.name : m.key }))
+    .sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
+  return (
+    <Panel title="Modules" description={`${client.modules.filter((m) => m.status === "active").length} of ${all.length} switched on`}>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {all.map((m) => {
+          const s = status.get(m.key)
+          return (
+            <div key={m.key} title={m.full} className={cn("flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm", s !== "active" && s !== "read_only" && "bg-muted/50 text-muted-foreground")}>
+              <span className="min-w-0 truncate">{m.name}</span>
+              {s === "active" ? <Chip tone="green">On</Chip> : s === "read_only" ? <Chip tone="amber">Read-only</Chip> : <span className="text-xs">Off</span>}
+            </div>
+          )
+        })}
+      </div>
+    </Panel>
+  )
+}
+
+/** Login link sent → logged in → setup → paid, with "Send new link" until the owner signs in */
+export function GettingStarted({ client, canResend }: { client: ClientDetail; canResend: boolean }) {
+  const p = client.progress
+  if (!p) return null
+  return (
+    <Panel title="Getting started">
+      <ProgressSteps progress={p} partnerBilled={client.billedBy === "partner"} />
+      {!p.loggedIn && canResend && (
+        <div className="mt-4 grid gap-2 border-t pt-4">
+          <p className="text-sm text-muted-foreground">{p.linkSentAt ? `Login link sent ${formatDate(p.linkSentAt)}. A new link stops the old one.` : "No login link sent yet."}</p>
+          <SendNewLink path={`/console/tenants/${client.id}/login-link`} mobile={client.owner?.mobile} label={p.linkSentAt ? "Send new link" : "Send login link"} />
+        </div>
+      )}
+      <dl className="mt-4 grid gap-3 border-t pt-4 text-sm">
+        <div className="grid min-w-0 gap-1">
+          <dt className="text-muted-foreground">Onboarded by</dt>
+          <dd className="min-w-0"><OnboardedChip by={client.onboardedBy} /></dd>
+        </div>
+        <div className="grid gap-1">
+          <dt className="text-muted-foreground">Last active</dt>
+          <dd>{p.lastActiveAt ? ago(p.lastActiveAt) : "Never"}</dd>
+        </div>
+      </dl>
     </Panel>
   )
 }

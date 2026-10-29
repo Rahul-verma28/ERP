@@ -2,14 +2,15 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { toast } from "sonner"
-import { BadgePercent, Building2, CalendarClock, CheckCircle2, Copy, CreditCard, Link2, LogIn, Plus, Sparkles, Target } from "lucide-react"
+import { BadgePercent, Building2, CalendarClock, CheckCircle2, CreditCard, LogIn, Plus, Sparkles, Target } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
 import { ClientStatus, Empty, Failed, Loading, Page, Panel, PanelLink, Row, Stat, StatGrid, greeting, industryLabel, money, relDays, type Tone } from "@/components/console/kit"
+import { ReferralCard } from "@/components/console/referral-card"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatNumber } from "@/lib/format"
 import type { ConsoleHome, HomeTodo } from "@/lib/console"
+import { atBase, useConsoleBase } from "@/lib/console-base"
 
 // Home: what needs doing today, a few plain numbers and the newest clients.
 // The same page for the AHEAD team, vendors and partners — each sees only their own clients.
@@ -42,41 +43,11 @@ function IncomeChart({ rows }: { rows: NonNullable<ConsoleHome["income"]> }) {
   )
 }
 
-function ReferralCard({ code, link }: { code: string; link: string }) {
-  const copy = async (text: string, what: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      toast.success(`${what} copied`)
-    } catch {
-      toast.error("Couldn't copy — select it and copy instead")
-    }
-  }
-  return (
-    <Panel title="Your referral link" description="Anyone who signs up with this link or code is added to your clients automatically.">
-      <div className="grid min-w-0 gap-3">
-        <div className="flex min-w-0 items-center gap-2 rounded-xl border bg-muted/40 px-3 py-2.5">
-          <Link2 className="size-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate font-mono text-[13px]">{link}</span>
-          <button type="button" onClick={() => copy(link, "Link")} className={buttonVariants({ size: "sm", variant: "outline" })}>
-            <Copy /> Copy link
-          </button>
-        </div>
-        <div className="flex min-w-0 items-center justify-between gap-2 rounded-xl border bg-muted/40 px-3 py-2.5">
-          <span className="text-[13px] text-muted-foreground">
-            Code <span className="ml-1 font-mono text-[15px] font-semibold tracking-wider text-foreground">{code}</span>
-          </span>
-          <button type="button" onClick={() => copy(code, "Code")} className={buttonVariants({ size: "sm", variant: "ghost" })}>
-            <Copy /> Copy
-          </button>
-        </div>
-      </div>
-    </Panel>
-  )
-}
 
 export default function ConsoleHomePage() {
   const { me, canConsole } = useAuth()
   const { data, error, reload } = useApi<ConsoleHome>("/console/home")
+  const base = useConsoleBase()
   const audience = me?.console?.audience ?? "team"
   const first = me?.user.name.split(" ")[0] ?? ""
   const canAdd = canConsole("platform.tenant.create") && me?.console?.partner?.status !== "paused"
@@ -89,7 +60,7 @@ export default function ConsoleHomePage() {
       subtitle={subtitle}
       actions={
         canAdd && (
-          <Link href="/console/clients/new" className={buttonVariants()}>
+          <Link href={`${base}/clients/new`} className={buttonVariants()}>
             <Plus /> Add client
           </Link>
         )
@@ -104,7 +75,7 @@ export default function ConsoleHomePage() {
 
       <StatGrid>
         {data
-          ? data.stats.map((s) => <Stat key={s.key} label={s.label} value={s.money ? money(s.value) : formatNumber(s.value)} hint={s.hint} href={s.href} />)
+          ? data.stats.map((s) => <Stat key={s.key} label={s.label} value={s.money ? money(s.value) : formatNumber(s.value)} hint={s.hint} href={s.href && atBase(base, s.href)} />)
           : Array.from({ length: 4 }, (_, i) => <div key={i} className="h-[118px] animate-pulse rounded-2xl bg-muted" />)}
       </StatGrid>
 
@@ -116,7 +87,7 @@ export default function ConsoleHomePage() {
             ) : data.todo.length ? (
               <div className="divide-y">
                 {data.todo.map((t, i) => (
-                  <Row key={`${t.kind}-${i}`} icon={TODO[t.kind].icon} tone={TODO[t.kind].tone} title={t.title} detail={t.detail} right={<Link href={t.href} className={buttonVariants({ size: "sm", variant: t.kind === "discount" || t.kind === "unpaid" ? "default" : "outline" })}>{t.action}</Link>} />
+                  <Row key={`${t.kind}-${i}`} icon={TODO[t.kind].icon} tone={TODO[t.kind].tone} title={t.title} detail={t.detail} right={<Link href={atBase(base, t.href)} className={buttonVariants({ size: "sm", variant: t.kind === "discount" || t.kind === "unpaid" ? "default" : "outline" })}>{t.action}</Link>} />
                 ))}
               </div>
             ) : (
@@ -132,14 +103,14 @@ export default function ConsoleHomePage() {
               <IncomeChart rows={data.income} />
             </Panel>
           )}
-          <Panel title={audience === "team" ? "Newest clients" : "Your newest clients"} action={<PanelLink href="/console/clients">All clients</PanelLink>} padded={false}>
+          <Panel title={audience === "team" ? "Newest clients" : "Your newest clients"} action={<PanelLink href={`${base}/clients`}>All clients</PanelLink>} padded={false}>
             <div className="px-3 pb-3">
               {!data ? (
                 <Loading rows={3} className="px-2 pt-2" />
               ) : data.recent.length ? (
                 <div className="divide-y">
                   {data.recent.map((c) => (
-                    <Row key={c.id} href={`/console/clients/${c.id}`} icon={Building2} tone="grey" title={c.name} detail={`${industryLabel(c.industryKey)} · joined ${relDays(c.createdAt)}`} right={<ClientStatus status={c.status} />} />
+                    <Row key={c.id} href={`${base}/clients/${c.id}`} icon={Building2} tone="grey" title={c.name} detail={`${industryLabel(c.industryKey)} · joined ${relDays(c.createdAt)}`} right={<ClientStatus status={c.status} />} />
                   ))}
                 </div>
               ) : (
@@ -149,7 +120,7 @@ export default function ConsoleHomePage() {
                   text={audience === "vendor" ? "Share your referral link or add a client yourself." : "Add your first client — it takes about two minutes."}
                   action={
                     canAdd && (
-                      <Link href="/console/clients/new" className={buttonVariants({ size: "sm" })}>
+                      <Link href={`${base}/clients/new`} className={buttonVariants({ size: "sm" })}>
                         <Plus /> Add client
                       </Link>
                     )

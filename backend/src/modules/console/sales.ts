@@ -176,7 +176,7 @@ export async function closeFollowup(ctx: ConsoleCtx, id: string, action: { done?
 
 /**
  * Automatic follow-ups (hourly with the billing jobs), each made once and given to whoever
- * brought the client in (or the first Super Admin when it signed up on its own):
+ * brought the client in (or the first Admin when it signed up on its own):
  * trial with no invoice after 3 days, trial ending in 3 days, unpaid order over 7 days.
  */
 export async function runAutoFollowups(now = new Date()) {

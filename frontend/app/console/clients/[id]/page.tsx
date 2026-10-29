@@ -7,24 +7,21 @@ import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ConvertDialog } from "@/components/console/convert-dialog"
 import { ChangePlanDialog, ExtendDialog, SourceDialog } from "@/components/console/client-dialogs"
-import { ActivityAndNotes, NextStep, OwnerPanel, PlanAndPayments, SetupAndUsage, UsersPanel } from "@/components/console/client-sections"
-import { ClientStatus, Failed, Loading, Page, daysFrom, industryLabel } from "@/components/console/kit"
+import { ActivityAndNotes, GettingStarted, ModulesPanel, OwnerPanel, PlanAndPayments, SetupAndUsage, UsersPanel } from "@/components/console/client-sections"
+import { ClientStateChip, Failed, Loading, Page, industryLabel } from "@/components/console/kit"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate } from "@/lib/format"
-import { ACQUIRER_LABEL, type ClientDetail } from "@/lib/console"
+import type { ClientDetail } from "@/lib/console"
+import { useConsoleBase } from "@/lib/console-base"
 
-// One page per client: who they are, where they stand, and the one thing to do next.
-
-function statusSuffix(c: ClientDetail) {
-  if (c.status !== "trialing" || !c.subscription?.trialEndsAt) return undefined
-  const d = daysFrom(c.subscription.trialEndsAt) ?? 0
-  return d <= 0 ? "ends today" : `${d} day${d === 1 ? "" : "s"} left`
-}
+// One page per client (Console v3): plan and modules, payments, getting started (login link →
+// logged in → setup → paid), owner, users and notes. One button per action, no reason forms.
 
 export default function ClientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params)
+  const base = useConsoleBase()
   const { me, canConsole } = useAuth()
   const { data: c, error, reload } = useApi<ClientDetail>(`/console/tenants/${id}`)
   const [dialog, setDialog] = React.useState<"extend" | "convert" | "source" | "plan" | null>(null)
@@ -40,9 +37,8 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
   const canExtend = !partnerBilled && canConsole("platform.grace.create") && (c.status === "trialing" || c.status === "past_due")
   const canConvert = !partnerBilled && audience !== "partner" && canConsole("platform.tenant.create") && ["trialing", "free", "past_due"].includes(c.status) && !unpaid && !waitingApproval
   const canChangePlan = audience === "partner" && canConsole("platform.tenant.edit")
-  const canSource = audience === "team" && canConsole("platform.tenant.edit") && !partnerBilled
-  const a = c.acquisition
-  const broughtBy = c.partner ? `${c.partner.name} (partner)` : a?.by ? a.by.name : a ? ACQUIRER_LABEL[a.byType] : null
+  // Only an Admin changes "Onboarded by"
+  const canSource = me?.console?.role.key === "super_admin" && !partnerBilled
 
   async function resendLink() {
     if (!unpaid) return
@@ -74,14 +70,14 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
 
   return (
     <Page
-      back={{ href: "/console/clients", label: audience === "vendor" ? "My clients" : "Clients" }}
+      back={{ href: `${base}/clients`, label: audience === "vendor" ? "My clients" : "Clients" }}
       title={
         <span className="flex flex-wrap items-center gap-3">
           {c.name}
-          <ClientStatus status={c.status} suffix={statusSuffix(c)} partnerBilled={c.billedBy === "partner"} />
+          <ClientStateChip status={c.status} progress={c.progress} trialEndsAt={c.subscription?.trialEndsAt} partnerBilled={partnerBilled} />
         </span>
       }
-      subtitle={[industryLabel(c.industryKey), `joined ${formatDate(c.createdAt)}`, broughtBy && audience === "team" ? `brought in by ${broughtBy}` : null].filter(Boolean).join(" · ")}
+      subtitle={[industryLabel(c.industryKey), `joined ${formatDate(c.createdAt)}`].join(" · ")}
       actions={
         <>
           {canExtend && (
@@ -97,7 +93,7 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={() => setDialog("source")}>
-                  <UserCog className="size-4" /> Change who brought them in
+                  <UserCog className="size-4" /> Change who onboarded them
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -107,7 +103,7 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
     >
       {waitingApproval && (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          The discount on this client&apos;s order is waiting for a Super Admin&apos;s approval. The payment link goes out once it&apos;s approved.
+          The discount on this client&apos;s order is waiting for an Admin&apos;s approval. The payment link goes out once it&apos;s approved.
         </div>
       )}
       {c.isInternal && <p className="text-sm text-muted-foreground">This is AHEAD&apos;s own workspace.</p>}
@@ -115,11 +111,12 @@ export default function ClientPage({ params }: { params: Promise<{ id: string }>
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="grid content-start gap-6 lg:col-span-2">
           <PlanAndPayments client={c} />
-          <ActivityAndNotes tenantId={c.id} />
+          <ModulesPanel client={c} />
+          {audience !== "vendor" && <ActivityAndNotes tenantId={c.id} />}
         </div>
         <div className="grid content-start gap-6">
-          <OwnerPanel client={c} showContact={audience !== "vendor"} />
-          {audience === "team" && canConsole("platform.prospect.view") && <NextStep tenantId={c.id} />}
+          <GettingStarted client={c} canResend={canConsole("platform.tenant.view")} />
+          <OwnerPanel client={c} showContact />
           {audience !== "vendor" && <SetupAndUsage tenantId={c.id} />}
           {audience !== "vendor" && <UsersPanel tenantId={c.id} />}
         </div>

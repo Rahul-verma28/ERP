@@ -3,7 +3,7 @@ import { AppError, notFound } from '../../kernel/errors';
 import { audit } from '../audit/service';
 import { validateAcquisition, type AcquisitionInput } from './createTenant';
 
-// R1: the acquisition record is locked at signup. Only a Super Admin may correct it
+// R1: the acquisition record is locked at signup. Only an Admin may correct it
 // (Console, Step 3), always with a reason, and the change is audited.
 
 /** Must run inside withPlatform(). */

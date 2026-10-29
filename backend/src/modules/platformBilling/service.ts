@@ -5,9 +5,9 @@ import type { ConsoleCtx } from '../../kernel/context';
 import { normaliseEmail, normaliseMobile } from '../../kernel/crypto';
 import { computeDocument, financialYear } from '../../kernel/gst';
 import { audit } from '../audit/service';
-import { sendMessage } from '../notifications/service';
 import { getSetting } from '../settings/service';
 import { createTenant } from '../tenancy/createTenant';
+import { sendAccessLink } from '../identity/accessLinks';
 import { transition } from '../subscription/stateMachine';
 
 // design v2 Step 4: what AHEAD sells to a client. One order = plan + add-on modules + extra
@@ -58,7 +58,7 @@ export function allocate(amounts: number[], discount: number): number[] {
 
 async function seller() {
   const s = await getSetting('ahead.billing');
-  if (!/^\d{2}$/.test(s.stateCode)) throw new AppError('VALIDATION_FAILED', "Prices can't be worked out yet: AHEAD's billing details aren't filled in. A Super Admin adds them in Settings › Rules & billing details.");
+  if (!/^\d{2}$/.test(s.stateCode)) throw new AppError('VALIDATION_FAILED', "Prices can't be worked out yet: AHEAD's billing details aren't filled in. An Admin adds them in Settings › Company details & rules.");
   return s;
 }
 
@@ -66,8 +66,15 @@ async function activePrice(itemType: 'plan' | 'addon_module' | 'extra_user', ite
   return db().price.findFirst({ where: { itemType, itemRef, cycle, activeTo: null } });
 }
 
-/** Price an order. Nothing is written. */
-export async function quote(input: QuoteInput, opts: { actorRoleKey?: string } = {}) {
+/**
+ * Price an order. Nothing is written. Console v3: one discount per order — a manual discount
+ * or a coupon, never both. `welcomePercent` (a referral signup's first payment) applies only
+ * when the order has neither.
+ */
+export async function quote(input: QuoteInput, opts: { actorRoleKey?: string; welcomePercent?: number } = {}) {
+  if (input.discountPercent > 0 && input.couponCode?.trim()) {
+    throw new AppError('VALIDATION_FAILED', 'Use a coupon or a discount, not both.', { fields: { couponCode: 'Remove the discount to use a coupon' } });
+  }
   const tx = db();
   const plan = await tx.plan.findUnique({ where: { key: input.planKey }, include: { modules: true } });
   if (!plan || plan.key === 'free') throw new AppError('VALIDATION_FAILED', 'Choose a paid plan.', { fields: { planKey: 'Choose a paid plan' } });
@@ -91,9 +98,11 @@ export async function quote(input: QuoteInput, opts: { actorRoleKey?: string } =
   }
   const listPaise = raw.reduce((a, r) => a + r.amountPaise, 0);
 
+  const welcome = !input.discountPercent && !input.couponCode?.trim() && opts.welcomePercent ? opts.welcomePercent : 0;
   const discountBp = Math.round(input.discountPercent * 100);
   if (discountBp < 0 || discountBp > 10_000) throw new AppError('VALIDATION_FAILED', 'Discount must be between 0 and 100%.', { fields: { discountPercent: '0–100' } });
-  const salesDiscount = Math.round((listPaise * discountBp) / 10_000);
+  // The welcome discount is AHEAD's standard offer, so it never needs approval
+  const salesDiscount = Math.round((listPaise * (discountBp || Math.round(welcome * 100))) / 10_000);
 
   let couponDiscount = 0;
   let couponCode: string | null = null;
@@ -129,7 +138,8 @@ export async function quote(input: QuoteInput, opts: { actorRoleKey?: string } =
     cycle: input.cycle,
     items,
     listPaise,
-    discountBp,
+    discountBp: discountBp || Math.round(welcome * 100),
+    welcomePercent: welcome,
     salesDiscountPaise: salesDiscount,
     couponCode,
     couponDiscountPaise: couponDiscount,
@@ -177,19 +187,30 @@ export async function saveOrder(q: Quote, o: { tenantId: string; kind: 'fresh' |
 export interface NewClientInput {
   business: { name: string; industryKey: string; gstin?: string | null; stateCode: string; address?: string | null };
   owner: { name: string; email: string; mobile: string };
-  order: Omit<QuoteInput, 'billTo'>;
+  /** Console v3: start on the free trial, or on a paid plan the owner pays for after signing in */
+  start: 'trial' | 'paid';
+  order?: Omit<QuoteInput, 'billTo'>;
 }
 
 async function roleKeyOf(ctx: ConsoleCtx) {
   return (await db().role.findUniqueOrThrow({ where: { id: ctx.roleId }, select: { key: true } })).key;
 }
 
-/** design v2 §4(B): a client created by sales or a vendor — no trial, modules open after payment. */
-export async function createPaidClient(ctx: ConsoleCtx, input: NewClientInput) {
+/** Who "Onboarded by" names for a client added in the Console (set automatically, never chosen). */
+export function acquirerType(roleKey: string): 'vendor' | 'sales_user' {
+  return roleKey === 'vendor' ? 'vendor' : 'sales_user';
+}
+
+/**
+ * Console v3: a client added by Admin, Staff, Sales or a vendor. The owner gets a login link
+ * (SMS + email) and sets their own password; a paid client pays from inside the workspace.
+ */
+export async function createClient(ctx: ConsoleCtx, input: NewClientInput) {
   const tx = db();
   const actorRole = await roleKeyOf(ctx);
   const billTo = { name: input.business.name, gstin: input.business.gstin?.toUpperCase() || null, stateCode: input.business.stateCode, address: input.business.address || null };
-  const q = await quote({ ...input.order, billTo }, { actorRoleKey: actorRole });
+  if (input.start === 'paid' && !input.order) throw new AppError('VALIDATION_FAILED', 'Choose a plan.', { fields: { 'order.planKey': 'Choose a plan' } });
+  const q = input.start === 'paid' ? await quote({ ...input.order!, billTo }, { actorRoleKey: actorRole }) : null;
 
   const email = normaliseEmail(input.owner.email);
   const mobile = normaliseMobile(input.owner.mobile);
@@ -204,22 +225,40 @@ export async function createPaidClient(ctx: ConsoleCtx, input: NewClientInput) {
     industryKey: input.business.industryKey,
     gstin: billTo.gstin ?? undefined,
     billingStateCode: billTo.stateCode,
-    acquisition: { byType: actorRole === 'vendor' ? 'vendor' : 'sales_user', byUserId: ctx.userId, method: 'manual', couponCode: q.couponCode ?? undefined },
-    paidOnboarding: { planId: q.plan.id, cycle: q.cycle },
+    acquisition: { byType: acquirerType(actorRole), byUserId: ctx.userId, method: 'manual', couponCode: q?.couponCode ?? undefined },
+    paidOnboarding: q ? { planId: q.plan.id, cycle: q.cycle } : undefined,
   });
 
-  const cancelDays = await getSetting('onboarding.unpaid_cancel_days');
-  const order = await saveOrder(q, { tenantId: created.tenant.id, kind: 'fresh', billTo, createdBy: ctx.userId, expiresAt: new Date(Date.now() + cancelDays * DAY) });
-
-  await sendMessage({
-    channel: 'email',
-    to: email,
-    template: 'onboarding.paid_client',
-    subject: `Your AHEAD workspace for ${billTo.name} is ready`,
-    text: `Hi ${input.owner.name}, your workspace is set up. Sign in at /login with your mobile ${mobile} (OTP). Modules open as soon as the payment of ₹${(q.totalPaise / 100).toFixed(2)} is received.`,
+  let order: { id: string; status: string } | null = null;
+  if (q) {
+    const cancelDays = await getSetting('onboarding.unpaid_cancel_days');
+    order = await saveOrder(q, { tenantId: created.tenant.id, kind: 'fresh', billTo, createdBy: ctx.userId, expiresAt: new Date(Date.now() + cancelDays * DAY) });
+  }
+  const loginLink = await sendAccessLink({
+    kind: 'client_owner',
+    userId: created.user.id,
+    tenantId: created.tenant.id,
+    createdBy: ctx.userId,
+    extra: q ? `After you sign in, pay ₹${(q.totalPaise / 100).toFixed(2)} to start your ${q.plan.name} plan.` : 'Your free trial starts today.',
   });
-  await audit({ tenantId: null, action: 'console.client_created', entity: 'tenant', entityId: created.tenant.id, after: { orderId: order.id, plan: q.plan.key, cycle: q.cycle, totalPaise: q.totalPaise, discountBp: q.discountBp, needsApproval: q.needsApproval } });
-  return { tenantId: created.tenant.id, orderId: order.id, status: order.status, totalPaise: q.totalPaise };
+  await audit({ tenantId: null, action: 'console.client_created', entity: 'tenant', entityId: created.tenant.id, after: { start: input.start, orderId: order?.id, plan: q?.plan.key, cycle: q?.cycle, totalPaise: q?.totalPaise, discountBp: q?.discountBp, needsApproval: q?.needsApproval } });
+  return {
+    tenantId: created.tenant.id,
+    orderId: order?.id ?? null,
+    status: order?.status ?? 'trialing',
+    totalPaise: q?.totalPaise ?? 0,
+    loginLink,
+    owner: { name: created.user.name, mobile: created.user.mobile, email: created.user.email },
+  };
+}
+
+/** A client that signed up with a referral link or code gets the welcome discount on its first payment. */
+export async function welcomePercentFor(tenantId: string) {
+  const tx = db();
+  const acq = await tx.tenantAcquisition.findUnique({ where: { tenantId }, select: { method: true } });
+  if (!acq || (acq.method !== 'referral_link' && acq.method !== 'referral_code')) return 0;
+  if (await tx.platformOrder.count({ where: { tenantId, status: 'paid' } })) return 0;
+  return getSetting('referral.welcome_discount_percent');
 }
 
 /** Wireframe C3 "Convert to paid": an order for a client already on AHEAD (trial, Free or unpaid). */
@@ -231,7 +270,7 @@ export async function convertClient(ctx: ConsoleCtx, tenantId: string, order: Om
   if (open) throw new AppError('CONFLICT', 'This client already has an order waiting — send that payment link or cancel it first.', { orderId: open.id });
   if (!tenant.billingStateCode) throw new AppError('VALIDATION_FAILED', "Add the client's GST state first (the owner sets it in Settings › Business).");
   const billTo = { name: tenant.legalName ?? tenant.name, gstin: tenant.gstin, stateCode: tenant.billingStateCode, address: null };
-  const q = await quote({ ...order, billTo }, { actorRoleKey: await roleKeyOf(ctx) });
+  const q = await quote({ ...order, billTo }, { actorRoleKey: await roleKeyOf(ctx), welcomePercent: await welcomePercentFor(tenantId) });
   const cancelDays = await getSetting('onboarding.unpaid_cancel_days');
   const saved = await saveOrder(q, { tenantId, kind: 'fresh', billTo, createdBy: ctx.userId, expiresAt: new Date(Date.now() + cancelDays * DAY) });
   await audit({ tenantId: null, action: 'console.client_converted', entity: 'tenant', entityId: tenantId, after: { orderId: saved.id, plan: q.plan.key, cycle: q.cycle, totalPaise: q.totalPaise, discountBp: q.discountBp, needsApproval: q.needsApproval } });

@@ -243,6 +243,7 @@ model User {
   passwordHistory UserPasswordHistory[]
   memberships    TenantMember[]
   platformMember PlatformMember?
+  accessLinks    AccessLink[]
 
   @@map("users")
 }
@@ -317,6 +318,7 @@ model Tenant {
   subscription Subscription?
   acquisition  TenantAcquisition?
   partner      Partner?           @relation(fields: [partnerId], references: [id], map: "tenants_partner_fkey")
+  accessLinks  AccessLink[]
 
   @@index([partnerId])
   @@index([status])
@@ -614,6 +616,34 @@ model TenantAcquisition {
 
   @@index([acquiredByUserId])
   @@map("tenant_acquisitions")
+}
+
+enum AccessLinkKind {
+  client_owner
+  console_member
+
+  @@map("access_link_kind")
+}
+
+/// Console v3: one-time login link (7 days). The person verifies their mobile and sets their own password.
+model AccessLink {
+  id        String         @id @default(uuid(7)) @db.Uuid
+  tokenHash String         @unique(map: "access_links_token_hash_key") @map("token_hash")
+  kind      AccessLinkKind
+  userId    String         @map("user_id") @db.Uuid
+  tenantId  String?        @map("tenant_id") @db.Uuid
+  createdBy String?        @map("created_by") @db.Uuid
+  expiresAt DateTime       @map("expires_at") @db.Timestamptz
+  openedAt  DateTime?      @map("opened_at") @db.Timestamptz
+  usedAt    DateTime?      @map("used_at") @db.Timestamptz
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz
+
+  user   User    @relation(fields: [userId], references: [id], map: "access_links_user_fkey")
+  tenant Tenant? @relation(fields: [tenantId], references: [id], map: "access_links_tenant_fkey")
+
+  @@index([userId], map: "access_links_user_idx")
+  @@index([tenantId], map: "access_links_tenant_idx")
+  @@map("access_links")
 }
 
 /// Platform table (no RLS): prevents repeated trials by the same business.

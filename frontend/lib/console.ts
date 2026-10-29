@@ -2,6 +2,21 @@ import type { PlanLimits, Scope, TenantStatus } from "@/lib/types"
 
 // Shapes returned by the Console API (/console/*), design v2.
 
+/** Console v3: who onboarded a client, worked out automatically */
+export interface OnboardedBy {
+  kind: "website" | "team" | "sales" | "vendor" | "partner"
+  name: string | null
+}
+
+/** Console v3: how far the owner has got */
+export interface ClientProgress {
+  linkSentAt: string | null
+  loggedIn: boolean
+  setupDone: boolean
+  paid: boolean
+  lastActiveAt: string | null
+}
+
 export interface ClientRow {
   id: string
   name: string
@@ -13,8 +28,14 @@ export interface ClientRow {
   plan: string | null
   trialEndsAt: string | null
   renewsAt: string | null
-  owner: { id: string; name: string; email: string } | null
+  owner: { id: string; name: string; email: string; mobile: string } | null
   acquiredBy: string | null
+  planKey: string | null
+  cycle: "monthly" | "yearly" | null
+  userLimit: number | null
+  modules: string[]
+  onboardedBy: OnboardedBy | null
+  progress: ClientProgress | null
   activeUsers: number
   mrrPaise: number | null
   health: Health | null
@@ -62,6 +83,8 @@ export interface ClientDetail {
   orders: { id: string; status: OrderStatus; cycle: string; totalPaise: number; createdAt: string; paidAt: string | null; expiresAt: string; invoice: { id: string; number: string } | null }[]
   extensions: { id: string; kind: "trial" | "grace"; days: number; reason: string; newEndAt: string; createdAt: string; grantedBy: string | null }[]
   partner: { id: string; name: string } | null
+  onboardedBy: OnboardedBy | null
+  progress: ClientProgress | null
   billedBy: "self" | "partner"
   history: { id: string; action: string; at: string; actor: string | null }[]
 }
@@ -148,6 +171,8 @@ export interface Quote {
   items: OrderItem[]
   listPaise: number
   salesDiscountPaise: number
+  /** Referral signup's welcome discount on the first payment (Console v3) */
+  welcomePercent: number
   couponCode: string | null
   couponDiscountPaise: number
   discountPaise: number
@@ -344,4 +369,10 @@ export interface PartnerDetail extends Omit<PartnerRow, "clients" | "liveClients
   stateCode: string | null
   people: { id: string; status: string; user: { name: string; email: string; lastLoginAt: string | null }; role: { name: string } }[]
   bill: PartnerBill
+}
+
+/** Short module names for table chips */
+export const MODULE_SHORT: Record<string, string> = {
+  crm: "CRM", catalog: "Products", sales: "Sales", billing: "Billing", inventory: "Stock", hr: "HR", tasks: "Tasks",
+  finance: "Finance", bookings: "Bookings", support: "Support", reports: "Reports", ai: "AI", automation: "Automation",
 }

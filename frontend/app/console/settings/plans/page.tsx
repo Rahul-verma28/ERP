@@ -259,16 +259,21 @@ export default function PlansPage() {
   const itemName = (p: Catalog["prices"][number]) =>
     p.itemType === "plan" ? data.plans.find((x) => x.key === p.itemRef)?.name ?? p.itemRef : p.itemType === "extra_user" ? "Extra user" : `${moduleName(p.itemRef)} add-on`
 
-  return (
-    <Page title="Plans & prices" subtitle="Prices are before GST. A new price applies to new orders and renewals; clients keep what they already paid for." back={{ href: "/console/settings", label: "Settings" }}>
+  // Console v3: plans for sale, plus old plans only while clients are still on them; no module add-ons
+  const plans = data.plans.filter((p) => p.isPublic || p.subscribers > 0).sort((a, b) => Number(b.isPublic) - Number(a.isPublic))
+  const forSale = new Set(data.plans.filter((p) => p.isPublic).map((p) => p.key))
+  const prices = data.prices.filter((p) => p.itemType === "extra_user" || (p.itemType === "plan" && forSale.has(p.itemRef)))
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {data.plans.map((p) => (
+  return (
+    <Page title="Plans & prices" subtitle="Free and three plans, each a fixed set of modules and users. The only extra is users. Prices are before GST." back={{ href: "/console/settings", label: "Settings" }}>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {plans.map((p) => (
           <Card key={p.key}>
             <CardHeader>
               <CardTitle className="flex items-center justify-between gap-2">
                 <span>
-                  {p.name} {!p.isPublic && <Badge variant="outline" className="ml-1 h-5 px-1.5 text-[10px]">hidden</Badge>}
+                  {p.name} {!p.isPublic && <Badge variant="outline" className="ml-1 h-5 px-1.5 text-[10px]">old plan · not sold</Badge>}
                 </span>
                 {canEdit && (
                   <Button size="icon" variant="ghost" onClick={() => setEditing(p)} aria-label={`Edit ${p.name}`}>
@@ -309,7 +314,7 @@ export default function PlansPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.prices.map((p) => (
+              {prices.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="pl-6">{itemName(p)}</TableCell>
                   <TableCell className="capitalize">{p.cycle}</TableCell>
@@ -327,7 +332,10 @@ export default function PlansPage() {
       <Card className="mt-6">
         <CardHeader>
           <CardTitle className="flex items-center justify-between gap-2">
-            Coupons
+            <span>
+              Coupons
+              <span className="mt-1 block text-sm font-normal text-muted-foreground">For campaigns. A coupon works on the first payment, and never together with a manual discount. Referral codes get the welcome discount set in Company details &amp; rules.</span>
+            </span>
             {canEdit && (
               <Button size="sm" onClick={() => setCouponOpen(true)}>
                 <Plus /> New coupon

@@ -143,7 +143,7 @@ export default function BillingPage() {
           .map((p) => {
             const price = cycle === "monthly" ? p.monthlyPaise : p.yearlyPaise
             const isCurrent = currentKey === p.key
-            const recommended = p.key === "growth"
+            const recommended = p.key === "professional"
             return (
               <Card key={p.key} className={cn(recommended && "ring-2 ring-primary")}>
                 <CardHeader>

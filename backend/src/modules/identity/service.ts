@@ -30,15 +30,15 @@ export async function pickTenant(userId: string, preferred?: string | null) {
 }
 
 /** Shared tail of every successful login. Must run in a platform transaction. */
-export async function completeLogin(req: Request, res: Response, userId: string, method: string) {
+export async function completeLogin(req: Request, res: Response, userId: string, method: string, open: { tenantId?: string | null; console?: boolean } = {}) {
   const tx = db();
   const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-  const membership = await pickTenant(user.id, user.lastTenantId);
+  const membership = open.console ? null : await pickTenant(user.id, open.tenantId ?? user.lastTenantId);
   await tx.user.update({
     where: { id: user.id },
     data: { lastLoginAt: new Date(), failedLogins: 0, lockedUntil: null, lastTenantId: membership?.tenantId ?? user.lastTenantId },
   });
-  // AHEAD team members with no business of their own land in the Console
+  // AHEAD team members with no business of their own (or arriving from a Console link) land in the Console
   const platform = membership ? null : await tx.platformMember.findUnique({ where: { userId: user.id } });
   const accessToken = platform?.status === 'active'
     ? await startSession(req, res, user.id, null, platform.roleId, 'console')

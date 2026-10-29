@@ -19,7 +19,7 @@ import type { Catalog, ClientDetail, Quote } from "@/lib/console"
 export function ConvertDialog({ client, open, onOpenChange }: { client: ClientDetail; open: boolean; onOpenChange: (o: boolean) => void }) {
   const router = useRouter()
   const catalog = useApi<Catalog>(open ? "/console/catalog" : null)
-  const [form, setForm] = React.useState({ planKey: client.subscription?.plan?.key && client.subscription.plan.key !== "free" ? client.subscription.plan.key : "starter", cycle: "yearly", extraUsers: "0", discountPercent: "0", couponCode: "" })
+  const [form, setForm] = React.useState({ planKey: client.subscription?.plan?.key && client.subscription.plan.key !== "free" ? client.subscription.plan.key : "standard", cycle: "yearly", extraUsers: "0", discountPercent: "0", couponCode: "" })
   const [quote, setQuote] = React.useState<Quote | null>(null)
   const [quoteError, setQuoteError] = React.useState<string | null>(null)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
@@ -32,13 +32,13 @@ export function ConvertDialog({ client, open, onOpenChange }: { client: ClientDe
     if (!open || !client.billingStateCode) return
     let cancelled = false
     api
-      .post<Quote>("/console/quote", { ...JSON.parse(pricing), stateCode: client.billingStateCode })
+      .post<Quote>("/console/quote", { ...JSON.parse(pricing), stateCode: client.billingStateCode, tenantId: client.id })
       .then((q) => !cancelled && (setQuote(q), setQuoteError(null)))
       .catch((e) => !cancelled && (setQuote(null), setQuoteError(errorMessage(e))))
     return () => {
       cancelled = true
     }
-  }, [pricing, open, client.billingStateCode])
+  }, [pricing, open, client.billingStateCode, client.id])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -81,11 +81,11 @@ export function ConvertDialog({ client, open, onOpenChange }: { client: ClientDe
             <Field label="Extra users" error={errors.extraUsers}>
               <Input type="number" min={0} max={500} value={form.extraUsers} onChange={set("extraUsers")} />
             </Field>
-            <Field label="Discount %" error={errors.discountPercent} hint={quote ? `Your limit: ${quote.discountLimitPercent}%` : undefined}>
-              <Input type="number" min={0} max={100} value={form.discountPercent} onChange={set("discountPercent")} />
+            <Field label="Discount %" error={errors.discountPercent} hint={form.couponCode ? "Not with a coupon" : quote ? `Your limit: ${quote.discountLimitPercent}%` : undefined}>
+              <Input type="number" min={0} max={100} value={form.discountPercent} disabled={!!form.couponCode} onChange={set("discountPercent")} />
             </Field>
-            <Field label="Coupon" error={errors.couponCode}>
-              <Input value={form.couponCode} onChange={(e) => setForm({ ...form, couponCode: e.target.value.toUpperCase() })} />
+            <Field label="Coupon" error={errors.couponCode} hint={Number(form.discountPercent) > 0 ? "Not with a discount" : undefined}>
+              <Input value={form.couponCode} disabled={Number(form.discountPercent) > 0} onChange={(e) => setForm({ ...form, couponCode: e.target.value.toUpperCase() })} />
             </Field>
           </div>
           <div className="rounded-xl border px-3 py-2 text-sm">
@@ -93,9 +93,10 @@ export function ConvertDialog({ client, open, onOpenChange }: { client: ClientDe
               <p className="text-destructive">{quoteError}</p>
             ) : quote ? (
               <>
+                {quote.welcomePercent > 0 && <div className="flex justify-between text-emerald-700 dark:text-emerald-400"><span>Referral welcome discount {quote.welcomePercent}%</span><span className="tabular-nums">−{formatPaise(quote.discountPaise)}</span></div>}
                 <div className="flex justify-between"><span className="text-muted-foreground">Before GST</span><span className="tabular-nums">{formatPaise(quote.taxablePaise)}</span></div>
                 <div className="flex justify-between font-semibold"><span>Total with GST</span><span className="tabular-nums">{formatPaise(quote.totalPaise)}</span></div>
-                {quote.needsApproval && <p className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-400">Above your discount limit — a Super Admin approves it in Payments before the link can be sent.</p>}
+                {quote.needsApproval && <p className="mt-1 text-xs font-semibold text-amber-700 dark:text-amber-400">Above your discount limit — an Admin approves it in Payments before the link can be sent.</p>}
               </>
             ) : (
               <p className="text-muted-foreground">Working out the price…</p>

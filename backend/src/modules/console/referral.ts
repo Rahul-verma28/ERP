@@ -10,7 +10,7 @@ import { invalidatePlatformMember } from './service';
 // Referral link and code (platform design §2A): vendors and salespeople share
 // /signup?ref=CODE or the code itself. A self-signup that brings a valid code is credited to them.
 
-const REFERRERS: Record<string, 'vendor' | 'sales_user'> = { vendor: 'vendor', console_sales_executive: 'sales_user', console_sales_manager: 'sales_user' };
+const REFERRERS: Record<string, 'vendor' | 'sales_user'> = { vendor: 'vendor', console_sales: 'sales_user' };
 
 /** "Neha Joshi" → NEHA + 3 digits; letters only, so codes read well on a call. */
 function makeCode(name: string) {

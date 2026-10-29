@@ -118,6 +118,22 @@
     --sidebar-ring: #5B82F0;
 }
 
+/* Console v3: the partner portal (/partner) is a separate place with its own violet look */
+[data-portal="partner"] {
+    --primary: #6A3FC7;
+    --primary-foreground: #FFFFFF;
+    --accent: #F1ECFC;
+    --accent-foreground: #4B2A9A;
+    --ring: #6A3FC7;
+}
+.dark [data-portal="partner"] {
+    --primary: #9F80F5;
+    --primary-foreground: #160F2E;
+    --accent: #2A2142;
+    --accent-foreground: #DCD0FF;
+    --ring: #9F80F5;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

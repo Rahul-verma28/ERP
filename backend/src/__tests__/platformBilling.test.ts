@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { prisma, db, withPlatform } from '../kernel/db';
 import { cache } from '../kernel/cache';
 import type { ConsoleCtx } from '../kernel/context';
-import { allocate, approveOrder, capturePayment, createPaidClient, quote } from '../modules/platformBilling/service';
+import { allocate, approveOrder, capturePayment, createClient, quote } from '../modules/platformBilling/service';
 import { withExtraUsers } from '../modules/subscription/entitlements';
 
 // Platform design v2, Step 4a: paid onboarding from the Console. Database tests run in a
@@ -45,6 +45,7 @@ const newClient = (discountPercent: number, stateCode = '09') => {
   return {
     business: { name: `Paid Client ${n}`, industryKey: 'retail', gstin: null, stateCode },
     owner: { name: 'Paid Owner', email: `owner-${n}@example.test`, mobile: `+916${n}` },
+    start: 'paid' as const,
     order: { planKey: 'starter', cycle: 'monthly' as const, addOns: ['hr'], extraUsers: 2, discountPercent },
   };
 };
@@ -67,8 +68,8 @@ describe('paid onboarding', () => {
 
   it('within the discount limit: client waits for payment with every module closed', async () => {
     await rolledBack(async () => {
-      const exec = await consoleUser('console_sales_executive');
-      const out = await createPaidClient(exec, newClient(5));
+      const exec = await consoleUser('console_sales');
+      const out = await createClient(exec, newClient(5));
       expect(out.status).toBe('awaiting_payment');
       const tenant = await db().tenant.findUniqueOrThrow({ where: { id: out.tenantId }, include: { acquisition: true, subscription: true } });
       expect(tenant.status).toBe('incomplete');
@@ -82,9 +83,9 @@ describe('paid onboarding', () => {
 
   it('above the limit: needs someone else\'s approval, then full payment issues an intra-state invoice and opens the plan', async () => {
     await rolledBack(async () => {
-      const exec = await consoleUser('console_sales_executive');
+      const exec = await consoleUser('console_sales');
       const boss = await consoleUser('super_admin');
-      const out = await createPaidClient(exec, newClient(15));
+      const out = await createClient(exec, newClient(15));
       expect(out.status).toBe('pending_approval');
 
       const pay = { method: 'bank_transfer' as const, amountPaise: out.totalPaise, reference: 'UTR123', receivedAt: new Date(), recordedBy: boss.userId };
@@ -113,8 +114,8 @@ describe('paid onboarding', () => {
 
   it('a buyer in another state is charged IGST', async () => {
     await rolledBack(async () => {
-      const exec = await consoleUser('console_sales_executive');
-      const out = await createPaidClient(exec, newClient(0, '27'));
+      const exec = await consoleUser('console_sales');
+      const out = await createClient(exec, newClient(0, '27'));
       const order = await db().platformOrder.findUniqueOrThrow({ where: { id: out.orderId } });
       expect(order.cgstPaise).toBe(0n);
       expect(Number(order.igstPaise)).toBe(Math.round(Number(order.taxablePaise) * 0.18));

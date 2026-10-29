@@ -9,30 +9,38 @@ import { Input } from "@/components/ui/input"
 import { ConfirmDialog } from "@/components/common"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { Chip, Empty, Failed, Loading, Page, Panel, ago } from "@/components/console/kit"
+import { LoginLinkBox, SendNewLink, type LoginLink } from "@/components/console/login-link"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import type { ConsoleMember, ConsoleRole } from "@/lib/console"
 
-// Team: the people who use this Console — AHEAD's team and vendors, or a partner's own staff.
-// Edits save at once; only deactivating someone asks first, because it signs them out.
+// People (Console v3): AHEAD's team, salespeople and vendors, or a partner's own staff. A new
+// person gets a login link and sets their own password. Edits save at once; only turning
+// someone off asks first, because it signs them out.
 
 type Patch = { roleKey?: string; reportsTo?: string | null; status?: "active" | "deactivated" }
 
-function AddDialog({ open, onOpenChange, roles, members, partner, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; roles: ConsoleRole[]; members: ConsoleMember[]; partner: boolean; onSaved: () => void }) {
+function AddDialog({ open, onOpenChange, roles, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; roles: ConsoleRole[]; onSaved: () => void }) {
   const first = roles[roles.length - 1]?.key ?? ""
   const [form, setForm] = React.useState({ email: "", name: "", mobile: "", roleKey: first, reportsTo: "" })
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [busy, setBusy] = React.useState(false)
+  const [added, setAdded] = React.useState<{ name: string; mobile: string; link: LoginLink } | null>(null)
+  function close(o: boolean) {
+    onOpenChange(o)
+    if (!o) {
+      setAdded(null)
+      setForm({ email: "", name: "", mobile: "", roleKey: first, reportsTo: "" })
+    }
+  }
   async function save(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     setErrors({})
     try {
-      const r = await api.post<{ newUser: boolean }>("/console/members", { email: form.email, name: form.name || undefined, mobile: form.mobile || undefined, roleKey: form.roleKey || first, reportsTo: form.reportsTo || null })
-      toast.success(r.newUser ? "Added — they sign in with their mobile (one-time code)" : "Added")
-      onOpenChange(false)
-      setForm({ email: "", name: "", mobile: "", roleKey: first, reportsTo: "" })
+      const r = await api.post<{ newUser: boolean; loginLink: LoginLink }>("/console/members", { email: form.email, name: form.name || undefined, mobile: form.mobile || undefined, roleKey: form.roleKey || first })
+      setAdded({ name: form.name || form.email, mobile: form.mobile, link: r.loginLink })
       onSaved()
     } catch (err) {
       setErrors(err instanceof ApiError ? { ...err.fields, form: errorMessage(err) } : { form: errorMessage(err) })
@@ -40,13 +48,29 @@ function AddDialog({ open, onOpenChange, roles, members, partner, onSaved }: { o
       setBusy(false)
     }
   }
+  if (added)
+    return (
+      <Dialog open={open} onOpenChange={close}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{added.name} is added</DialogTitle>
+            <DialogDescription>We sent them a login link by SMS and email. You can also share it yourself.</DialogDescription>
+          </DialogHeader>
+          <LoginLinkBox link={added.link} mobile={added.mobile || undefined} message="Join the AHEAD Console here:" />
+          <DialogFooter>
+            <Button type="button" onClick={() => close(false)}>Done</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={close}>
       <DialogContent>
         <form onSubmit={save} className="grid gap-4">
           <DialogHeader>
             <DialogTitle>Add a person</DialogTitle>
-            <DialogDescription>Someone who already has an AHEAD account is added by email. For someone new, add their name and mobile too.</DialogDescription>
+            <DialogDescription>They get a login link by SMS and email and choose their own password. Someone who already has an AHEAD account is found by email.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Email" required error={errors.email} className="sm:col-span-2">
@@ -58,7 +82,7 @@ function AddDialog({ open, onOpenChange, roles, members, partner, onSaved }: { o
             <Field label="Mobile" error={errors.mobile}>
               <Input inputMode="tel" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} placeholder="98765 43210" />
             </Field>
-            <Field label="Role" error={errors.roleKey} className={partner ? "sm:col-span-2" : undefined}>
+            <Field label="Role" error={errors.roleKey} className="sm:col-span-2">
               <NativeSelect value={form.roleKey || first} onChange={(e) => setForm({ ...form, roleKey: e.target.value })}>
                 {roles.map((r) => (
                   <option key={r.key} value={r.key}>
@@ -67,18 +91,6 @@ function AddDialog({ open, onOpenChange, roles, members, partner, onSaved }: { o
                 ))}
               </NativeSelect>
             </Field>
-            {!partner && (
-              <Field label="Reports to" hint="A Sales Manager sees their team's clients" error={errors.reportsTo}>
-                <NativeSelect value={form.reportsTo} onChange={(e) => setForm({ ...form, reportsTo: e.target.value })}>
-                  <option value="">Nobody</option>
-                  {members.filter((m) => m.status === "active").map((m) => (
-                    <option key={m.id} value={m.user.id}>
-                      {m.user.name}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </Field>
-            )}
           </div>
           <p className="text-[13px] text-muted-foreground">{roles.find((r) => r.key === (form.roleKey || first))?.description}</p>
           <FormError message={errors.form} />
@@ -93,7 +105,7 @@ function AddDialog({ open, onOpenChange, roles, members, partner, onSaved }: { o
   )
 }
 
-function EditDialog({ member, self, roles, members, partner, onClose, onSave }: { member: ConsoleMember; self: boolean; roles: ConsoleRole[]; members: ConsoleMember[]; partner: boolean; onClose: () => void; onSave: (body: Patch) => Promise<boolean> }) {
+function EditDialog({ member, self, roles, onClose, onSave }: { member: ConsoleMember; self: boolean; roles: ConsoleRole[]; onClose: () => void; onSave: (body: Patch) => Promise<boolean> }) {
   const [form, setForm] = React.useState({ roleKey: member.role.key, reportsTo: member.reportsTo?.userId ?? "", status: (member.status === "deactivated" ? "deactivated" : "active") as "active" | "deactivated" })
   const [busy, setBusy] = React.useState(false)
   return (
@@ -104,7 +116,7 @@ function EditDialog({ member, self, roles, members, partner, onClose, onSave }: 
           onSubmit={async (e) => {
             e.preventDefault()
             setBusy(true)
-            const body: Patch = { ...(self ? {} : { roleKey: form.roleKey !== member.role.key ? form.roleKey : undefined, status: form.status !== member.status ? form.status : undefined }), ...(partner ? {} : { reportsTo: form.reportsTo || null }) }
+            const body: Patch = self ? {} : { roleKey: form.roleKey !== member.role.key ? form.roleKey : undefined, status: form.status !== member.status ? form.status : undefined }
             if (await onSave(body)) onClose()
             setBusy(false)
           }}
@@ -123,18 +135,6 @@ function EditDialog({ member, self, roles, members, partner, onClose, onSave }: 
               ))}
             </NativeSelect>
           </Field>
-          {!partner && (
-            <Field label="Reports to">
-              <NativeSelect value={form.reportsTo} onChange={(e) => setForm({ ...form, reportsTo: e.target.value })}>
-                <option value="">Nobody</option>
-                {members.filter((o) => o.id !== member.id && o.status === "active").map((o) => (
-                  <option key={o.id} value={o.user.id}>
-                    {o.user.name}
-                  </option>
-                ))}
-              </NativeSelect>
-            </Field>
-          )}
           {!self && (
             <Field label="Access">
               <NativeSelect value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as "active" | "deactivated" })}>
@@ -191,9 +191,8 @@ export default function TeamPage() {
 
   return (
     <Page
-      title="Team"
-      subtitle={partner ? `People at ${me?.console?.partner?.name} who use this panel.` : "AHEAD's team and vendors. Each role decides what that person can do."}
-      back={partner ? undefined : { href: "/console/settings", label: "Settings" }}
+      title={partner ? "Team" : "People"}
+      subtitle={partner ? `People at ${me?.console?.partner?.name} who use this panel.` : "AHEAD's team, salespeople and vendors. Each role decides what that person can do."}
       actions={
         canConsole("platform.member.create") && (
           <Button onClick={() => setOpen(true)}>
@@ -212,7 +211,6 @@ export default function TeamPage() {
                 <tr className="border-b text-left text-xs text-muted-foreground">
                   <th className="px-5 py-3 font-medium">Person</th>
                   <th className="px-3 py-3 font-medium">Role</th>
-                  {!partner && <th className="px-3 py-3 font-medium">Reports to</th>}
                   <th className="px-3 py-3 font-medium">Last signed in</th>
                   <th className="px-5 py-3" />
                 </tr>
@@ -232,14 +230,16 @@ export default function TeamPage() {
                         <div className="text-[13px] text-muted-foreground">{m.user.email}</div>
                       </td>
                       <td className="px-3 py-3.5">{m.role.name}</td>
-                      {!partner && <td className="px-3 py-3.5 text-muted-foreground">{m.reportsTo?.name ?? "—"}</td>}
-                      <td className="px-3 py-3.5 text-muted-foreground">{ago(m.user.lastLoginAt)}</td>
+                      <td className="px-3 py-3.5 text-muted-foreground">{m.user.lastLoginAt ? ago(m.user.lastLoginAt) : "Not yet"}</td>
                       <td className="px-5 py-3.5 text-right">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
+                        {!m.user.lastLoginAt && m.status === "active" && canConsole("platform.member.create") && <SendNewLink path={`/console/members/${m.id}/login-link`} mobile={m.user.mobile} />}
                         {!locked && (
                           <Button size="sm" variant="ghost" onClick={() => setEditing(m)} aria-label={`Edit ${m.user.name}`}>
                             <Pencil /> Edit
                           </Button>
                         )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -264,8 +264,8 @@ export default function TeamPage() {
         </div>
       </Panel>
 
-      <AddDialog open={open} onOpenChange={setOpen} roles={assignable} members={all} partner={partner} onSaved={members.reload} />
-      {editing && <EditDialog member={editing} self={editing.user.id === me?.user.id} roles={assignable} members={all} partner={partner} onClose={() => setEditing(null)} onSave={(body) => save(editing, body)} />}
+      <AddDialog open={open} onOpenChange={setOpen} roles={assignable} onSaved={members.reload} />
+      {editing && <EditDialog member={editing} self={editing.user.id === me?.user.id} roles={assignable} onClose={() => setEditing(null)} onSave={(body) => save(editing, body)} />}
       <ConfirmDialog
         open={!!turnOff}
         onOpenChange={(o) => {

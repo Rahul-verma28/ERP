@@ -36,7 +36,7 @@ describe('Clients', () => {
     await rolledBack(async () => {
       const sub = await db().subscription.findFirst({ where: { status: 'trialing' } });
       if (!sub) return;
-      const admin = await consoleUser('platform_ops');
+      const admin = await consoleUser('console_staff');
       const row = await extendClient(admin, sub.tenantId, { days: 5, reason: 'Client asked for more time' });
       const after = await db().subscription.findUniqueOrThrow({ where: { id: sub.id } });
       expect(row.kind).toBe('trial');
@@ -51,7 +51,7 @@ describe('Clients', () => {
       const sub = await db().subscription.findFirst({ where: { status: 'trialing' } });
       if (!sub) return;
       await db().subscription.update({ where: { id: sub.id }, data: { status: 'free' } });
-      const admin = await consoleUser('platform_ops');
+      const admin = await consoleUser('console_staff');
       await expect(extendClient(admin, sub.tenantId, { days: 3, reason: 'Should not work' })).rejects.toMatchObject({ code: 'INVALID_TRANSITION' });
     });
   });
@@ -59,7 +59,7 @@ describe('Clients', () => {
   it('a client outside the scope is "not found", even by id', async () => {
     await rolledBack(async () => {
       const tenant = await db().tenant.findFirstOrThrow();
-      const exec = { ...(await consoleUser('console_sales_executive')), scope: 'own' as const };
+      const exec = { ...(await consoleUser('console_sales')), scope: 'own' as const };
       await expect(clientDetail(exec, tenant.id)).rejects.toMatchObject({ code: 'NOT_FOUND' });
       await db().tenantAcquisition.update({ where: { tenantId: tenant.id }, data: { acquiredByType: 'sales_user', acquiredByUserId: exec.userId, method: 'manual' } });
       const detail = await clientDetail(exec, tenant.id);
@@ -103,33 +103,33 @@ describe('Plans, prices and coupons', () => {
 });
 
 describe('Console users', () => {
-  it('only a Super Admin can add a Super Admin', async () => {
+  it('only a Admin can add a Admin', async () => {
     await rolledBack(async () => {
-      const ops = await consoleUser('platform_ops');
+      const ops = await consoleUser('console_staff');
       await expect(addMember(ops, { email: 'nobody-step3@example.test', name: 'X Y', mobile: '+917000000099', roleKey: 'super_admin' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
-      const out = await addMember(ops, { email: 'nobody-step3@example.test', name: 'X Y', mobile: '+917000000099', roleKey: 'console_sales_executive' });
+      const out = await addMember(ops, { email: 'nobody-step3@example.test', name: 'X Y', mobile: '+917000000099', roleKey: 'console_sales' });
       expect(out.newUser).toBe(true);
     });
   });
 
-  it('nobody changes their own role, the last Super Admin stays, and the tree never loops', async () => {
+  it('nobody changes their own role, the last Admin stays, and the tree never loops', async () => {
     await rolledBack(async () => {
-      // Leave exactly one active Super Admin: the one created here
+      // Leave exactly one active Admin: the one created here
       await db().platformMember.updateMany({ where: { role: { key: 'super_admin' } }, data: { status: 'deactivated' } });
       const boss = await consoleUser('super_admin');
-      await expect(updateMember(boss, boss.memberId, { roleKey: 'platform_ops' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
+      await expect(updateMember(boss, boss.memberId, { roleKey: 'console_staff' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
 
-      const other = await consoleUser('platform_ops');
+      const other = await consoleUser('console_staff');
       await expect(updateMember(other, boss.memberId, { status: 'deactivated' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
 
-      const mgr = await consoleUser('console_sales_manager');
-      const exec = await consoleUser('console_sales_executive', mgr.userId);
+      const mgr = await consoleUser('console_sales');
+      const exec = await consoleUser('console_sales', mgr.userId);
       await expect(updateMember(boss, mgr.memberId, { reportsTo: exec.userId })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
 
       const secondBoss = await consoleUser('super_admin');
-      await updateMember(secondBoss, boss.memberId, { roleKey: 'platform_ops' });
+      await updateMember(secondBoss, boss.memberId, { roleKey: 'console_staff' });
       // The middleware reads the role live, so the demoted boss now acts as Operations
-      const demoted = { ...boss, roleId: await roleId('platform_ops') };
+      const demoted = { ...boss, roleId: await roleId('console_staff') };
       await expect(updateMember(demoted, secondBoss.memberId, { status: 'deactivated' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
       await expect(updateMember(secondBoss, secondBoss.memberId, { status: 'deactivated' })).rejects.toMatchObject({ code: 'PERMISSION_DENIED' });
     });

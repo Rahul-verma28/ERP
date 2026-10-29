@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { formatPaise } from "@/lib/format"
 import type { ApiError } from "@/lib/api"
 import type { TenantStatus } from "@/lib/types"
+import type { ClientProgress, OnboardedBy } from "@/lib/console"
 import { cn } from "@/lib/utils"
 
 // The Console's building blocks — one look for the AHEAD team, vendors and partners.
@@ -134,6 +135,57 @@ export function ClientStatus({ status, suffix, partnerBilled }: { status: Tenant
       {s.label}
       {suffix ? ` · ${suffix}` : ""}
     </Chip>
+  )
+}
+
+/** Console v3: "Onboarded by", set automatically from who added the client or whose code it used */
+const ONBOARDED: Record<OnboardedBy["kind"], { label: string; tone: Tone }> = {
+  website: { label: "Website", tone: "grey" },
+  team: { label: "AHEAD team", tone: "green" },
+  sales: { label: "Sales", tone: "blue" },
+  vendor: { label: "Vendor", tone: "amber" },
+  partner: { label: "Partner", tone: "grey" },
+}
+
+export function OnboardedChip({ by }: { by: OnboardedBy | null }) {
+  if (!by) return <span className="text-muted-foreground">—</span>
+  const o = ONBOARDED[by.kind]
+  const text = by.name ? `${o.label} · ${by.name}` : o.label
+  return (
+    <Chip tone={o.tone} className="max-w-full">
+      <span className="min-w-0 truncate" title={text}>{text}</span>
+    </Chip>
+  )
+}
+
+/** The client's status, with "Not logged in" first: nothing else matters until the owner signs in */
+export function ClientStateChip({ status, progress, trialEndsAt, partnerBilled }: { status: TenantStatus; progress: ClientProgress | null; trialEndsAt?: string | null; partnerBilled?: boolean }) {
+  if (progress && !progress.loggedIn && !["closed", "purged"].includes(status)) return <Chip tone="red">Not logged in</Chip>
+  let suffix: string | undefined
+  if (status === "trialing" && trialEndsAt) {
+    const d = daysFrom(trialEndsAt) ?? 0
+    suffix = d <= 0 ? "ends today" : `${d} day${d === 1 ? "" : "s"} left`
+  }
+  return <ClientStatus status={status} suffix={suffix} partnerBilled={partnerBilled} />
+}
+
+/** Link sent → Logged in → Setup done → Paid */
+export function ProgressSteps({ progress, partnerBilled }: { progress: ClientProgress; partnerBilled?: boolean }) {
+  const steps = [
+    { label: "Login link sent", done: !!progress.linkSentAt || progress.loggedIn },
+    { label: "Owner logged in", done: progress.loggedIn },
+    { label: "Setup finished", done: progress.setupDone },
+    ...(partnerBilled ? [] : [{ label: "First payment", done: progress.paid }]),
+  ]
+  return (
+    <ol className="grid gap-2 text-sm">
+      {steps.map((s) => (
+        <li key={s.label} className="flex items-center gap-2.5">
+          <span className={cn("grid size-5 shrink-0 place-items-center rounded-full text-[11px]", s.done ? "bg-emerald-600 text-white" : "ring-1 ring-border ring-inset")}>{s.done ? "✓" : ""}</span>
+          <span className={s.done ? "" : "text-muted-foreground"}>{s.label}</span>
+        </li>
+      ))}
+    </ol>
   )
 }
 

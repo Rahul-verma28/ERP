@@ -7,7 +7,7 @@ import 'dotenv/config';
 import { createPrismaClient } from '../src/kernel/prismaClient';
 import { syncCatalog } from '../src/modules/subscription/catalog';
 import { PERMISSIONS } from '../src/contracts/permissions';
-import { ROLES, expandGrants } from '../src/contracts/roles';
+import { RETIRED_ROLES, ROLES, expandGrants } from '../src/contracts/roles';
 import { TEMPLATES } from '../src/contracts/templates';
 
 const prisma = createPrismaClient();
@@ -42,6 +42,24 @@ async function seedRoles() {
   }
 }
 
+/** Move members of retired predefined roles to their replacement, then drop the old role. */
+async function retireRoles() {
+  for (const [oldKey, newKey] of Object.entries(RETIRED_ROLES)) {
+    const old = await prisma.role.findFirst({ where: { tenantId: null, key: oldKey }, select: { id: true } });
+    if (!old) continue;
+    const next = await prisma.role.findFirstOrThrow({ where: { tenantId: null, key: newKey }, select: { id: true } });
+    await prisma.platformMember.updateMany({ where: { roleId: old.id }, data: { roleId: next.id } });
+    await prisma.rolePermission.deleteMany({ where: { roleId: old.id } });
+    await prisma.roleFieldAccess.deleteMany({ where: { roleId: old.id } });
+    await prisma.role.delete({ where: { id: old.id } });
+  }
+  // Discount limits stored under the old role keys fall back to the new defaults
+  const limits = await prisma.configValue.findUnique({ where: { scope_key: { scope: 'platform', key: 'sales.discount_limits' } } });
+  if (limits && Object.keys(limits.value as object).some((k) => k in RETIRED_ROLES)) {
+    await prisma.configValue.delete({ where: { scope_key: { scope: 'platform', key: 'sales.discount_limits' } } });
+  }
+}
+
 async function seedTemplates() {
   for (const t of TEMPLATES) {
     const definition = JSON.parse(JSON.stringify(t));
@@ -57,6 +75,7 @@ async function main() {
   await syncCatalog(prisma, { resetCommercials: process.argv.includes('--reset-commercials') });
   await seedPermissions();
   await seedRoles();
+  await retireRoles();
   await seedTemplates();
   const counts = {
     modules: await prisma.module.count(),

@@ -4,9 +4,11 @@ import Link from "next/link"
 import { ReceiptText } from "lucide-react"
 import { Empty, Panel, money } from "@/components/console/kit"
 import type { PartnerBill } from "@/lib/console"
+import { useConsoleBase } from "@/lib/console-base"
 
 /** This month's bill from AHEAD to a partner: one line per live client, list price minus the discount */
 export function PartnerBillPanel({ bill, title = "This month's bill", linkClients }: { bill: PartnerBill; title?: string; linkClients?: boolean }) {
+  const base = useConsoleBase()
   return (
     <Panel title={title} description={`Every live client at the list price minus ${bill.discountPercent}%, billed monthly. GST ${bill.gstRatePercent}% is added.`} padded={false}>
       {!bill.lines.length ? (
@@ -27,7 +29,7 @@ export function PartnerBillPanel({ bill, title = "This month's bill", linkClient
                 <tr key={l.tenantId} className="border-b last:border-0">
                   <td className="px-3 py-2.5 font-medium">
                     {linkClients ? (
-                      <Link href={`/console/clients/${l.tenantId}`} className="hover:underline">
+                      <Link href={`${base}/clients/${l.tenantId}`} className="hover:underline">
                         {l.name}
                       </Link>
                     ) : (

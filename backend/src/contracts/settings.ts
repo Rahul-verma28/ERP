@@ -4,7 +4,7 @@ import { gstin as gstinRule, gstinStateMismatch, sac as sacRule, stateName, uppe
 
 // Platform settings (design v2 §9): the definition lives in code, the value in `config_values`.
 // A missing or invalid stored value falls back to the default here, so a bad row can never
-// break signups. Super Admin edits arrive with the Console (Step 3).
+// break signups. Admin edits arrive with the Console (Step 3).
 
 const PlanLimitsSchema = z.object({
   users: z.number().int().positive(),
@@ -25,15 +25,15 @@ interface SettingDef<S extends z.ZodTypeAny> {
 const def = <S extends z.ZodTypeAny>(d: SettingDef<S>) => d;
 
 export const SETTINGS = {
-  'trial.days': def({ description: 'Length of the free trial in days', schema: z.number().int().min(1).max(90), default: 15 }),
+  'trial.days': def({ description: 'Length of the free trial in days', schema: z.number().int().min(1).max(90), default: 14 }),
   'trial.plan_key': def({ description: 'Plan a new trial tenant is subscribed to', schema: z.string().min(1).max(40), default: TRIAL_PLAN_KEY }),
   'trial.limits': def({ description: 'Usage limits during the trial', schema: PlanLimitsSchema, default: TRIAL_LIMITS }),
   'grace.days_monthly': def({ description: 'Grace days after a failed monthly renewal', schema: z.number().int().min(0).max(60), default: 7 }),
   'grace.days_yearly': def({ description: 'Grace days after a failed yearly renewal', schema: z.number().int().min(0).max(90), default: 14 }),
   'sales.discount_limits': def({
-    description: 'Highest discount (%) each Console role may give without Super Admin approval',
+    description: 'Highest discount (%) each Console role may give without Admin approval',
     schema: z.record(z.string(), z.number().min(0).max(100)),
-    default: { console_sales_executive: 10, console_sales_manager: 20, vendor: 0 } as Record<string, number>,
+    default: { console_staff: 15, console_sales: 10, vendor: 5 } as Record<string, number>,
   }),
   'ahead.billing': def({
     description: "AHEAD's own details printed on invoices to clients (SAC and GST rate: confirm with the CA)",
@@ -49,6 +49,11 @@ export const SETTINGS = {
       if (mismatch) c.addIssue({ code: z.ZodIssueCode.custom, path: ['gstin'], message: mismatch });
     }),
     default: { legalName: 'AHEAD Software', gstin: '', stateCode: '', address: '', sac: '998314', gstRateBp: 1800 },
+  }),
+  'referral.welcome_discount_percent': def({
+    description: "Discount (%) on the first payment of a client who signed up with a vendor's or salesperson's link or code",
+    schema: z.number().min(0).max(50),
+    default: 10,
   }),
   'onboarding.unpaid_cancel_days': def({ description: 'Days a sales-created client may stay unpaid before the order lapses', schema: z.number().int().min(1).max(60), default: 14 }),
   'announcement.banner': def({
