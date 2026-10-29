@@ -123,7 +123,7 @@ export default function ConsoleSettingsPage() {
   const common = { rows, canEdit, onSaved: settings.reload }
 
   return (
-    <Page title="Company details & rules" subtitle="Free trial, discount limits and the details printed on AHEAD's invoices. Changes apply to everyone within a minute." back={{ href: "/console/settings", label: "Settings" }}>
+    <Page eyebrow="Settings" title="Console settings" subtitle="AHEAD's company and invoice details, free trial, discount limits and the announcement banner. Changes apply to everyone within a minute.">
       <div className="grid gap-6 lg:grid-cols-2">
         <SettingCard key={`trial-${v}`} title="Free trial" description="How long a new signup can try AHEAD, and the grace period after a missed renewal" keys={["trial.days", "trial.plan_key", "grace.days_monthly", "grace.days_yearly"]} {...common}>
           {(d, set) => (

@@ -265,7 +265,7 @@ export default function PlansPage() {
   const prices = data.prices.filter((p) => p.itemType === "extra_user" || (p.itemType === "plan" && forSale.has(p.itemRef)))
 
   return (
-    <Page title="Plans & prices" subtitle="Free and three plans, each a fixed set of modules and users. The only extra is users. Prices are before GST." back={{ href: "/console/settings", label: "Settings" }}>
+    <Page eyebrow="Product" title="Plans & pricing" subtitle="Free and three plans, each a fixed set of modules and users. The only extra is users. Prices are before GST.">
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {plans.map((p) => (

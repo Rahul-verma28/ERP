@@ -3,53 +3,29 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Building2, CreditCard, Handshake, Home, Link2, LogOut, Menu, ReceiptText, Settings2, ShieldCheck, UserRound, Users, X, type LucideIcon } from "lucide-react"
+import { Building2, LogOut, Menu, ShieldCheck, UserRound, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { ConsolePalette } from "@/components/console/console-palette"
+import { useNav, type NavItem } from "@/components/console/console-nav"
+import { NotificationsBell } from "@/components/console/notifications-bell"
 import { useAuth } from "@/lib/auth"
 import { initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useConsoleBase } from "@/lib/console-base"
 
-// The Console: one app, three panels. The AHEAD team runs everything; a vendor sees and adds
-// its own clients; a partner looks after its clients and its monthly bill. Each person sees
-// only their own menu.
+// Console shell (blueprint Phase A): grouped sidebar, sticky top bar with Ctrl+K search,
+// notifications and the account menu. Each person only sees the groups and pages their
+// role allows, and only pages that exist are listed.
 
-interface NavItem {
-  href: string
-  label: string
-  icon: LucideIcon
-  show: boolean
-}
-
-function useNav(): NavItem[] {
-  const { me, canConsole } = useAuth()
-  const audience = me?.console?.audience ?? "team"
-  if (audience === "partner") {
-    return [
-      { href: "/partner", label: "Home", icon: Home, show: true },
-      { href: "/partner/clients", label: "Clients", icon: Building2, show: canConsole("platform.tenant.view") },
-      { href: "/partner/team", label: "Team", icon: Users, show: canConsole("platform.member.view") },
-      { href: "/partner/billing", label: "Monthly bill", icon: ReceiptText, show: canConsole("platform.partner.view") },
-    ]
-  }
-  // Console v3: vendors and salespeople get the same small menu
-  if (audience === "vendor" || me?.console?.role.key === "console_sales") {
-    return [
-      { href: "/console", label: "Home", icon: Home, show: true },
-      { href: "/console/clients", label: "My clients", icon: Building2, show: canConsole("platform.tenant.view") },
-      { href: "/console/referral", label: "My link & code", icon: Link2, show: true },
-    ]
-  }
-  return [
-    { href: "/console", label: "Home", icon: Home, show: true },
-    { href: "/console/clients", label: "Clients", icon: Building2, show: canConsole("platform.tenant.view") },
-    { href: "/console/partners", label: "Partners", icon: Handshake, show: canConsole("platform.partner.view") },
-    { href: "/console/payments", label: "Payments", icon: CreditCard, show: canConsole("platform.payment.view") },
-    { href: "/console/team", label: "People", icon: Users, show: canConsole("platform.member.view") },
-    { href: "/console/settings", label: "Settings", icon: Settings2, show: canConsole("platform.plan.edit") || canConsole("platform.setting.edit") },
-  ]
+/** The nav item a path belongs to: the longest matching href wins (Plans is under Settings in the URL). */
+function useActive() {
+  const pathname = usePathname()
+  const { groups, settings } = useNav()
+  const all = [...groups.flatMap((g) => g.items), ...(settings ? [settings] : [])]
+  const match = all.filter((i) => pathname === i.href || (i.href.split("/").length > 2 && pathname.startsWith(`${i.href}/`))).sort((a, b) => b.href.length - a.href.length)[0]
+  return match?.href ?? null
 }
 
 function Brand() {
@@ -58,39 +34,54 @@ function Brand() {
   const partner = me?.console?.partner
   return (
     <Link href={base} className="flex items-center gap-3 px-2 py-1">
-      <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-sm">
-        {partner ? <span className="text-xs font-bold">{initials(partner.name)}</span> : <ShieldCheck className="size-4.5" />}
+      <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-[var(--console-brand)] text-white shadow-sm">
+        {partner ? <span className="text-xs font-bold">{initials(partner.name)}</span> : <span className="text-sm font-bold">A</span>}
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-[15px] font-semibold">{partner ? partner.name : "AHEAD Console"}</span>
-        <span className="block truncate text-xs text-muted-foreground">{partner ? `Partner portal · ${me?.console?.role.name}` : me?.console?.audience === "vendor" ? "Vendor panel" : me?.console?.role.name}</span>
+        <span className="block truncate text-[15px] font-semibold">{partner ? partner.name : "AHEAD"}</span>
+        <span className="block truncate text-xs text-muted-foreground">{partner ? "Partner portal" : "Console"} · {me?.console?.role.name}</span>
       </span>
     </Link>
   )
 }
 
-function Nav({ onNavigate }: { onNavigate?: () => void }) {
-  const pathname = usePathname()
-  const base = useConsoleBase()
-  const items = useNav().filter((i) => i.show)
-  const active = (href: string) => (href === base ? pathname === href : pathname === href || pathname.startsWith(`${href}/`))
+function NavLink({ item, active, onNavigate }: { item: NavItem; active: boolean; onNavigate?: () => void }) {
   return (
-    <nav className="flex flex-col gap-1" aria-label="Console">
-      {items.map((item) => (
-        <Link
-          key={item.href}
-          href={item.href}
-          onClick={onNavigate}
-          aria-current={active(item.href) ? "page" : undefined}
-          className={cn(
-            "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-foreground/70 transition-colors hover:bg-muted hover:text-foreground",
-            active(item.href) && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
-          )}
-        >
-          <item.icon className="size-[18px]" /> {item.label}
-        </Link>
-      ))}
-    </nav>
+    <Link
+      href={item.href}
+      onClick={onNavigate}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "flex items-center gap-3 rounded-lg px-3 py-2 text-[13.5px] font-medium text-foreground/75 transition-colors hover:bg-muted hover:text-foreground",
+        active && "bg-accent text-accent-foreground hover:bg-accent hover:text-accent-foreground"
+      )}
+    >
+      <item.icon className="size-[17px]" /> {item.label}
+    </Link>
+  )
+}
+
+function Nav({ onNavigate }: { onNavigate?: () => void }) {
+  const { groups, settings } = useNav()
+  const active = useActive()
+  return (
+    <>
+      <nav className="flex flex-col gap-5" aria-label="Console">
+        {groups.map((g) => (
+          <div key={g.label} className="flex flex-col gap-0.5">
+            <div className="px-3 pb-1 text-[11px] font-semibold tracking-[0.08em] text-muted-foreground uppercase">{g.label}</div>
+            {g.items.map((item) => (
+              <NavLink key={item.href} item={item} active={active === item.href} onNavigate={onNavigate} />
+            ))}
+          </div>
+        ))}
+      </nav>
+      {settings && (
+        <div className="mt-auto border-t pt-3">
+          <NavLink item={settings} active={active === settings.href} onNavigate={onNavigate} />
+        </div>
+      )}
+    </>
   )
 }
 
@@ -101,20 +92,18 @@ function AccountMenu() {
   if (!me) return null
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left hover:bg-muted" aria-label="Account menu">
-        <Avatar className="size-8">
-          <AvatarFallback className="text-xs">{initials(me.user.name)}</AvatarFallback>
+      <DropdownMenuTrigger className="rounded-full outline-offset-2" aria-label="Account menu">
+        <Avatar className="size-9">
+          <AvatarFallback className="bg-accent text-xs font-semibold text-accent-foreground">{initials(me.user.name)}</AvatarFallback>
         </Avatar>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{me.user.name}</span>
-          <span className="block truncate text-xs text-muted-foreground">{me.user.email}</span>
-        </span>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" side="top" className="w-60">
+      <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuGroup>
           <DropdownMenuLabel>
             <span className="block truncate text-sm font-medium text-foreground">{me.user.name}</span>
-            <span className="block truncate text-xs font-normal">{me.console?.role.name}</span>
+            <span className="block truncate text-xs font-normal">
+              {me.user.email} · {me.console?.role.name}
+            </span>
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
@@ -145,19 +134,15 @@ function AccountMenu() {
 
 function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <div className="flex h-full flex-col gap-6 p-4">
+    <div className="flex h-full flex-col gap-6 overflow-y-auto p-4">
       <Brand />
       <Nav onNavigate={onNavigate} />
-      <div className="mt-auto border-t pt-3">
-        <AccountMenu />
-      </div>
     </div>
   )
 }
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false)
-  const { me } = useAuth()
   // The partner portal is a separate place with its own colour (globals.css [data-portal="partner"])
   const portal = useConsoleBase() === "/partner" ? "partner" : "console"
   return (
@@ -179,11 +164,14 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/85 px-4 backdrop-blur lg:hidden print:hidden">
-          <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)} aria-label="Open menu">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-card/90 px-4 backdrop-blur sm:px-6 print:hidden">
+          <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open menu">
             <Menu className="size-5" />
           </Button>
-          <span className="flex-1 truncate text-sm font-semibold">{me?.console?.partner?.name ?? "AHEAD Console"}</span>
+          <ConsolePalette />
+          <div className="flex-1" />
+          <NotificationsBell />
+          <AccountMenu />
         </header>
         <main className="w-full flex-1 px-4 py-6 sm:px-8 sm:py-8">{children}</main>
       </div>

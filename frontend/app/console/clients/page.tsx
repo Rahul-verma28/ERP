@@ -95,7 +95,7 @@ function ClientsList() {
   const filtered = !!(q || status || planKey || onboarded || industryKey)
 
   function exportCsv() {
-    downloadCsv("clients.csv", [
+    downloadCsv("businesses.csv", [
       ["Business", "Industry", "Owner", "Mobile", "Email", "Status", "Plan", "Cycle", "Modules", "Users", "User limit", "Per month (₹)", "Onboarded by", "Created", "Last active"],
       ...list.rows.map((c) => [
         c.name, industryLabel(c.industryKey), c.owner?.name ?? "", c.owner?.mobile ?? "", c.owner?.email ?? "", c.progress && !c.progress.loggedIn ? "Not logged in" : c.status,
@@ -107,8 +107,9 @@ function ClientsList() {
 
   return (
     <Page
-      title={audience === "vendor" || me?.console?.role.key === "console_sales" ? "My clients" : "Clients"}
-      subtitle={audience === "partner" ? "Businesses you look after. You are billed for them every month." : audience === "vendor" || me?.console?.role.key === "console_sales" ? "Businesses you brought to AHEAD." : "Every business AHEAD bills directly. Partner clients are under Partners."}
+      eyebrow="Workspace"
+      title={audience === "vendor" || me?.console?.role.key === "console_sales" ? "My businesses" : "Businesses"}
+      subtitle={audience === "partner" ? "Businesses you look after. You are billed for them every month." : audience === "vendor" || me?.console?.role.key === "console_sales" ? "Businesses you brought to AHEAD." : "Every business AHEAD bills directly. Partners' businesses are under Partners."}
       actions={
         <>
           {team && list.rows.length > 0 && (
@@ -118,7 +119,7 @@ function ClientsList() {
           )}
           {canAdd && (
             <Link href={`${base}/clients/new`} className={buttonVariants()}>
-              <Plus /> Add client
+              <Plus /> Onboard business
             </Link>
           )}
         </>
@@ -173,12 +174,12 @@ function ClientsList() {
         ) : !list.rows.length ? (
           <Empty
             icon={Building2}
-            title={filtered ? "No clients match" : "No clients yet"}
-            text={filtered ? "Try another search or filter." : "Clients you add, or who sign up through you, appear here."}
+            title={filtered ? "No businesses match" : "No businesses yet"}
+            text={filtered ? "Try another search or filter." : "Businesses you onboard, or that sign up through you, appear here."}
             action={
               !filtered && canAdd && (
                 <Link href={`${base}/clients/new`} className={buttonVariants({ size: "sm" })}>
-                  <Plus /> Add client
+                  <Plus /> Onboard business
                 </Link>
               )
             }

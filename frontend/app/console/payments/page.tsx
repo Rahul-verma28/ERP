@@ -32,7 +32,7 @@ function PaymentsList() {
   const vendor = me?.console?.audience === "vendor"
 
   return (
-    <Page title="Payments" subtitle={vendor ? "Orders from the clients you brought in, and whether they've paid." : "Every order for an AHEAD plan, whether it's paid, and its GST invoice."}>
+    <Page eyebrow="Workspace" title="Billing" subtitle={vendor ? "Orders from the businesses you brought in, and whether they've paid." : "Every order for an AHEAD plan, whether it's paid, and its GST invoice."}>
       <div className="flex gap-1 overflow-x-auto rounded-xl border bg-card p-1" role="tablist" aria-label="Status">
         {TABS.map((t) => (
           <button key={t.value || "all"} type="button" role="tab" aria-selected={status === t.value} onClick={() => setStatus(t.value)} className={cn("h-8 shrink-0 rounded-lg px-3 text-[13px] font-medium", status === t.value ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground")}>

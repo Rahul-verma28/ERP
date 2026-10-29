@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../../kernel/db';
 import type { ConsoleCtx } from '../../kernel/context';
 import { SETUP_STEPS, type SetupState } from '../../contracts/workspace';
@@ -200,6 +201,7 @@ export async function consoleHome(ctx: ConsoleCtx, audience: Audience, can: Home
   ].slice(0, 8);
 
   const waitingPaise = unpaid.reduce((t, o) => t + n(o.totalPaise), 0);
+  const extras = await overviewExtras(live, audience);
   const stats: Stat[] = [];
   if (audience === 'partner') {
     const bill = await partnerBill(ctx.partnerId!);
@@ -209,18 +211,23 @@ export async function consoleHome(ctx: ConsoleCtx, audience: Audience, can: Home
       { key: 'bill', label: "This month's bill", value: bill.totalPaise, money: true, hint: `${bill.lines.length} client${bill.lines.length === 1 ? '' : 's'} · with GST`, href: '/console/billing' },
     );
   } else {
-    // Console v3 Home: four plain numbers
+    // Console v3 Home: four plain numbers. The AHEAD team gets the blueprint's S1 set.
+    const received = can.income ? incomeRows.filter((r) => monthKey(r.issuedAt) === monthKey(now)).reduce((t, r) => t + n(r.taxablePaise), 0) : 0;
+    const monthName = now.toLocaleString('en-IN', { month: 'long' });
+    if (audience === 'team') {
+      stats.push(
+        { key: 'businesses', label: 'Businesses', value: total, hint: newThisMonth ? `+${newThisMonth} in ${monthName}` : `None new in ${monthName}`, href: '/console/clients' },
+        { key: 'users', label: 'Active users', value: extras.activeUsers, hint: 'Across all businesses' },
+        { key: 'paying', label: 'Paying', value: paying, hint: can.income ? `${rupees(received)} received in ${monthName}` : trials ? `${trials} on free trial` : undefined, href: '/console/clients?status=active' },
+        { key: 'attention', label: 'Needs attention', value: todo.length, hint: unpaid.length ? `${unpaid.length} waiting to pay · ${rupees(waitingPaise)}` : todo.length ? 'See the list below' : 'All caught up' },
+      );
+    }
     if (audience === 'vendor') stats.push({ key: 'clients', label: 'My clients', value: total, href: '/console/clients' });
-    stats.push(
+    if (audience !== 'team') stats.push(
       { key: 'paying', label: audience === 'vendor' ? 'Paying' : 'Paying clients', value: paying, href: '/console/clients?status=active' },
       { key: 'trial', label: 'On free trial', value: trials, hint: trialsWeek ? `${trialsWeek} end this week` : undefined, href: '/console/clients?status=trialing' },
     );
-    if (can.income) {
-      const thisMonth = incomeRows.filter((r) => monthKey(r.issuedAt) === monthKey(now)).reduce((t, r) => t + n(r.taxablePaise), 0);
-      stats.push({ key: 'income', label: `Received in ${now.toLocaleString('en-IN', { month: 'long' })}`, value: thisMonth, money: true, hint: 'Paid invoices, before GST' });
-    }
     if (audience === 'vendor' && paidThisMonth) stats.push({ key: 'paid', label: 'Paid this month', value: n(paidThisMonth._sum.amountPaise), money: true, hint: 'By your clients, with GST' });
-    else if (audience === 'team') stats.push({ key: 'new', label: `New clients in ${now.toLocaleString('en-IN', { month: 'long' })}`, value: newThisMonth, hint: unpaid.length ? `${unpaid.length} waiting to pay · ${rupees(waitingPaise)}` : undefined, href: '/console/clients' });
   }
 
   // Last six months of income, oldest first (AHEAD team with the income permission only)
@@ -239,5 +246,82 @@ export async function consoleHome(ctx: ConsoleCtx, audience: Audience, can: Home
     income,
     recent: recent.map(({ ownerUserId: _o, ...t }) => t),
     referral: can.referral ? await myReferral(ctx) : null,
+    ...extras,
   };
+}
+
+/** Readable lines for the Overview's recent activity (Console actions only, never business data). */
+const ACTIVITY_TEXT: Record<string, string> = {
+  'console.client_created': 'onboarded a business',
+  'console.partner_client_created': 'onboarded a business',
+  'console.client_converted': 'created a paid order',
+  'console.order_approved': 'approved a discount',
+  'console.order_cancelled': 'cancelled an order',
+  'console.trial_extended': 'extended a trial',
+  'console.plan_updated': 'updated a plan',
+  'console.price_changed': 'changed a price',
+  'console.member_added': 'added a person to the Console',
+  'console.member_updated': 'changed a Console role',
+  'console.partner_created': 'added a partner',
+  'tenant.acquisition_changed': 'changed who onboarded a business',
+};
+
+/**
+ * Blueprint S1: 12 weeks of new businesses and first payments, plan mix, active users,
+ * businesses still setting up and (AHEAD team only) recent Console activity.
+ */
+async function overviewExtras(live: Prisma.TenantWhereInput, audience: Audience) {
+  const now = Date.now();
+  const WEEKS = 12;
+  const since = new Date(now - WEEKS * 7 * DAY);
+  // Orders have no tenant relation: match them by the ids in scope
+  const liveIds = (await prisma.tenant.findMany({ where: live, select: { id: true } })).map((t) => t.id);
+  const [created, firstPaid, subs, activeUsers, settingUp, events] = await Promise.all([
+    prisma.tenant.findMany({ where: { ...live, createdAt: { gte: since } }, select: { createdAt: true } }),
+    prisma.platformOrder.findMany({ where: { kind: 'fresh', status: 'paid', paidAt: { gte: since }, tenantId: { in: liveIds } }, select: { paidAt: true } }),
+    prisma.subscription.findMany({ where: { tenant: { ...live, status: { in: ['trialing', 'active', 'past_due', 'free', 'incomplete'] } } }, select: { status: true, planId: true } }),
+    prisma.tenantMember.count({ where: { status: 'active', tenant: { ...live, status: { in: ['trialing', 'active', 'past_due', 'free'] } } } }),
+    prisma.tenant.findMany({ where: { ...live, status: { notIn: ['closed', 'purged'] }, createdAt: { gte: new Date(now - 45 * DAY) } }, orderBy: { createdAt: 'desc' }, take: 30, select: { id: true, name: true, onboarding: true, ownerUserId: true, createdAt: true } }),
+    audience === 'team'
+      ? prisma.auditLog.findMany({ where: { tenantId: null, action: { in: Object.keys(ACTIVITY_TEXT) } }, orderBy: { at: 'desc' }, take: 8, select: { id: true, action: true, actorId: true, entityId: true, at: true } })
+      : Promise.resolve([] as { id: string; action: string; actorId: string | null; entityId: string | null; at: Date }[]),
+  ]);
+  const week = (d: Date) => Math.min(WEEKS - 1, Math.floor((d.getTime() - since.getTime()) / (7 * DAY)));
+  const growth = Array.from({ length: WEEKS }, (_, i) => ({ weekStart: new Date(since.getTime() + i * 7 * DAY).toISOString().slice(0, 10), newBusinesses: 0, firstPayments: 0 }));
+  for (const t of created) growth[week(t.createdAt)].newBusinesses++;
+  for (const o of firstPaid) if (o.paidAt) growth[week(o.paidAt)].firstPayments++;
+
+  const plans = await prisma.plan.findMany({ select: { id: true, key: true, name: true } });
+  const planOf = new Map(plans.map((p) => [p.id, p]));
+  const mix = new Map<string, { key: string; name: string; count: number }>();
+  for (const s of subs) {
+    // Trials and Free are shown as such, whatever plan row they sit on
+    const p = s.status === 'trialing' ? { key: 'trial', name: 'Free trial' } : s.status === 'free' ? { key: 'free', name: 'Free' } : planOf.get(s.planId) ?? { key: 'other', name: 'Other' };
+    mix.set(p.key, { key: p.key, name: p.name, count: (mix.get(p.key)?.count ?? 0) + 1 });
+  }
+
+  // Setting up: owner not signed in yet, or the setup wizard not finished
+  const owners = new Map((await prisma.user.findMany({ where: { id: { in: settingUp.map((t) => t.ownerUserId) } }, select: { id: true, lastLoginAt: true } })).map((u) => [u.id, u.lastLoginAt]));
+  const onboarding = settingUp
+    .map((t) => {
+      const setup = ((t.onboarding ?? {}) as { setup?: SetupState }).setup;
+      const done = Object.values(setup?.steps ?? {}).filter(Boolean).length;
+      const signedIn = !!owners.get(t.ownerUserId);
+      const finished = !!setup?.completedAt;
+      return { id: t.id, name: t.name, signedIn, percent: finished ? 100 : Math.round(((signedIn ? 1 : 0) + done) / (SETUP_STEPS.length + 1) * 100), createdAt: t.createdAt, finished };
+    })
+    .filter((t) => !t.finished)
+    .slice(0, 5)
+    .map(({ finished: _f, ...t }) => t);
+
+  const people = new Map((await prisma.user.findMany({ where: { id: { in: events.map((e) => e.actorId).filter((x): x is string => !!x) } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+  const tenants = new Map((await prisma.tenant.findMany({ where: { id: { in: events.map((e) => e.entityId).filter((x): x is string => !!x) } }, select: { id: true, name: true } })).map((t) => [t.id, t.name]));
+  const activity = events.map((e) => ({
+    id: e.id,
+    at: e.at,
+    text: `${e.actorId ? people.get(e.actorId) ?? 'Someone' : 'AHEAD'} ${ACTIVITY_TEXT[e.action]}${e.entityId && tenants.get(e.entityId) ? ` · ${tenants.get(e.entityId)}` : ''}`,
+    href: e.entityId && tenants.has(e.entityId) ? `/console/clients/${e.entityId}` : null,
+  }));
+
+  return { growth, planMix: [...mix.values()].sort((a, b) => b.count - a.count), activeUsers, onboarding, activity };
 }

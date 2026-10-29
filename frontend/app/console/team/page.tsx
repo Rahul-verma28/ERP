@@ -191,6 +191,7 @@ export default function TeamPage() {
 
   return (
     <Page
+      eyebrow={partner ? "People" : "People & access"}
       title={partner ? "Team" : "People"}
       subtitle={partner ? `People at ${me?.console?.partner?.name} who use this panel.` : "AHEAD's team, salespeople and vendors. Each role decides what that person can do."}
       actions={

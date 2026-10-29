@@ -335,6 +335,13 @@ export interface ConsoleHome {
   income: { month: string; label: string; paise: number }[] | null
   recent: { id: string; name: string; status: TenantStatus; industryKey: string; createdAt: string }[]
   referral: Referral | null
+  /** Blueprint S1: 12 weeks, oldest first */
+  growth: { weekStart: string; newBusinesses: number; firstPayments: number }[]
+  planMix: { key: string; name: string; count: number }[]
+  activeUsers: number
+  onboarding: { id: string; name: string; signedIn: boolean; percent: number; createdAt: string }[]
+  /** AHEAD team only */
+  activity: { id: string; at: string; text: string; href: string | null }[]
 }
 
 export interface Referral { code: string; link: string }

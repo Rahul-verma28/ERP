@@ -157,7 +157,7 @@ export default function NewClientPage() {
 
   if (created)
     return (
-      <Page title="Add client" back={{ href: `${base}/clients`, label: "Clients" }}>
+      <Page title="Onboard a business" back={{ href: `${base}/clients`, label: "Businesses" }}>
         <Panel className="mx-auto w-full max-w-xl">
           <div className="grid gap-4 py-2 text-center">
             <CheckCircle2 className="mx-auto size-11 text-emerald-600" />
@@ -179,7 +179,7 @@ export default function NewClientPage() {
     )
 
   return (
-    <Page title="Add client" subtitle={partner ? "The client goes live as soon as you finish. It appears on your next monthly bill." : "The owner gets a login link by SMS and email and sets their own password."} back={{ href: `${base}/clients`, label: "Clients" }}>
+    <Page title="Onboard a business" subtitle={partner ? "The client goes live as soon as you finish. It appears on your next monthly bill." : "The owner gets a login link by SMS and email and sets their own password."} back={{ href: `${base}/clients`, label: "Businesses" }}>
       <Steps steps={partner ? ["Business", "Owner", "Plan"] : STEPS} current={step} />
       {catalog.error && <Failed error={catalog.error} onRetry={catalog.reload} />}
 

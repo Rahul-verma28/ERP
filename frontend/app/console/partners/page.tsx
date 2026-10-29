@@ -113,6 +113,7 @@ export default function PartnersPage() {
 
   return (
     <Page
+      eyebrow="Workspace"
       title="Partners"
       subtitle="Resellers who bring and look after their own clients. They're billed monthly at the list price minus their discount."
       actions={

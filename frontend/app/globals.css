@@ -68,6 +68,8 @@
     --border: #D9DDE3;
     --input: #C7CCD4;
     --ring: #2450D8;
+    /* Console brand mark (blueprint: navy) */
+    --console-brand: #1F3A6E;
     --chart-1: #2450D8;
     --chart-2: #0F766E;
     --chart-3: #C2410C;
@@ -103,6 +105,7 @@
     --border: #2A2F38;
     --input: #3A404B;
     --ring: #5B82F0;
+    --console-brand: #2D4F94;
     --chart-1: #5B82F0;
     --chart-2: #2DB3A6;
     --chart-3: #F08A4B;
@@ -120,6 +123,7 @@
 
 /* Console v3: the partner portal (/partner) is a separate place with its own violet look */
 [data-portal="partner"] {
+    --console-brand: #6A3FC7;
     --primary: #6A3FC7;
     --primary-foreground: #FFFFFF;
     --accent: #F1ECFC;
@@ -127,6 +131,7 @@
     --ring: #6A3FC7;
 }
 .dark [data-portal="partner"] {
+    --console-brand: #7B5BD6;
     --primary: #9F80F5;
     --primary-foreground: #160F2E;
     --accent: #2A2142;

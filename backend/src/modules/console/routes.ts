@@ -1,6 +1,7 @@
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { db } from '../../kernel/db';
+import { cache } from '../../kernel/cache';
 import { AppError } from '../../kernel/errors';
 import { IdParam, ListQuery } from '../../kernel/query';
 import { optionalText, zEmail, zGstin, zMobileIN, zPersonName, zStateCode } from '../../kernel/zodRules';
@@ -43,10 +44,11 @@ router.get('/me', async (req, res) => {
 router.get('/home', requirePlatformPermission('platform.dashboard.view'), consoleTx(async (req, res) => {
   const access = await consoleAccess(ctx(req).userId);
   const p = (access?.permissions ?? {}) as Record<string, string>;
-  res.json(await consoleHome(ctx(req), (access?.audience ?? 'team') as Audience, {
+  // Overview and the bell both read this: keep it 30 s per person (the numbers are not live-critical)
+  res.json(await cache.getOrSet(`console:home:${ctx(req).userId}`, () => consoleHome(ctx(req), (access?.audience ?? 'team') as Audience, {
     discount: !!p['platform.discount.approve'], income: !!p['platform.revenue.view'], payments: !!p['platform.payment.view'], leads: false, // Console v3: Leads is hidden for now
     referral: ['vendor', 'console_sales'].includes(access?.role.key ?? ''),
-  }));
+  }), 30_000));
 }));
 
 /** Vendors and salespeople: their referral link and code */

@@ -2,18 +2,19 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { BadgePercent, Building2, CalendarClock, CheckCircle2, CreditCard, LogIn, Plus, Sparkles, Target } from "lucide-react"
+import { Activity, AlertTriangle, BadgePercent, Building2, CalendarClock, CheckCircle2, CreditCard, LogIn, Plus, Sparkles, Target, Users, Wallet } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
-import { ClientStatus, Empty, Failed, Loading, Page, Panel, PanelLink, Row, Stat, StatGrid, greeting, industryLabel, money, relDays, type Tone } from "@/components/console/kit"
+import { ClientStatus, Empty, Failed, Loading, Page, Panel, PanelLink, Row, Stat, StatGrid, ago, greeting, industryLabel, money, relDays, type Tone } from "@/components/console/kit"
 import { ReferralCard } from "@/components/console/referral-card"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatNumber } from "@/lib/format"
 import type { ConsoleHome, HomeTodo } from "@/lib/console"
 import { atBase, useConsoleBase } from "@/lib/console-base"
+import { cn } from "@/lib/utils"
 
-// Home: what needs doing today, a few plain numbers and the newest clients.
-// The same page for the AHEAD team, vendors and partners — each sees only their own clients.
+// Overview (blueprint S1): four numbers, 12 weeks of growth, what needs attention, businesses
+// still setting up, plan mix and recent Console activity. Each person sees only their scope.
 
 const TODO: Record<HomeTodo["kind"], { icon: typeof Target; tone: Tone }> = {
   discount: { icon: BadgePercent, tone: "amber" },
@@ -21,66 +22,111 @@ const TODO: Record<HomeTodo["kind"], { icon: typeof Target; tone: Tone }> = {
   trial: { icon: CalendarClock, tone: "blue" },
   followup: { icon: Target, tone: "blue" },
   setup: { icon: Sparkles, tone: "grey" },
-  signin: { icon: LogIn, tone: "grey" },
+  signin: { icon: LogIn, tone: "red" },
 }
 
-const CHART_PX = 120
+const STAT_ICON: Record<string, typeof Building2> = { businesses: Building2, users: Users, paying: Wallet, attention: AlertTriangle, clients: Building2, trial: CalendarClock, live: Building2, bill: Wallet, paid: Wallet }
 
-function IncomeChart({ rows }: { rows: NonNullable<ConsoleHome["income"]> }) {
-  const max = Math.max(1, ...rows.map((r) => r.paise))
+/** New businesses (line + area) and first payments (dashed) per week, one shared scale */
+function GrowthChart({ rows }: { rows: ConsoleHome["growth"] }) {
+  const W = 600
+  const H = 150
+  const PAD = { l: 26, r: 8, t: 10, b: 22 }
+  const max = Math.max(2, ...rows.map((r) => Math.max(r.newBusinesses, r.firstPayments)))
+  const top = Math.ceil(max / 2) * 2
+  const x = (i: number) => PAD.l + (i * (W - PAD.l - PAD.r)) / Math.max(1, rows.length - 1)
+  const y = (v: number) => PAD.t + (H - PAD.t - PAD.b) * (1 - v / top)
+  const line = (k: "newBusinesses" | "firstPayments") => rows.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(r[k]).toFixed(1)}`).join(" ")
+  const area = `${line("newBusinesses")} L${x(rows.length - 1)},${y(0)} L${x(0)},${y(0)}Z`
+  const ticks = [0, top / 2, top]
+  const fmt = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+  const last = rows[rows.length - 1]
   return (
-    <div className="flex items-end gap-3 pt-2" role="img" aria-label={rows.map((r) => `${r.label}: ${money(r.paise)}`).join(", ")}>
-      {rows.map((r, i) => (
-        <div key={r.month} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-          <span className="h-4 truncate text-[11px] font-medium text-muted-foreground tabular-nums">{r.paise ? money(r.paise) : ""}</span>
-          <div className="flex w-full items-end rounded-lg bg-muted/60" style={{ height: CHART_PX }}>
-            <div className={i === rows.length - 1 ? "w-full rounded-lg bg-primary" : "w-full rounded-lg bg-primary/40"} style={{ height: r.paise ? Math.max(6, Math.round((r.paise / max) * CHART_PX)) : 0 }} title={`${r.label}: ${money(r.paise)}`} />
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-[170px] w-full" role="img" aria-label={`New businesses per week, last ${rows.length} weeks: ${rows.map((r) => r.newBusinesses).join(", ")}`}>
+        {ticks.map((t) => (
+          <g key={t}>
+            <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} className="stroke-border" strokeWidth={1} />
+            <text x={PAD.l - 6} y={y(t) + 3.5} textAnchor="end" className="fill-muted-foreground text-[10px] tabular-nums">{t}</text>
+          </g>
+        ))}
+        <path d={area} className="fill-primary/10" />
+        <path d={line("newBusinesses")} fill="none" className="stroke-primary" strokeWidth={2.5} strokeLinejoin="round" />
+        <path d={line("firstPayments")} fill="none" className="stroke-emerald-600 dark:stroke-emerald-400" strokeWidth={2} strokeDasharray="4 4" />
+        <circle cx={x(rows.length - 1)} cy={y(last.newBusinesses)} r={4} className="fill-primary" />
+        {[0, Math.floor((rows.length - 1) / 2), rows.length - 1].map((i) => (
+          <text key={i} x={x(i)} y={H - 5} textAnchor={i === 0 ? "start" : i === rows.length - 1 ? "end" : "middle"} className="fill-muted-foreground text-[10px]">{fmt(rows[i].weekStart)}</text>
+        ))}
+      </svg>
+      <div className="mt-1 flex flex-wrap gap-4 text-xs text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-4 rounded bg-primary" /> New businesses</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-0 w-4 border-t-2 border-dashed border-emerald-600 dark:border-emerald-400" /> First payments</span>
+      </div>
+    </div>
+  )
+}
+
+function PlanMix({ rows }: { rows: ConsoleHome["planMix"] }) {
+  const total = rows.reduce((t, r) => t + r.count, 0) || 1
+  return (
+    <div className="grid gap-3">
+      {rows.map((r) => (
+        <div key={r.key} className="grid gap-1">
+          <div className="flex justify-between gap-2 text-[13px]">
+            <span>{r.name}</span>
+            <span className="tabular-nums text-muted-foreground">{r.count} · {Math.round((r.count / total) * 100)}%</span>
           </div>
-          <span className="text-xs text-muted-foreground">{r.label}</span>
+          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className={cn("h-full rounded-full", r.key === "trial" ? "bg-sky-500" : r.key === "free" ? "bg-muted-foreground/40" : "bg-primary")} style={{ width: `${(r.count / total) * 100}%` }} />
+          </div>
         </div>
       ))}
     </div>
   )
 }
 
-
 export default function ConsoleHomePage() {
   const { me, canConsole } = useAuth()
   const { data, error, reload } = useApi<ConsoleHome>("/console/home")
   const base = useConsoleBase()
   const audience = me?.console?.audience ?? "team"
-  const first = me?.user.name.split(" ")[0] ?? ""
+  const team = audience === "team"
   const canAdd = canConsole("platform.tenant.create") && me?.console?.partner?.status !== "paused"
-  const today = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long" }).format(new Date())
-  const subtitle = audience === "partner" ? `${me?.console?.partner?.name} · ${today}` : audience === "vendor" ? `Your clients and referrals · ${today}` : today
+  const today = new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })
+  const first = me?.user.name.split(" ")[0] ?? ""
 
   return (
     <Page
-      title={`${greeting()}, ${first}`}
-      subtitle={subtitle}
+      eyebrow={team ? "Workspace" : undefined}
+      title={team ? "Platform overview" : `${greeting()}, ${first}`}
+      subtitle={team ? `Your SaaS business at a glance · ${today}` : audience === "partner" ? `${me?.console?.partner?.name} · ${today}` : `Your businesses and referrals · ${today}`}
       actions={
         canAdd && (
           <Link href={`${base}/clients/new`} className={buttonVariants()}>
-            <Plus /> Add client
+            <Plus /> Onboard business
           </Link>
         )
       }
     >
       {me?.console?.partner?.status === "paused" && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          Your partner account is paused, so new clients can&apos;t be added. Your existing clients keep working. Please contact AHEAD.
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          Your partner account is paused, so new businesses can&apos;t be added. Your existing businesses keep working. Please contact AHEAD.
         </div>
       )}
       {error && <Failed error={error} onRetry={reload} />}
 
       <StatGrid>
         {data
-          ? data.stats.map((s) => <Stat key={s.key} label={s.label} value={s.money ? money(s.value) : formatNumber(s.value)} hint={s.hint} href={s.href && atBase(base, s.href)} />)
-          : Array.from({ length: 4 }, (_, i) => <div key={i} className="h-[118px] animate-pulse rounded-2xl bg-muted" />)}
+          ? data.stats.slice(0, 4).map((s) => <Stat key={s.key} icon={STAT_ICON[s.key]} label={s.label} value={s.money ? money(s.value) : formatNumber(s.value)} hint={s.hint} href={s.href && atBase(base, s.href)} tone={s.key === "attention" && s.value > 0 ? "warn" : undefined} />)
+          : Array.from({ length: 4 }, (_, i) => <div key={i} className="h-[138px] animate-pulse rounded-xl bg-muted" />)}
       </StatGrid>
 
       <div className="grid gap-6 lg:grid-cols-5">
-        <Panel title="To do" description={data && data.todo.length ? `${data.todo.length} thing${data.todo.length === 1 ? "" : "s"} need${data.todo.length === 1 ? "s" : ""} you` : undefined} className="self-start lg:col-span-3" padded={false}>
+        <Panel title="New businesses & first payments" description="Last 12 weeks" className="lg:col-span-3">
+          {!data ? <Loading rows={3} /> : <GrowthChart rows={data.growth} />}
+        </Panel>
+
+        <Panel title="Needs attention" description={data && data.todo.length ? `${data.todo.length} thing${data.todo.length === 1 ? "" : "s"}` : undefined} className="self-start lg:col-span-2" padded={false}>
           <div className="px-3 pb-3">
             {!data ? (
               <Loading className="px-2 pt-2" />
@@ -91,19 +137,53 @@ export default function ConsoleHomePage() {
                 ))}
               </div>
             ) : (
-              <Empty icon={CheckCircle2} title="You're all caught up" text={audience === "partner" ? "Clients whose owner hasn't signed in yet show up here." : audience === "vendor" ? "Your clients' unpaid orders and trials ending soon show up here." : "Trials ending soon, unpaid orders and follow-ups show up here when they need you."} />
+              <Empty icon={CheckCircle2} title="You're all caught up" text="Owners who haven't signed in, approvals, unpaid orders and trials ending soon show up here." />
+            )}
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Panel title="Setting up" description="Owner not signed in yet, or setup not finished" padded={false}>
+          <div className="px-3 pb-3">
+            {!data ? (
+              <Loading rows={3} className="px-2 pt-2" />
+            ) : data.onboarding.length ? (
+              <div className="divide-y">
+                {data.onboarding.map((o) => (
+                  <Row key={o.id} href={`${base}/clients/${o.id}`} icon={Building2} tone="grey" title={o.name} detail={o.signedIn ? `Setting up · added ${relDays(o.createdAt)}` : `Owner hasn't signed in · added ${relDays(o.createdAt)}`} right={<span className="rounded-full bg-accent px-2 py-0.5 text-xs font-semibold text-accent-foreground tabular-nums">{o.percent}%</span>} />
+                ))}
+              </div>
+            ) : (
+              <p className="px-2 pt-2 text-sm text-muted-foreground">Every new business is set up.</p>
             )}
           </div>
         </Panel>
 
-        <div className="grid min-w-0 content-start gap-6 lg:col-span-2">
-          {data?.referral && <ReferralCard {...data.referral} />}
-          {data?.income && (
-            <Panel title="Income" description="Last 6 months, paid AHEAD invoices before GST">
-              <IncomeChart rows={data.income} />
-            </Panel>
-          )}
-          <Panel title={audience === "team" ? "Newest clients" : "Your newest clients"} action={<PanelLink href={`${base}/clients`}>All clients</PanelLink>} padded={false}>
+        <Panel title="Plan mix" description="Businesses by plan today">
+          {!data ? <Loading rows={3} /> : data.planMix.length ? <PlanMix rows={data.planMix} /> : <p className="text-sm text-muted-foreground">No businesses yet.</p>}
+        </Panel>
+
+        {team ? (
+          <Panel title="Recent activity" description="Changes made in the Console" padded={false}>
+            <div className="px-3 pb-3">
+              {!data ? (
+                <Loading rows={3} className="px-2 pt-2" />
+              ) : data.activity.length ? (
+                <div className="divide-y">
+                  {data.activity.map((a) => (
+                    <Row key={a.id} href={a.href ?? undefined} icon={Activity} tone="blue" title={<span className="whitespace-normal">{a.text}</span>} detail={ago(a.at)} />
+                  ))}
+                </div>
+              ) : (
+                <p className="px-2 pt-2 text-sm text-muted-foreground">Nothing yet.</p>
+              )}
+            </div>
+          </Panel>
+        ) : data?.referral ? (
+          <ReferralCard {...data.referral} />
+        ) : (
+          <Panel title="Your newest businesses" action={<PanelLink href={`${base}/clients`}>All</PanelLink>} padded={false}>
             <div className="px-3 pb-3">
               {!data ? (
                 <Loading rows={3} className="px-2 pt-2" />
@@ -114,22 +194,11 @@ export default function ConsoleHomePage() {
                   ))}
                 </div>
               ) : (
-                <Empty
-                  icon={Building2}
-                  title="No clients yet"
-                  text={audience === "vendor" ? "Share your referral link or add a client yourself." : "Add your first client — it takes about two minutes."}
-                  action={
-                    canAdd && (
-                      <Link href={`${base}/clients/new`} className={buttonVariants({ size: "sm" })}>
-                        <Plus /> Add client
-                      </Link>
-                    )
-                  }
-                />
+                <p className="px-2 pt-2 text-sm text-muted-foreground">No businesses yet.</p>
               )}
             </div>
           </Panel>
-        </div>
+        )}
       </div>
     </Page>
   )

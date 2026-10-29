@@ -14,7 +14,7 @@ export default function BillingPage() {
   const { data, error, reload } = useApi<PartnerBill>("/console/billing")
   const month = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" }).format(new Date())
   return (
-    <Page title="Billing" subtitle={`What AHEAD bills ${me?.console?.partner?.name ?? "you"} for ${month}. You set your own price to your clients.`}>
+    <Page eyebrow="Workspace" title="Monthly bill" subtitle={`What AHEAD bills ${me?.console?.partner?.name ?? "you"} for ${month}. You set your own price to your businesses.`}>
       {error && <Failed error={error} onRetry={reload} />}
       {!data ? (
         !error && <Loading rows={4} />

@@ -71,13 +71,19 @@ export function ModulesPanel({ client }: { client: ClientDetail }) {
     .sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key))
   return (
     <Panel title="Modules" description={`${client.modules.filter((m) => m.status === "active").length} of ${all.length} switched on`}>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-2">
         {all.map((m) => {
           const s = status.get(m.key)
           return (
             <div key={m.key} title={m.full} className={cn("flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm", s !== "active" && s !== "read_only" && "bg-muted/50 text-muted-foreground")}>
               <span className="min-w-0 truncate">{m.name}</span>
-              {s === "active" ? <Chip tone="green">On</Chip> : s === "read_only" ? <Chip tone="amber">Read-only</Chip> : <span className="text-xs">Off</span>}
+              {s === "active" ? (
+                <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"><span className="size-1.5 rounded-full bg-emerald-500" />On</span>
+              ) : s === "read_only" ? (
+                <span className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-400">Read-only</span>
+              ) : (
+                <span className="shrink-0 text-xs">Off</span>
+              )}
             </div>
           )
         })}

@@ -312,6 +312,16 @@ Proposal: https://claude.ai/artifact/NyeuqJytmmWmZ2M527rK2h. Branch `console-v3`
 Tests: `consoleV3.test.ts` (7); suite 123/123. Browser pass: link sign-up as Admin and partner owner, Home, Clients, Add client (trial), client page, Add partner, partner portal + partner Add client, Plans page, phone width.
 Not built yet: "Become a vendor / partner" application forms on the website (Admins add them for now), coupons that repeat on every renewal (coupons apply to the first payment), an Enterprise quote screen, vendor commission view.
 
+### Console Blueprint — the Console as the ERP's control room (approved 2026-10-29)
+Blueprint: https://claude.ai/artifact/TMfeSQFpD3xtYwNzb94FCb. Look follows Rahul's references (navy mark, grouped sidebar, top bar with search and bell, KPI cards, tabbed detail pages, wizard with a progress rail). Decisions: custom Console roles by copying a built-in role (Admin only); support access stays "Account health" only; owner accepts handover in the ERP. Console v3 committed first (6ffe166).
+- [x] Phase A — Shell and design system: grouped sidebar per role (`components/console/console-nav.tsx`; only pages that exist), sticky top bar with Console Ctrl+K (businesses, actions, pages) and a bell (the "needs attention" list), account menu top right; kit: page eyebrow, KPI cards with icons, `PageTabs`. Overview (S1): Businesses / Active users / Paying / Needs attention, 12-week chart of new businesses and first payments, needs attention, setting up, plan mix, recent Console activity (`/console/home` cached 30 s per person). Businesses list renamed and restyled; business page with tabs Overview · Plan & billing · Users · Activity & notes (`?tab=`). Plans & pricing is its own menu item; Settings opens Console settings. Checked in the browser (Admin) and at phone width; backend 123/123
+- [ ] Phase B — Onboarding & handover: 7-step wizard with save-and-resume, import with column matching, handover checklist, owner sign-off in the ERP
+- [ ] Phase C — Roles & permissions matrix, custom Console roles, Team redesign, Security & audit, sessions
+- [ ] Phase D — Plan editor (draft/publish), modules and feature switches, Billing area, pro-rated plan changes
+- [ ] Phase E — Theme studio at every level, Configuration Center with versions and rollback, approval rules
+- [ ] Phase F — Role-based Analytics, System health with retry
+- [ ] Phase G — Partner portal white-label, vendor/partner application forms, bulk actions, saved views, help panel
+
 ### Industry coverage (match the big ERPs)
 Today: 6 templates (salon, retail, pharmacy, gym, coaching/school, service company). Each new industry = template (modules, terminology, custom fields, dashboard widgets, starter catalogue) + the industry-specific feature it needs; features in brackets need modules that do not exist yet.
 - [ ] Retail & wholesale / distribution / FMCG (schemes, price lists, beat routes)

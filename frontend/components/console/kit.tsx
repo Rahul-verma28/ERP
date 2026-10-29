@@ -10,16 +10,16 @@ import type { TenantStatus } from "@/lib/types"
 import type { ClientProgress, OnboardedBy } from "@/lib/console"
 import { cn } from "@/lib/utils"
 
-// The Console's building blocks — one look for the AHEAD team, vendors and partners.
-// Plain words, one obvious action per screen, generous spacing.
+// The Console's building blocks (blueprint Phase A) — one look for the AHEAD team, vendors and
+// partners: page header with the group as eyebrow, KPI cards, panels, tabs, status chips.
 
 export const money = (paise: number) => formatPaise(paise, true)
 
 // ── Page ──
 
-export function Page({ title, subtitle, back, actions, children }: { title: React.ReactNode; subtitle?: React.ReactNode; back?: { href: string; label: string }; actions?: React.ReactNode; children: React.ReactNode }) {
+export function Page({ title, subtitle, back, eyebrow, actions, children, wide }: { title: React.ReactNode; subtitle?: React.ReactNode; back?: { href: string; label: string }; eyebrow?: string; actions?: React.ReactNode; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+    <div className={cn("mx-auto flex w-full flex-col gap-6", wide ? "max-w-[90rem]" : "max-w-6xl")}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           {back && (
@@ -27,7 +27,8 @@ export function Page({ title, subtitle, back, actions, children }: { title: Reac
               <ArrowLeft className="size-3.5" /> {back.label}
             </Link>
           )}
-          <h1 className="text-[26px] leading-tight font-semibold tracking-tight">{title}</h1>
+          {eyebrow && !back && <div className="mb-1 text-[11px] font-semibold tracking-[0.08em] text-primary uppercase">{eyebrow}</div>}
+          <h1 className="text-[24px] leading-tight font-semibold tracking-tight text-balance">{title}</h1>
           {subtitle && <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -41,7 +42,7 @@ export function Page({ title, subtitle, back, actions, children }: { title: Reac
 
 export function Panel({ title, description, action, children, className, padded = true }: { title?: React.ReactNode; description?: React.ReactNode; action?: React.ReactNode; children: React.ReactNode; className?: string; padded?: boolean }) {
   return (
-    <section className={cn("min-w-0 rounded-2xl border bg-card shadow-[0_1px_2px_rgba(16,24,40,0.04)]", className)}>
+    <section className={cn("min-w-0 rounded-xl border bg-card shadow-[0_1px_2px_rgba(16,24,40,0.04)]", className)}>
       {(title || action) && (
         <div className="flex flex-wrap items-start justify-between gap-2 px-5 pt-4 pb-1">
           <div className="min-w-0">
@@ -69,19 +70,17 @@ export function PanelLink({ href, children }: { href: string; children: React.Re
 export function Stat({ label, value, hint, href, icon: Icon, tone }: { label: string; value: React.ReactNode; hint?: React.ReactNode; href?: string; icon?: LucideIcon; tone?: "warn" }) {
   const body = (
     <>
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[13px] font-medium text-muted-foreground">{label}</span>
-        {Icon && (
-          <span className="grid size-8 place-items-center rounded-xl bg-accent text-accent-foreground">
-            <Icon className="size-4" />
-          </span>
-        )}
-      </div>
-      <div className="mt-2 text-[28px] leading-none font-semibold tracking-tight tabular-nums">{value}</div>
-      {hint && <div className={cn("mt-2 text-[13px]", tone === "warn" ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted-foreground")}>{hint}</div>}
+      {Icon && (
+        <span className="mb-3 grid size-8 place-items-center rounded-lg bg-accent text-accent-foreground">
+          <Icon className="size-4" />
+        </span>
+      )}
+      <div className="text-[13px] font-medium text-muted-foreground">{label}</div>
+      <div className="mt-1.5 text-[26px] leading-none font-semibold tracking-tight tabular-nums">{value}</div>
+      {hint && <div className={cn("mt-2 text-[12.5px]", tone === "warn" ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted-foreground")}>{hint}</div>}
     </>
   )
-  const cls = "block min-w-0 rounded-2xl border bg-card p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]"
+  const cls = "block min-w-0 rounded-xl border bg-card p-4 shadow-[0_1px_2px_rgba(16,24,40,0.04)]"
   return href ? (
     <Link href={href} className={cn(cls, "transition hover:border-primary/40 hover:shadow-sm")}>
       {body}
@@ -331,3 +330,28 @@ export const greeting = () => {
 export const tomorrowAt11 = () => `${new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)}T11:00`
 
 export const industryLabel = (key: string) => key.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())
+
+// ── Tabs (blueprint S2): each tab has its own link, ?tab=key ──
+
+export function PageTabs<K extends string>({ tabs, active, onChange }: { tabs: { key: K; label: string; count?: number }[]; active: K; onChange: (k: K) => void }) {
+  return (
+    <div className="-mt-2 flex gap-1 overflow-x-auto overflow-y-hidden border-b [scrollbar-width:none]" role="tablist">
+      {tabs.map((t) => (
+        <button
+          key={t.key}
+          type="button"
+          role="tab"
+          aria-selected={active === t.key}
+          onClick={() => onChange(t.key)}
+          className={cn(
+            "shrink-0 border-b-2 px-3 py-2.5 text-[13.5px] font-medium transition-colors",
+            active === t.key ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {t.label}
+          {t.count !== undefined && <span className="ml-1.5 rounded-full bg-muted px-1.5 text-[11px] tabular-nums text-muted-foreground">{t.count}</span>}
+        </button>
+      ))}
+    </div>
+  )
+}
