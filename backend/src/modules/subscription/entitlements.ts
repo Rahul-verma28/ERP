@@ -76,6 +76,27 @@ async function loadSubscription(tenantId: string, client: Pick<typeof prisma, 's
 }
 
 /** Recompute and store tenant_entitlements. Call inside a platform transaction. */
+/**
+ * Pure: Console module switches for one business (Phase D) on top of what the plan gives.
+ * "on" opens a module in full; "off" closes it (read-only if it was ever used). A business that
+ * is closed or still waiting for its first payment gets nothing from a switch.
+ */
+export function applyOverrides<T extends Record<string, { status: 'active' | 'read_only' | 'inactive'; tier: ModuleTier }>>(
+  resolved: T,
+  overrides: { moduleKey: string; state: string }[],
+  status: TenantStatus,
+  everUsed: Set<string>,
+): T {
+  if (['closed', 'purged', 'incomplete'].includes(status)) return resolved;
+  const out = { ...resolved };
+  for (const o of overrides) {
+    if (!(o.moduleKey in out)) continue;
+    (out as Record<string, { status: 'active' | 'read_only' | 'inactive'; tier: ModuleTier }>)[o.moduleKey] =
+      o.state === 'on' ? { status: 'active', tier: 'full' } : { status: everUsed.has(o.moduleKey) ? 'read_only' : 'inactive', tier: 'basic' };
+  }
+  return out;
+}
+
 export async function persistEntitlements(tenantId: string) {
   const tx = db();
   const sub = await loadSubscription(tenantId, tx);
@@ -88,7 +109,12 @@ export async function persistEntitlements(tenantId: string) {
   const rows = await tx.tenantEntitlement.findMany({ where: { tenantId } });
   const everUsed = new Set(rows.filter((r) => r.activatedAt).map((r) => r.moduleKey));
   const { catalog, defaults } = await limitDefaults();
-  const resolved = resolveEntitlements(sub.status, full, everUsed, catalog.freeTierModules);
+  const resolved = applyOverrides(
+    resolveEntitlements(sub.status, full, everUsed, catalog.freeTierModules),
+    await tx.tenantModuleOverride.findMany({ where: { tenantId, OR: [{ until: null }, { until: { gt: new Date() } }] }, select: { moduleKey: true, state: true } }),
+    sub.status,
+    everUsed,
+  );
   const limits = withExtraUsers(resolveLimits(sub.status, plan.limits as unknown as PlanLimits, defaults), await extraUsers(tx, sub.items), sub.status);
   const now = new Date();
 

@@ -9,6 +9,7 @@ import { clientOrders } from '../platformBilling/orders';
 import { healthFor } from './insights';
 import { clientFacts, type OnboardedKind } from './clientFacts';
 import { progressOf, readHandover } from './onboarding';
+import { pendingChange } from '../platformBilling/service';
 
 // Console → Clients (design v2 §3). Only account metadata: plan, status, usage counts and who
 // brought the client in. Business records (customers, invoices, salaries) are never read here.
@@ -155,10 +156,11 @@ export async function clientDetail(ctx: ConsoleCtx, id: string) {
       take: 20,
     }),
   ]);
-  const [orders, partner, facts] = await Promise.all([
+  const [orders, partner, facts, scheduled] = await Promise.all([
     clientOrders(id),
     tenant.partnerId ? tx.partner.findUnique({ where: { id: tenant.partnerId }, select: { id: true, name: true } }) : null,
     clientFacts([id]),
+    pendingChange(id),
   ]);
   const plan = subscription ? await tx.plan.findUnique({ where: { id: subscription.planId }, select: { key: true, name: true, limits: true } }) : null;
   const peopleIds = [acquisition?.acquiredByUserId, acquisition?.changedBy, ...extensions.map((e) => e.grantedBy), ...history.map((h) => h.actorId)].filter(Boolean) as string[];
@@ -180,6 +182,8 @@ export async function clientDetail(ctx: ConsoleCtx, id: string) {
     partner,
     billedBy: tenant.billingOwner,
     onboardedBy: facts.by.get(id) ?? null,
+    // Phase D: a plan change waiting for the renewal date
+    pendingChange: scheduled,
     progress: facts.progress.get(id) ?? null,
     // Blueprint Phase B: set-up and handover through the onboarding wizard (null if never used)
     handover: (() => {

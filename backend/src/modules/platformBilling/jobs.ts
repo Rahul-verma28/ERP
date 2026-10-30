@@ -1,10 +1,12 @@
-import { db, withPlatform } from '../../kernel/db';
+import { db, withPlatform, withTenant } from '../../kernel/db';
 import { cache } from '../../kernel/cache';
 import { sendMessage } from '../notifications/service';
 import { getSetting } from '../settings/service';
 import { transition } from '../subscription/stateMachine';
 import { quote, saveOrder } from './service';
 import { sendPaymentLink } from './online';
+import { persistEntitlements } from '../subscription/entitlements';
+import { expireOverrides } from '../console/product';
 
 // design v2 Step 4b — hourly billing jobs. Each job scans in one platform transaction and
 // handles every item in its own (so one bad tenant never blocks the rest). Called with a
@@ -76,14 +78,17 @@ export async function runRenewals(now = new Date()) {
     const { tenant, user } = await owner(sub.tenantId);
 
     if (!order) {
-      const plan = await tx.plan.findUniqueOrThrow({ where: { id: sub.planId } });
+      // A plan change scheduled for the renewal date (Phase D) is what gets billed
+      const scheduled = await tx.scheduledChange.findFirst({ where: { subscriptionId: sub.id, appliedAt: null, effectiveAt: { lte: new Date(end.getTime() + DAY) } }, orderBy: { effectiveAt: 'asc' } });
+      const change = scheduled?.change as { planKey: string; cycle: 'monthly' | 'yearly' } | undefined;
+      const plan = change ? await tx.plan.findUniqueOrThrow({ where: { key: change.planKey } }) : await tx.plan.findUniqueOrThrow({ where: { id: sub.planId } });
       const prices = await tx.price.findMany({ where: { id: { in: sub.items.map((i) => i.priceId) } } });
       const kind = (id: string) => prices.find((p) => p.id === id);
       const seller = await getSetting('ahead.billing');
       const billTo = { name: tenant.name, gstin: tenant.gstin, stateCode: tenant.billingStateCode ?? seller.stateCode, address: null };
       const q = await quote({
         planKey: plan.key,
-        cycle: sub.cycle as 'monthly' | 'yearly',
+        cycle: change?.cycle ?? (sub.cycle as 'monthly' | 'yearly'),
         addOns: sub.items.filter((i) => kind(i.priceId)?.itemType === 'addon_module').map((i) => kind(i.priceId)!.itemRef),
         extraUsers: sub.items.filter((i) => kind(i.priceId)?.itemType === 'extra_user').reduce((n, i) => n + i.quantity, 0),
         discountPercent: 0,
@@ -145,11 +150,22 @@ export async function runTrialReminders(now = new Date()) {
 }
 
 /** Everything billing does on the hour. */
+/** Console module switches with an end date (Phase D): remove them once passed and re-compute. */
+export async function runExpireModuleSwitches(now = new Date()) {
+  const tenantIds = await withPlatform(() => expireOverrides(now));
+  for (const tenantId of tenantIds) {
+    await withTenant({ kind: 'system', tenantId }, () => persistEntitlements(tenantId)).catch((e) => console.error('[billing:switches]', e instanceof Error ? e.message : e));
+  }
+  return tenantIds.length;
+}
+
 export async function runBillingJobs(now = new Date()) {
   const lapsed = await runLapseUnpaid(now);
   const renewals = await runRenewals(now);
   const dunning = await runDunning(now);
   const reminders = await runTrialReminders(now);
+  const switches = await runExpireModuleSwitches(now);
+  if (switches) console.log(`[billing] module switches ended for ${switches} business(es)`);
   if (lapsed || renewals || dunning.failed || dunning.freed || reminders) {
     console.log(`[billing] lapsed ${lapsed}, renewals checked ${renewals}, payment failed ${dunning.failed}, moved to Free ${dunning.freed}, trial reminders ${reminders}`);
   }

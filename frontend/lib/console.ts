@@ -86,6 +86,7 @@ export interface ClientDetail {
   onboardedBy: OnboardedBy | null
   progress: ClientProgress | null
   handover: (OnboardingDetail["handover"] & { progress: HandoverProgress }) | null
+  pendingChange: { planKey: string; planName: string; cycle: string; effectiveAt: string } | null
   billedBy: "self" | "partner"
   history: { id: string; action: string; at: string; actor: string | null }[]
 }
@@ -483,3 +484,44 @@ export interface AuditEvent {
 export interface SecurityStats { changes7d: number; risky7d: number; failedSignIns7d: number; twoStepOn: number; people: number }
 export interface SignInRow { id: string; at: string; person: string; outcome: string; method: string | null; ip: string | null; device: string }
 export interface SessionRow { id: string; person: string; email: string; role: string; since: string; ip: string | null; device: string; current: boolean }
+
+// ── Product & billing (blueprint Phase D) ──
+
+export interface PlanDraft {
+  name: string
+  tagline: string
+  isPublic: boolean
+  limits: PlanLimits
+  fullModules: string[]
+  monthlyPaise: number | null
+  yearlyPaise: number | null
+}
+
+export interface PlanEditorData {
+  key: string
+  live: PlanDraft
+  draft: PlanDraft | null
+  draftBy: string | null
+  draftAt: string | null
+  diff: { added: string[]; removed: string[]; limits: { key: string; from: number | null; to: number | null }[]; prices: { cycle: "monthly" | "yearly"; from: number | null; to: number | null }[]; text: string[]; changed: boolean } | null
+  impact: { onPlan: number; paying: number; trial: number; overdue: number; losingModules: number }
+  problems: string[]
+  modules: { key: string; name: string; category: string; dependsOn: string[]; freeTier: boolean }[]
+}
+
+export interface ModulesOverview {
+  plans: { key: string; name: string }[]
+  modules: { key: string; name: string; category: string; description: string; dependsOn: string[]; freeTier: boolean; plans: string[]; businesses: number }[]
+  overrides: { tenantId: string; business: string; moduleKey: string; state: "on" | "off"; until: string | null; reason: string; by: string | null; at: string }[]
+}
+
+export interface ModuleSwitch { moduleKey: string; state: "on" | "off"; until: string | null; reason: string; createdAt: string }
+
+export type PlanChangePreview =
+  | { kind: "upgrade"; from: string; to: string; cycle: string; daysLeft: number; renewsAt: string; taxablePaise: number; gstPaise: number; totalPaise: number }
+  | { kind: "scheduled"; from: string; to: string; cycle: string; effectiveAt: string; renewalPaise: number }
+
+export interface BillingSummary { receivedPaise: number; receivedCount: number; receivedLastMonthPaise: number; waitingPaise: number; waitingCount: number; approvals: number; overdue: number; renewals30d: number }
+export interface PaymentRow { id: string; orderId: string; tenantId: string; business: string; method: string; amountPaise: number; reference: string | null; receivedAt: string; recordedBy: string | null; kind: string; invoice: { id: string; number: string } | null }
+export interface InvoiceRow { id: string; number: string; tenantId: string; business: string; issuedAt: string; taxablePaise: number; gstPaise: number; totalPaise: number }
+export interface RenewalRow { tenantId: string; business: string; status: TenantStatus; plan: string; cycle: string; renewsAt: string | null; graceEndsAt: string | null; order: { id: string; status: string; totalPaise: number; hasLink: boolean } | null; changeTo: string | null }

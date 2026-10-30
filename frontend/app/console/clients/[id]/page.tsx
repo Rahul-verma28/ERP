@@ -16,6 +16,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatNumber } from "@/lib/format"
 import type { ClientDetail } from "@/lib/console"
 import { useConsoleBase } from "@/lib/console-base"
+import { ChangePlanPaidDialog, ModulesWithSwitches, PendingChangeNotice } from "@/components/console/plan-tools"
 
 // Business page (blueprint S2): a header with the actions, then tabs with their own links
 // (?tab=…): Overview, Plan & billing, Users, Activity & notes. One button per action.
@@ -39,7 +40,7 @@ function BusinessPage({ params }: { params: Promise<{ id: string }> }) {
   const base = useConsoleBase()
   const { me, canConsole } = useAuth()
   const { data: c, error, reload } = useApi<ClientDetail>(`/console/tenants/${id}`)
-  const [dialog, setDialog] = React.useState<"extend" | "convert" | "source" | "plan" | null>(null)
+  const [dialog, setDialog] = React.useState<"extend" | "convert" | "source" | "plan" | "paidPlan" | null>(null)
   const [sending, setSending] = React.useState(false)
   const audience = me?.console?.audience ?? "team"
   const vendor = audience === "vendor"
@@ -62,6 +63,10 @@ function BusinessPage({ params }: { params: Promise<{ id: string }> }) {
   const canExtend = !partnerBilled && canConsole("platform.grace.create") && (c.status === "trialing" || c.status === "past_due")
   const canConvert = !partnerBilled && audience !== "partner" && canConsole("platform.tenant.create") && ["trialing", "free", "past_due"].includes(c.status) && !unpaid && !waitingApproval
   const canChangePlan = audience === "partner" && canConsole("platform.tenant.edit")
+  // Phase D: AHEAD's paying businesses change plan here (pro-rated upgrade, or at renewal)
+  const canChangePaid = !partnerBilled && audience !== "partner" && canConsole("platform.tenant.edit") && c.status === "active" && !unpaid && !waitingApproval
+  // Module switches: people who edit all businesses (Admin, Staff), never partners or sales
+  const canSwitch = audience === "team" && me?.console?.permissions["platform.tenant.edit"] === "all"
   // Only an Admin changes "Onboarded by"
   const canSource = me?.console?.role.key === "super_admin" && !partnerBilled
 
@@ -89,6 +94,10 @@ function BusinessPage({ params }: { params: Promise<{ id: string }> }) {
     </Button>
   ) : canChangePlan ? (
     <Button onClick={() => setDialog("plan")}>
+      <Layers /> Change plan
+    </Button>
+  ) : canChangePaid ? (
+    <Button onClick={() => setDialog("paidPlan")}>
       <Layers /> Change plan
     </Button>
   ) : null
@@ -158,10 +167,13 @@ function BusinessPage({ params }: { params: Promise<{ id: string }> }) {
         </>
       )}
       {tab === "plan" && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <PlanAndPayments client={c} />
-          <ModulesPanel client={c} />
-        </div>
+        <>
+          <PendingChangeNotice client={c} canEdit={canConsole("platform.tenant.edit") && !partnerBilled} onDone={reload} />
+          <div className="grid gap-6 lg:grid-cols-2">
+            <PlanAndPayments client={c} />
+            <ModulesWithSwitches client={c} canSwitch={!!canSwitch} onChanged={reload} />
+          </div>
+        </>
       )}
       {tab === "handover" && <HandoverPanel client={c} base={base} />}
       {tab === "users" && <UsersPanel tenantId={c.id} />}
@@ -170,6 +182,7 @@ function BusinessPage({ params }: { params: Promise<{ id: string }> }) {
       {dialog === "extend" && <ExtendDialog client={c} open onOpenChange={(o) => !o && setDialog(null)} onDone={reload} />}
       {dialog === "convert" && <ConvertDialog client={c} open onOpenChange={(o) => !o && setDialog(null)} />}
       {dialog === "source" && <SourceDialog client={c} open onOpenChange={(o) => !o && setDialog(null)} onDone={reload} />}
+      {dialog === "paidPlan" && <ChangePlanPaidDialog client={c} onClose={() => setDialog(null)} onDone={() => (setDialog(null), reload())} />}
       {dialog === "plan" && <ChangePlanDialog client={c} open onOpenChange={(o) => !o && setDialog(null)} onDone={reload} />}
     </Page>
   )

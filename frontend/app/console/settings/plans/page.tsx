@@ -4,9 +4,9 @@ import * as React from "react"
 import { toast } from "sonner"
 import { Pencil, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import Link from "next/link"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -17,115 +17,9 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { paiseToRupees, rupeesToPaise } from "@/lib/money"
 import type { Catalog } from "@/lib/console"
-import type { PlanLimits } from "@/lib/types"
 import { ConfirmDialog } from "@/components/common"
 import { Failed, Loading, Page } from "@/components/console/kit"
 
-type Plan = Catalog["plans"][number]
-
-const LIMIT_FIELDS: { key: keyof PlanLimits; label: string; nullable: boolean }[] = [
-  { key: "users", label: "Users", nullable: false },
-  { key: "branches", label: "Branches", nullable: false },
-  { key: "contacts", label: "Contacts", nullable: true },
-  { key: "items", label: "Items", nullable: true },
-  { key: "invoicesPerMonth", label: "Invoices / month", nullable: true },
-  { key: "storageMb", label: "Storage (MB)", nullable: false },
-  { key: "aiCredits", label: "AI credits", nullable: false },
-]
-
-function PlanDialog({ plan, modules, onClose, onSaved }: { plan: Plan; modules: Catalog["modules"]; onClose: () => void; onSaved: () => void }) {
-  const [name, setName] = React.useState(plan.name)
-  const [tagline, setTagline] = React.useState(plan.tagline ?? "")
-  const [isPublic, setIsPublic] = React.useState(plan.isPublic)
-  const [limits, setLimits] = React.useState<Record<string, string>>(Object.fromEntries(LIMIT_FIELDS.map((f) => [f.key, plan.limits[f.key] === null ? "" : String(plan.limits[f.key])])))
-  const [mods, setMods] = React.useState(new Set(plan.fullModules))
-  const [error, setError] = React.useState<string | null>(null)
-  const [busy, setBusy] = React.useState(false)
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
-    setError(null)
-    const parsed = Object.fromEntries(LIMIT_FIELDS.map((f) => [f.key, limits[f.key] === "" && f.nullable ? null : Number(limits[f.key])])) as unknown as PlanLimits
-    setBusy(true)
-    try {
-      const r = await api.patch<{ recomputed: number }>(`/console/plans/${plan.key}`, {
-        name,
-        tagline: tagline || null,
-        isPublic,
-        limits: parsed,
-        ...(plan.key === "free" ? {} : { fullModules: [...mods] }),
-      })
-      toast.success(r.recomputed ? `Plan saved — ${r.recomputed} client(s) updated` : "Plan saved")
-      onSaved()
-      onClose()
-    } catch (err) {
-      setError(errorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">
-        <form onSubmit={save} className="grid gap-4">
-          <DialogHeader>
-            <DialogTitle>Edit {plan.name}</DialogTitle>
-            <DialogDescription>
-              {plan.subscribers} client(s) on this plan. Limits apply immediately; changing modules re-computes their access.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Name">
-              <Input value={name} onChange={(e) => setName(e.target.value)} required />
-            </Field>
-            <Field label="Tagline">
-              <Input value={tagline} onChange={(e) => setTagline(e.target.value)} />
-            </Field>
-          </div>
-          <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={isPublic} onCheckedChange={(v) => setIsPublic(!!v)} /> Shown on the public plans page
-          </label>
-          <div>
-            <p className="mb-2 text-sm font-medium">Limits</p>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {LIMIT_FIELDS.map((f) => (
-                <Field key={f.key} label={f.label} hint={f.nullable ? "Empty = unlimited" : undefined}>
-                  <Input type="number" min={0} value={limits[f.key]} onChange={(e) => setLimits({ ...limits, [f.key]: e.target.value })} required={!f.nullable} />
-                </Field>
-              ))}
-            </div>
-          </div>
-          {plan.key !== "free" && (
-            <div>
-              <p className="mb-2 text-sm font-medium">Modules at full tier</p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                {modules.map((m) => (
-                  <label key={m.key} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={mods.has(m.key)}
-                      onCheckedChange={(v) => {
-                        const next = new Set(mods)
-                        if (v) next.add(m.key)
-                        else next.delete(m.key)
-                        setMods(next)
-                      }}
-                    />
-                    {m.name}
-                  </label>
-                ))}
-              </div>
-            </div>
-          )}
-          <FormError message={error} />
-          <DialogFooter>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Review changes"}</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 function PriceCell({ price, label, editable, onSaved }: { price: Catalog["prices"][number]; label: string; editable: boolean; onSaved: () => void }) {
   const [value, setValue] = React.useState(paiseToRupees(price.amountPaise))
@@ -248,7 +142,6 @@ function CouponDialog({ open, onOpenChange, onSaved }: { open: boolean; onOpenCh
 export default function PlansPage() {
   const { canConsole } = useAuth()
   const { data, error, reload } = useApi<Catalog>("/console/catalog")
-  const [editing, setEditing] = React.useState<Plan | null>(null)
   const [couponOpen, setCouponOpen] = React.useState(false)
   const canEdit = canConsole("platform.plan.edit")
   const [ending, setEnding] = React.useState<string | null>(null)
@@ -276,9 +169,9 @@ export default function PlansPage() {
                   {p.name} {!p.isPublic && <Badge variant="outline" className="ml-1 h-5 px-1.5 text-[10px]">old plan · not sold</Badge>}
                 </span>
                 {canEdit && (
-                  <Button size="icon" variant="ghost" onClick={() => setEditing(p)} aria-label={`Edit ${p.name}`}>
+                  <Link href={`/console/settings/plans/${p.key}`} className={buttonVariants({ size: "icon", variant: "ghost" })} aria-label={`Edit ${p.name}`}>
                     <Pencil className="size-4" />
-                  </Button>
+                  </Link>
                 )}
               </CardTitle>
               <CardDescription>{p.tagline}</CardDescription>
@@ -320,7 +213,7 @@ export default function PlansPage() {
                   <TableCell className="capitalize">{p.cycle}</TableCell>
                   <TableCell className="text-sm text-muted-foreground">{formatDate(p.activeFrom)}</TableCell>
                   <TableCell className="pr-6 text-right">
-                    <PriceCell key={`${p.id}-${p.amountPaise}`} price={p} label={itemName(p)} editable={canEdit} onSaved={reload} />
+                    <PriceCell key={`${p.id}-${p.amountPaise}`} price={p} label={itemName(p)} editable={canEdit && p.itemType === "extra_user"} onSaved={reload} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -389,7 +282,6 @@ export default function PlansPage() {
         </CardContent>
       </Card>
 
-      {editing && <PlanDialog plan={editing} modules={data.modules} onClose={() => setEditing(null)} onSaved={reload} />}
       <CouponDialog open={couponOpen} onOpenChange={setCouponOpen} onSaved={reload} />
       <ConfirmDialog
         open={!!ending}

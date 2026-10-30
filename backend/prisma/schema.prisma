@@ -870,6 +870,30 @@ model Coupon {
   @@map("coupons")
 }
 
+/// Console Phase D: a plan being edited; published by an Admin
+model PlanDraft {
+  planKey   String   @id @map("plan_key")
+  data      Json
+  updatedBy String?  @map("updated_by") @db.Uuid
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@map("plan_drafts")
+}
+
+/// Console Phase D: a module switched on (beyond the plan) or off for one business
+model TenantModuleOverride {
+  tenantId  String    @map("tenant_id") @db.Uuid
+  moduleKey String    @map("module_key")
+  state     String
+  until     DateTime? @db.Timestamptz
+  reason    String
+  createdBy String?   @map("created_by") @db.Uuid
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([tenantId, moduleKey])
+  @@map("tenant_module_overrides")
+}
+
 model Subscription {
   id                 String       @id @default(uuid(7)) @db.Uuid
   tenantId           String       @unique @map("tenant_id") @db.Uuid

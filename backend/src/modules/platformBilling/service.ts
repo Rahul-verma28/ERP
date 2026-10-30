@@ -10,6 +10,7 @@ import { createTenant } from '../tenancy/createTenant';
 import { sendAccessLink } from '../identity/accessLinks';
 import { startHandover } from '../console/onboarding';
 import { transition } from '../subscription/stateMachine';
+import { persistEntitlements } from '../subscription/entitlements';
 
 // design v2 Step 4: what AHEAD sells to a client. One order = plan + add-on modules + extra
 // users for one cycle, priced from the active price list, discounted (sales limit / coupon),
@@ -358,6 +359,13 @@ export async function capturePayment(orderId: string, p: PaymentInput) {
 
   // Subscription: the order's cycle and add-ons, then the state machine opens the modules
   const sub = await tx.subscription.findUniqueOrThrow({ where: { tenantId: order.tenantId } });
+  if (order.kind === 'upgrade') {
+    // Pro-rated upgrade (Phase D): the new plan starts now, the period and extras stay as they are
+    await tx.subscription.update({ where: { id: sub.id }, data: { planId: order.planId, version: { increment: 1 } } });
+    await persistEntitlements(order.tenantId);
+    await audit({ tenantId: null, action: 'console.payment_recorded', entity: 'platform_order', entityId: orderId, after: { paymentId: payment.id, method: p.method, amountPaise: p.amountPaise, reference: p.reference, invoice: number, upgrade: true } });
+    return { payment, invoice };
+  }
   await tx.subscription.update({ where: { id: sub.id }, data: { cycle: order.cycle } });
   await tx.subscriptionItem.deleteMany({ where: { subscriptionId: sub.id } });
   const extras = items.filter((i) => i.itemType !== 'plan');
@@ -366,8 +374,117 @@ export async function capturePayment(orderId: string, p: PaymentInput) {
   }
   // A renewal paid on time extends from the old period end; anything else starts a new period today
   await transition(order.tenantId, sub.status === 'active' ? 'renewal_succeeded' : 'payment_captured', { planId: order.planId, now });
+  // A plan change scheduled for this renewal is now in effect
+  if (order.kind === 'renewal') await tx.scheduledChange.updateMany({ where: { subscriptionId: sub.id, appliedAt: null }, data: { appliedAt: now } });
   if (order.couponCode) await tx.coupon.update({ where: { code: order.couponCode }, data: { redeemed: { increment: 1 } } });
 
   await audit({ tenantId: null, action: 'console.payment_recorded', entity: 'platform_order', entityId: orderId, after: { paymentId: payment.id, method: p.method, amountPaise: p.amountPaise, reference: p.reference, invoice: number } });
   return { payment, invoice };
+}
+
+// ── Change plan for a paying business (blueprint Phase D) ──
+
+export interface PlanChangeInput {
+  planKey: string;
+  cycle: 'monthly' | 'yearly';
+}
+
+/** Pure: the price difference for the days left in the period, rounded to the paisa. */
+export function proRate(oldPaise: number, newPaise: number, periodStart: Date, periodEnd: Date, now: Date) {
+  const total = periodEnd.getTime() - periodStart.getTime();
+  const left = Math.max(0, periodEnd.getTime() - now.getTime());
+  if (total <= 0 || newPaise <= oldPaise) return { amountPaise: 0, daysLeft: Math.ceil(left / DAY) };
+  return { amountPaise: Math.round(((newPaise - oldPaise) * left) / total), daysLeft: Math.ceil(left / DAY) };
+}
+
+/**
+ * What changing plan means for this business: an upgrade on the same cycle is paid now for the
+ * days left (the plan switches when paid, the renewal date stays); anything else (a cheaper
+ * plan, or another cycle) takes effect at the renewal date and nothing is paid now.
+ */
+export async function previewPlanChange(tenantId: string, input: PlanChangeInput, now = new Date()) {
+  const tx = db();
+  const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { name: true, legalName: true, gstin: true, billingStateCode: true, billingOwner: true } });
+  if (tenant.billingOwner !== 'self') throw new AppError('INVALID_TRANSITION', "A partner's business changes plan from the partner portal.");
+  const sub = await tx.subscription.findUniqueOrThrow({ where: { tenantId } });
+  if (sub.status !== 'active' || !sub.currentPeriodEnd || !sub.currentPeriodStart) throw new AppError('INVALID_TRANSITION', 'Only a paying business changes plan here. Use Convert to paid for trials and Free.');
+  const [current, next] = await Promise.all([
+    tx.plan.findUniqueOrThrow({ where: { id: sub.planId }, select: { id: true, key: true, name: true } }),
+    tx.plan.findUnique({ where: { key: input.planKey }, select: { id: true, key: true, name: true } }),
+  ]);
+  if (!next || next.key === 'free') throw new AppError('VALIDATION_FAILED', 'Choose a paid plan.', { fields: { planKey: 'Choose a paid plan' } });
+  if (next.id === current.id && input.cycle === sub.cycle) throw new AppError('VALIDATION_FAILED', "That's the plan this business is on.", { fields: { planKey: 'Same plan' } });
+  const newPrice = await activePrice('plan', next.key, input.cycle);
+  if (!newPrice) throw new AppError('VALIDATION_FAILED', `${next.name} is not sold ${input.cycle}.`, { fields: { cycle: 'Not sold on this cycle' } });
+  // What they actually paid for the plan this period (the last paid order's plan line), else today's price
+  const lastPaid = await tx.platformOrder.findFirst({ where: { tenantId, status: 'paid' }, orderBy: { paidAt: 'desc' } });
+  const paidLine = (lastPaid?.items as unknown as OrderItem[] | undefined)?.find((i) => i.itemType === 'plan');
+  const oldPrice = paidLine && lastPaid?.planId === current.id && lastPaid.kind !== 'upgrade'
+    ? paidLine.unitPaise - paidLine.discountPaise
+    : Number((await activePrice('plan', current.key, sub.cycle as 'monthly' | 'yearly'))?.amountPaise ?? 0);
+  const upgrade = input.cycle === sub.cycle && Number(newPrice.amountPaise) > oldPrice;
+  if (!upgrade) {
+    return { kind: 'scheduled' as const, from: current, to: next, cycle: input.cycle, effectiveAt: sub.currentPeriodEnd, renewalPaise: Number(newPrice.amountPaise) };
+  }
+  const p = proRate(oldPrice, Number(newPrice.amountPaise), sub.currentPeriodStart, sub.currentPeriodEnd, now);
+  const s = await seller();
+  const billTo = { name: tenant.legalName ?? tenant.name, gstin: tenant.gstin, stateCode: tenant.billingStateCode ?? s.stateCode, address: null };
+  const doc = computeDocument([{ quantity: 1, unitPricePaise: p.amountPaise, discountPaise: 0, gstRateBp: s.gstRateBp }], billTo.stateCode === s.stateCode);
+  const line = doc.lines[0];
+  const item: OrderItem = {
+    itemType: 'plan', itemRef: next.key, priceId: newPrice.id, description: `${current.name} to ${next.name}, ${p.daysLeft} days left in this period (pro-rated)`,
+    quantity: 1, unitPaise: p.amountPaise, amountPaise: p.amountPaise, discountPaise: 0,
+    taxablePaise: Number(line.taxablePaise), cgstPaise: Number(line.cgstPaise), sgstPaise: Number(line.sgstPaise), igstPaise: Number(line.igstPaise), totalPaise: Number(line.totalPaise),
+  };
+  return {
+    kind: 'upgrade' as const, from: current, to: next, cycle: input.cycle, daysLeft: p.daysLeft, renewsAt: sub.currentPeriodEnd, billTo, item,
+    totalPaise: Number(doc.totals.totalPaise), taxablePaise: Number(doc.totals.taxablePaise), gstPaise: Number(doc.totals.cgstPaise) + Number(doc.totals.sgstPaise) + Number(doc.totals.igstPaise),
+  };
+}
+
+export async function changePlan(ctx: ConsoleCtx, tenantId: string, input: PlanChangeInput) {
+  const tx = db();
+  const preview = await previewPlanChange(tenantId, input);
+  const sub = await tx.subscription.findUniqueOrThrow({ where: { tenantId } });
+  const open = await tx.platformOrder.findFirst({ where: { tenantId, status: { in: ['pending_approval', 'awaiting_payment'] }, kind: { not: 'renewal' } }, select: { id: true } });
+  if (open) throw new AppError('CONFLICT', 'This business already has an order waiting. Send that payment link or cancel it first.', { orderId: open.id });
+
+  if (preview.kind === 'scheduled') {
+    // One pending change at a time; a renewal order already made at the old plan is re-made by the next renewal run
+    await tx.scheduledChange.deleteMany({ where: { subscriptionId: sub.id, appliedAt: null } });
+    await tx.scheduledChange.create({ data: { subscriptionId: sub.id, change: { planKey: preview.to.key, cycle: preview.cycle }, effectiveAt: preview.effectiveAt } });
+    await tx.platformOrder.updateMany({ where: { tenantId, kind: 'renewal', status: 'awaiting_payment' }, data: { status: 'cancelled', cancelledReason: 'Plan changed before renewal' } });
+    await audit({ tenantId: null, action: 'console.plan_change_scheduled', entity: 'tenant', entityId: tenantId, after: { from: preview.from.key, to: preview.to.key, cycle: preview.cycle, effectiveAt: preview.effectiveAt } });
+    return { kind: 'scheduled' as const, effectiveAt: preview.effectiveAt, to: preview.to.name };
+  }
+
+  const cancelDays = await getSetting('onboarding.unpaid_cancel_days');
+  const order = await tx.platformOrder.create({
+    data: {
+      tenantId, kind: 'upgrade', status: 'awaiting_payment', planId: preview.to.id, cycle: preview.cycle,
+      items: [preview.item] as unknown as Prisma.InputJsonValue,
+      listPaise: BigInt(preview.item.amountPaise), discountBp: 0, discountPaise: BigInt(0),
+      taxablePaise: BigInt(preview.taxablePaise), cgstPaise: BigInt(preview.item.cgstPaise), sgstPaise: BigInt(preview.item.sgstPaise), igstPaise: BigInt(preview.item.igstPaise), totalPaise: BigInt(preview.totalPaise),
+      billTo: preview.billTo, createdBy: ctx.userId, expiresAt: new Date(Math.min(Date.now() + cancelDays * DAY, preview.renewsAt.getTime())),
+    },
+  });
+  await audit({ tenantId: null, action: 'console.plan_upgrade_ordered', entity: 'platform_order', entityId: order.id, after: { from: preview.from.key, to: preview.to.key, totalPaise: preview.totalPaise, daysLeft: preview.daysLeft } });
+  return { kind: 'upgrade' as const, orderId: order.id, totalPaise: preview.totalPaise };
+}
+
+export async function cancelScheduledChange(tenantId: string) {
+  const sub = await db().subscription.findUniqueOrThrow({ where: { tenantId } });
+  const n = await db().scheduledChange.deleteMany({ where: { subscriptionId: sub.id, appliedAt: null } });
+  if (n.count) await audit({ tenantId: null, action: 'console.plan_change_cancelled', entity: 'tenant', entityId: tenantId });
+  return { cancelled: n.count };
+}
+
+export async function pendingChange(tenantId: string) {
+  const sub = await db().subscription.findUnique({ where: { tenantId }, select: { id: true } });
+  if (!sub) return null;
+  const c = await db().scheduledChange.findFirst({ where: { subscriptionId: sub.id, appliedAt: null }, orderBy: { effectiveAt: 'asc' } });
+  if (!c) return null;
+  const change = c.change as { planKey: string; cycle: 'monthly' | 'yearly' };
+  const plan = await db().plan.findUnique({ where: { key: change.planKey }, select: { name: true } });
+  return { planKey: change.planKey, planName: plan?.name ?? change.planKey, cycle: change.cycle, effectiveAt: c.effectiveAt };
 }

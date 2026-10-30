@@ -1,6 +1,6 @@
 import { Router, type Request } from 'express';
 import { z } from 'zod';
-import { db } from '../../kernel/db';
+import { db, withPlatform } from '../../kernel/db';
 import { cache } from '../../kernel/cache';
 import { AppError } from '../../kernel/errors';
 import { IdParam, ListQuery } from '../../kernel/query';
@@ -18,13 +18,15 @@ import { addMember, consoleRoles, listMembers, resendMemberLink, updateMember } 
 import { sendAccessLink } from '../identity/accessLinks';
 import * as onboarding from './onboarding';
 import * as access from './access';
+import * as product from './product';
+import * as billing from './billing';
 import * as security from './security';
 import { accountHealth, consoleHome, type Audience } from './insights';
 import { clientSummary, clientTimeline, clientUsers } from './client360';
 import { addNote, closeFollowup, createFollowup, createProspect, FollowupInput, listFollowups, listNotes, listProspects, NoteInput, ProspectInput, ProspectPatch, STAGES, updateProspect } from './sales';
 import { changePartnerClientPlan, createPartner, createPartnerClient, listPartners, partnerBill, partnerDetail, PartnerClientInput, PartnerInput, PartnerPatch, updatePartner } from './partners';
 import { myReferral } from './referral';
-import { approveOrder, cancelOrder, capturePayment, convertClient, createClient, quote, welcomePercentFor } from '../platformBilling/service';
+import { approveOrder, cancelOrder, capturePayment, cancelScheduledChange, changePlan, convertClient, createClient, previewPlanChange, quote, welcomePercentFor } from '../platformBilling/service';
 import { invoiceDetail, listOrders, orderDetail } from '../platformBilling/orders';
 import { issueCreditNote, sendPaymentLink } from '../platformBilling/online';
 
@@ -150,6 +152,9 @@ router.put('/tenants/:id/plan', requirePlatformPermission('platform.tenant.edit'
 }));
 
 // ── New client: AHEAD sales and vendors (paid order) or partners (live at once, partner-billed) ──
+const PlanKeyParam = z.object({ key: z.string().regex(/^[a-z0-9_]{2,40}$/, 'Unknown plan') });
+const IdModuleParam = IdParam.extend({ module: z.string().regex(/^[a-z_]{2,30}$/, 'Unknown module') });
+
 const OrderInput = z.object({
   planKey: z.string().max(40),
   cycle: z.enum(['monthly', 'yearly']),
@@ -311,6 +316,80 @@ router.post('/onboarding/:id/skip', requirePlatformPermission('platform.tenant.c
 }));
 router.post('/onboarding/:id/handover', requirePlatformPermission('platform.tenant.create'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
   res.json(await onboarding.handOver(ctx(req), String(req.params.id)));
+}));
+
+// ── Product & billing (blueprint Phase D) ──
+router.get('/plans/:key/editor', requirePlatformPermission('platform.plan.view'), validate(PlanKeyParam, 'params'), consoleTx(async (req, res) => {
+  res.json(await product.planEditor(String(req.params.key)));
+}));
+router.put('/plans/:key/draft', requirePlatformPermission('platform.plan.edit'), validate(PlanKeyParam, 'params'), validate(product.PlanDraftInput), consoleTx(async (req, res) => {
+  res.json(await product.saveDraft(ctx(req), String(req.params.key), req.body));
+}));
+router.delete('/plans/:key/draft', requirePlatformPermission('platform.plan.edit'), validate(PlanKeyParam, 'params'), consoleTx(async (req, res) => {
+  res.json(await product.discardDraft(String(req.params.key)));
+}));
+router.post('/plans/:key/publish', requirePlatformPermission('platform.plan.edit'), validate(PlanKeyParam, 'params'), consoleTx(async (req, res) => {
+  res.json(await product.publishDraft(ctx(req), String(req.params.key)));
+}));
+router.get('/modules', requirePlatformPermission('platform.plan.view'), consoleTx(async (_req, res) => {
+  res.json(await product.modulesOverview());
+}));
+
+// Module switches for one business: Admin and Staff only (edit on all businesses), never partners
+const canSwitch = (req: Request) => {
+  if (ctx(req).partnerId || ctx(req).scope !== 'all') throw new AppError('PERMISSION_DENIED', 'Only the AHEAD team switches modules for a business.');
+};
+router.get('/tenants/:id/module-switches', requirePlatformPermission('platform.tenant.view'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  res.json({ data: await product.businessOverrides(ctx(req), String(req.params.id)) });
+}));
+router.put('/tenants/:id/module-switches/:module', requirePlatformPermission('platform.tenant.edit'), validate(IdModuleParam, 'params'), validate(product.OverrideInput), async (req, res) => {
+  if (!req.console) throw new AppError('UNAUTHENTICATED', 'Please sign in.');
+  const out = await withPlatform(async () => {
+    canSwitch(req);
+    return product.setOverride(ctx(req), String(req.params.id), String(req.params.module), req.body);
+  }, req.console);
+  // The business re-computes its modules in its own transaction, after the switch has committed
+  await out.recompute();
+  res.json({ ok: true });
+});
+router.delete('/tenants/:id/module-switches/:module', requirePlatformPermission('platform.tenant.edit'), validate(IdModuleParam, 'params'), async (req, res) => {
+  if (!req.console) throw new AppError('UNAUTHENTICATED', 'Please sign in.');
+  const out = await withPlatform(async () => {
+    canSwitch(req);
+    return product.clearOverride(ctx(req), String(req.params.id), String(req.params.module));
+  }, req.console);
+  await out.recompute();
+  res.json({ ok: true });
+});
+
+// Change plan for a paying business (pro-rated upgrade now, or at the renewal date)
+const PlanChangeBody = z.object({ planKey: z.string().max(40), cycle: z.enum(['monthly', 'yearly']) });
+router.get('/tenants/:id/plan-change', requirePlatformPermission('platform.tenant.edit'), validate(IdParam, 'params'), validate(PlanChangeBody, 'query'), consoleTx(async (req, res) => {
+  await inScope(req);
+  const p = await previewPlanChange(String(req.params.id), req.query as unknown as z.infer<typeof PlanChangeBody>);
+  res.json(p.kind === 'upgrade' ? { kind: p.kind, from: p.from.name, to: p.to.name, cycle: p.cycle, daysLeft: p.daysLeft, renewsAt: p.renewsAt, taxablePaise: p.taxablePaise, gstPaise: p.gstPaise, totalPaise: p.totalPaise } : { kind: p.kind, from: p.from.name, to: p.to.name, cycle: p.cycle, effectiveAt: p.effectiveAt, renewalPaise: p.renewalPaise });
+}));
+router.post('/tenants/:id/plan-change', requirePlatformPermission('platform.tenant.edit'), validate(IdParam, 'params'), validate(PlanChangeBody), consoleTx(async (req, res) => {
+  if (ctx(req).partnerId) throw new AppError('PERMISSION_DENIED', 'Partners change plans from their own portal.');
+  await inScope(req);
+  res.json(await changePlan(ctx(req), String(req.params.id), req.body));
+}));
+router.delete('/tenants/:id/plan-change', requirePlatformPermission('platform.tenant.edit'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  await inScope(req);
+  res.json(await cancelScheduledChange(String(req.params.id)));
+}));
+
+router.get('/billing/summary', requirePlatformPermission('platform.payment.view'), consoleTx(async (req, res) => {
+  res.json(await billing.billingSummary(ctx(req)));
+}));
+router.get('/billing/payments', requirePlatformPermission('platform.payment.view'), validate(ListQuery, 'query'), consoleTx(async (req, res) => {
+  res.json(await billing.listPayments(ctx(req), req.query as unknown as { limit: number; cursor?: string }));
+}));
+router.get('/billing/invoices', requirePlatformPermission('platform.payment.view'), validate(ListQuery, 'query'), consoleTx(async (req, res) => {
+  res.json(await billing.listInvoices(ctx(req), req.query as unknown as { limit: number; cursor?: string }));
+}));
+router.get('/billing/renewals', requirePlatformPermission('platform.payment.view'), consoleTx(async (req, res) => {
+  res.json({ data: await billing.listRenewals(ctx(req)) });
 }));
 
 // ── Roles & permissions (blueprint Phase C): everyone with Team access can look; only an Admin changes ──
