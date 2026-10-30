@@ -1,6 +1,6 @@
 "use client"
 
-import { Building2, ClipboardCheck, CreditCard, Handshake, LayoutDashboard, Link2, ReceiptText, Settings2, Tags, Users, type LucideIcon } from "lucide-react"
+import { Building2, ClipboardCheck, CreditCard, Handshake, KeyRound, LayoutDashboard, Link2, ReceiptText, Settings2, ShieldCheck, Tags, Users, type LucideIcon } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 
 // The Console menu per role (blueprint Phase A). Groups and items appear only when the role
@@ -70,7 +70,14 @@ export function useNav(): { groups: NavGroup[]; settings: NavItem | null } {
         ],
       },
       { label: "Product", items: [{ href: "/console/settings/plans", label: "Plans & pricing", icon: Tags, show: canConsole("platform.plan.edit") }] },
-      { label: "People & access", items: [{ href: "/console/team", label: "Team", icon: Users, show: canConsole("platform.member.view") }] },
+      {
+        label: "People & access",
+        items: [
+          { href: "/console/team", label: "Team", icon: Users, show: canConsole("platform.member.view") },
+          { href: "/console/roles", label: "Roles & permissions", icon: KeyRound, show: canConsole("platform.member.view") },
+          { href: "/console/security", label: "Security & audit", icon: ShieldCheck, show: canConsole("platform.audit.view") },
+        ],
+      },
     ]),
     settings: canConsole("platform.setting.edit") ? { href: "/console/settings/rules", label: "Console settings", icon: Settings2, show: true } : null,
   }

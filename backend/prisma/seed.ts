@@ -28,6 +28,11 @@ async function seedRoles() {
     if (!role) {
       role = await prisma.role.create({ data: { key: def.key, ...base }, include: { permissions: true } });
     }
+    // An Admin edited this Console role in the Console: keep their permissions
+    if (role.customizedAt) {
+      await prisma.role.update({ where: { id: role.id }, data: base });
+      continue;
+    }
     const existing = new Map(role.permissions.map((rp) => [rp.permissionKey, rp.scope]));
     const changed = existing.size !== grants.size || [...grants].some(([k, s]) => existing.get(k) !== s);
     await prisma.role.update({ where: { id: role.id }, data: { ...base, version: changed ? { increment: 1 } : undefined } });

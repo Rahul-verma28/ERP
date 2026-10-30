@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { prisma, db } from '../../kernel/db';
+import { afterCommit, prisma, db } from '../../kernel/db';
 import { cache } from '../../kernel/cache';
 import { AppError } from '../../kernel/errors';
 import { SETTINGS, SETTING_KEYS, type SettingKey, type SettingValue } from '../../contracts/settings';
@@ -62,6 +62,7 @@ export async function setSetting<K extends SettingKey>(key: K, value: unknown, a
   });
   await audit({ tenantId: null, actorId, action: 'settings.changed', entity: 'setting', entityId: key, before: before?.value ?? SETTINGS[key].default, after: { value: row.value, reason } });
   cache.del(CACHE_KEY);
+  afterCommit(() => cache.del(CACHE_KEY));
   return row;
 }
 
@@ -73,4 +74,5 @@ export async function resetSetting(key: SettingKey, actorId: string | null, reas
   await tx.configValue.delete({ where: { scope_key: { scope: SCOPE, key } } });
   await audit({ tenantId: null, actorId, action: 'settings.reset', entity: 'setting', entityId: key, before: before.value, after: { value: SETTINGS[key].default, reason } });
   cache.del(CACHE_KEY);
+  afterCommit(() => cache.del(CACHE_KEY));
 }

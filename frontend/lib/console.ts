@@ -101,8 +101,8 @@ export interface ConsoleMember {
   id: string
   status: "invited" | "active" | "deactivated"
   joinedAt: string
-  user: { id: string; name: string; email: string; mobile: string; lastLoginAt: string | null }
-  role: { key: string; name: string }
+  user: { id: string; name: string; email: string; mobile: string; lastLoginAt: string | null; mfaEnabled: boolean }
+  role: { id: string; key: string; name: string; isPredefined: boolean }
   reportsTo: { userId: string; name: string | null } | null
 }
 
@@ -431,3 +431,55 @@ export interface ImportResult {
   duplicates: { row: number; name: string; reason: string }[]
   errors: { row: number; message: string }[]
 }
+
+// ── Roles & permissions, Security & audit (blueprint Phase C) ──
+
+
+
+export interface ConsoleRoleRow {
+  id: string
+  key: string
+  name: string
+  description: string | null
+  builtIn: boolean
+  customized: boolean
+  locked: boolean
+  permissions: number
+  members: number
+}
+
+export interface MatrixRow {
+  resource: string
+  label: string
+  help: string
+  actions: { action: "view" | "create" | "edit" | "delete" | "approve" | "export"; key: string; risky: boolean }[]
+}
+
+export interface ConsoleRoleDetail extends Omit<ConsoleRoleRow, "permissions" | "members"> {
+  copiedFrom: string | null
+  grants: Record<string, "own" | "team" | "all">
+  discountLimitPercent: number
+  members: { id: string; name: string; email: string }[]
+  matrix: MatrixRow[]
+}
+
+export type AuditArea = "businesses" | "billing" | "product" | "people" | "settings" | "signin"
+
+export interface AuditEvent {
+  id: string
+  at: string
+  action: string
+  area: AuditArea | null
+  risky: boolean
+  actor: string
+  text: string
+  subject: string | null
+  subjectHref: string | null
+  before: unknown
+  after: unknown
+  ip: string | null
+}
+
+export interface SecurityStats { changes7d: number; risky7d: number; failedSignIns7d: number; twoStepOn: number; people: number }
+export interface SignInRow { id: string; at: string; person: string; outcome: string; method: string | null; ip: string | null; device: string }
+export interface SessionRow { id: string; person: string; email: string; role: string; since: string; ip: string | null; device: string; current: boolean }

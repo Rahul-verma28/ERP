@@ -1,4 +1,3 @@
-import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { db, withTenant } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
@@ -33,11 +32,14 @@ export interface HandoverState {
 
 export const readHandover = (t: { onboarding: unknown }) => ((t.onboarding ?? {}) as { handover?: HandoverState }).handover ?? null;
 
+/** Lock the row (NO KEY: inserts that reference the business still go through), then merge only the
+ * handover key: other jobs write other keys of the same JSON. */
 async function writeHandover(tenantId: string, patch: (h: HandoverState) => HandoverState) {
-  const t = await db().tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { onboarding: true } });
-  const current = readHandover(t) ?? { startedAt: new Date().toISOString(), startedBy: null, steps: {} };
+  const rows = await db().$queryRaw<{ onboarding: unknown }[]>`SELECT onboarding FROM tenants WHERE id = ${tenantId}::uuid FOR NO KEY UPDATE`;
+  if (!rows[0]) throw notFound('Business');
+  const current = readHandover(rows[0]) ?? { startedAt: new Date().toISOString(), startedBy: null, steps: {} };
   const next = patch(current);
-  await db().tenant.update({ where: { id: tenantId }, data: { onboarding: { ...((t.onboarding ?? {}) as object), handover: next } as unknown as Prisma.InputJsonValue } });
+  await db().$executeRaw`UPDATE tenants SET onboarding = onboarding || jsonb_build_object('handover', ${JSON.stringify(next)}::jsonb) WHERE id = ${tenantId}::uuid`;
   return next;
 }
 
@@ -194,8 +196,7 @@ export async function acceptHandover(tenantId: string, userId: string) {
   const h = readHandover(t);
   if (!h?.sentAt) throw new AppError('INVALID_TRANSITION', 'There is no handover to accept.');
   if (h.acceptedAt) return h;
-  const next = { ...h, acceptedAt: new Date().toISOString(), acceptedBy: userId };
-  await db().tenant.update({ where: { id: tenantId }, data: { onboarding: { ...((t.onboarding ?? {}) as object), handover: next } as unknown as Prisma.InputJsonValue } });
+  const next = await writeHandover(tenantId, (cur) => ({ ...cur, acceptedAt: new Date().toISOString(), acceptedBy: userId }));
   await audit({ action: 'tenant.handover_accepted', entity: 'tenant', entityId: tenantId });
   return next;
 }

@@ -35,7 +35,7 @@ export async function listMembers(ctx: ConsoleCtx) {
   const rows = await tx.platformMember.findMany({
     // AHEAD's team list leaves partner people out (they show under Partners)
     where: { partnerId: ctx.partnerId ?? null, ...(visible ? { userId: { in: visible } } : {}) },
-    include: { user: { select: { id: true, name: true, email: true, mobile: true, lastLoginAt: true } }, role: { select: { key: true, name: true } } },
+    include: { user: { select: { id: true, name: true, email: true, mobile: true, lastLoginAt: true, mfaEnabled: true } }, role: { select: { id: true, key: true, name: true, isPredefined: true } } },
     orderBy: { joinedAt: 'asc' },
   });
   const managers = new Map(rows.map((r) => [r.userId, r.user.name]));

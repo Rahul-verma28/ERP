@@ -17,6 +17,8 @@ import { catalogAdmin, createCoupon, endCoupon, setPrice, updatePlan } from './c
 import { addMember, consoleRoles, listMembers, resendMemberLink, updateMember } from './members';
 import { sendAccessLink } from '../identity/accessLinks';
 import * as onboarding from './onboarding';
+import * as access from './access';
+import * as security from './security';
 import { accountHealth, consoleHome, type Audience } from './insights';
 import { clientSummary, clientTimeline, clientUsers } from './client360';
 import { addNote, closeFollowup, createFollowup, createProspect, FollowupInput, listFollowups, listNotes, listProspects, NoteInput, ProspectInput, ProspectPatch, STAGES, updateProspect } from './sales';
@@ -309,6 +311,59 @@ router.post('/onboarding/:id/skip', requirePlatformPermission('platform.tenant.c
 }));
 router.post('/onboarding/:id/handover', requirePlatformPermission('platform.tenant.create'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
   res.json(await onboarding.handOver(ctx(req), String(req.params.id)));
+}));
+
+// ── Roles & permissions (blueprint Phase C): everyone with Team access can look; only an Admin changes ──
+router.get('/access/roles', requirePlatformPermission('platform.member.view'), consoleTx(async (req, res) => {
+  if (ctx(req).partnerId) throw new AppError('PERMISSION_DENIED', 'Partners manage their team from their own portal.');
+  res.json({ data: await access.listConsoleRoles() });
+}));
+router.get('/access/roles/:id', requirePlatformPermission('platform.member.view'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  if (ctx(req).partnerId) throw new AppError('PERMISSION_DENIED', 'Partners manage their team from their own portal.');
+  res.json(await access.roleDetail(String(req.params.id)));
+}));
+router.post('/access/roles', requirePlatformPermission('platform.member.edit'), validate(access.RoleCreate), consoleTx(async (req, res) => {
+  res.status(201).json(await access.createRole(ctx(req), req.body));
+}));
+router.patch('/access/roles/:id', requirePlatformPermission('platform.member.edit'), validate(IdParam, 'params'), validate(access.RoleUpdate), consoleTx(async (req, res) => {
+  res.json(await access.updateRole(ctx(req), String(req.params.id), req.body));
+}));
+router.post('/access/roles/:id/reset', requirePlatformPermission('platform.member.edit'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  res.json(await access.resetRole(ctx(req), String(req.params.id)));
+}));
+router.delete('/access/roles/:id', requirePlatformPermission('platform.member.edit'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  await access.deleteRole(ctx(req), String(req.params.id));
+  res.status(204).end();
+}));
+
+// ── Security & audit (blueprint Phase C, S7): Admin only ──
+const AuditQuery = ListQuery.extend({
+  search: z.string().trim().max(80).optional(),
+  area: z.enum(Object.keys(security.AUDIT_AREAS) as [security.AuditArea, ...security.AuditArea[]]).optional(),
+  actorId: z.string().uuid().optional(),
+  days: z.coerce.number().int().min(1).max(365).default(30),
+  riskyOnly: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+});
+router.get('/security/stats', requirePlatformPermission('platform.audit.view'), consoleTx(async (req, res) => {
+  await security.assertAuditor(ctx(req));
+  res.json(await security.securityStats());
+}));
+router.get('/security/audit', requirePlatformPermission('platform.audit.view'), validate(AuditQuery, 'query'), consoleTx(async (req, res) => {
+  await security.assertAuditor(ctx(req));
+  res.json(await security.listAudit(req.query as unknown as security.AuditQuery));
+}));
+router.get('/security/sign-ins', requirePlatformPermission('platform.audit.view'), consoleTx(async (req, res) => {
+  await security.assertAuditor(ctx(req));
+  res.json({ data: await security.listSignIns() });
+}));
+router.get('/security/sessions', requirePlatformPermission('platform.audit.view'), consoleTx(async (req, res) => {
+  await security.assertAuditor(ctx(req));
+  res.json({ data: await security.listSessions(ctx(req)) });
+}));
+router.post('/security/sessions/:id/revoke', requirePlatformPermission('platform.audit.view'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  await security.assertAuditor(ctx(req));
+  await security.revokeSession(ctx(req), String(req.params.id));
+  res.status(204).end();
 }));
 
 // ── Team (AHEAD's, or a partner's own) ──

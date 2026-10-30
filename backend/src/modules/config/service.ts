@@ -32,10 +32,10 @@ export async function applyTemplate(tenantId: string) {
     })),
     skipDuplicates: true,
   });
-  await tx.tenant.update({
-    where: { id: tenantId },
-    data: { configAppliedAt: new Date(), templateVersion: template.version, onboarding: { dashboard: template.dashboard, recommendedModules: template.modules } },
-  });
+  await tx.tenant.update({ where: { id: tenantId }, data: { configAppliedAt: new Date(), templateVersion: template.version } });
+  // Merge, never replace: the setup wizard and the Console handover keep their own keys here,
+  // and this job can finish after either has started
+  await tx.$executeRaw`UPDATE tenants SET onboarding = onboarding || jsonb_build_object('dashboard', ${JSON.stringify(template.dashboard)}::jsonb, 'recommendedModules', ${JSON.stringify(template.modules)}::jsonb) WHERE id = ${tenantId}::uuid`;
   await publish('config.applied', { tenantId, templateKey: template.key, version: template.version });
 }
 

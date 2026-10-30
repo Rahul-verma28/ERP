@@ -688,6 +688,8 @@ model Role {
   templateVersion Int       @default(1) @map("template_version")
   sort            Int       @default(0)
   version         Int       @default(1)
+  /// Console roles: permissions edited by an Admin; the seed leaves them alone until reset
+  customizedAt    DateTime? @map("customized_at") @db.Timestamptz
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   permissions     RolePermission[]

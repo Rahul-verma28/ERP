@@ -100,6 +100,8 @@ async function cleanup(tenantId: string, adminUserId: string) {
     }
   }
   await prisma.$executeRawUnsafe(`DELETE FROM tenants WHERE id = $1::uuid`, tenantId).catch(() => undefined);
+  // Its Console audit events too, so test runs don't show up in Security & audit
+  await prisma.$executeRawUnsafe(`DELETE FROM audit_log WHERE tenant_id IS NULL AND entity_id = $1`, tenantId).catch(() => undefined);
   for (const uid of [t?.ownerUserId, adminUserId].filter(Boolean) as string[]) {
     await prisma.$executeRawUnsafe(`DELETE FROM platform_members WHERE user_id = $1::uuid`, uid).catch(() => undefined);
     await prisma.$executeRawUnsafe(`DELETE FROM user_sessions WHERE user_id = $1::uuid`, uid).catch(() => undefined);

@@ -8,7 +8,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { ConfirmDialog } from "@/components/common"
 import { Field, FormError, NativeSelect } from "@/components/form"
-import { Chip, Empty, Failed, Loading, Page, Panel, ago } from "@/components/console/kit"
+import Link from "next/link"
+import { Chip, Empty, Failed, Loading, Page, Panel, Stat, StatGrid, ago } from "@/components/console/kit"
+import { cn } from "@/lib/utils"
 import { LoginLinkBox, SendNewLink, type LoginLink } from "@/components/console/login-link"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -163,6 +165,7 @@ export default function TeamPage() {
   const roles = useApi<{ data: ConsoleRole[] }>("/console/roles")
   const [open, setOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<ConsoleMember | null>(null)
+  const [roleFilter, setRoleFilter] = React.useState("")
   const [turnOff, setTurnOff] = React.useState<{ member: ConsoleMember; body: Patch; resolve: (ok: boolean) => void } | null>(null)
   const partner = me?.console?.audience === "partner"
   const canEdit = canConsole("platform.member.edit")
@@ -186,7 +189,9 @@ export default function TeamPage() {
 
   if (members.error) return <Failed error={members.error} onRetry={members.reload} />
   if (!members.data || !roles.data) return <Loading rows={5} className="mx-auto max-w-6xl" />
-  const all = members.data.data
+  const everyone = members.data.data
+  const all = roleFilter ? everyone.filter((m) => m.role.key === roleFilter) : everyone
+  const active = everyone.filter((m) => m.status === "active")
   const assignable = roles.data.data.filter((r) => r.key !== "super_admin" || isSuper)
 
   return (
@@ -202,6 +207,21 @@ export default function TeamPage() {
         )
       }
     >
+      <StatGrid>
+        <Stat label="People" value={active.length} hint={everyone.length > active.length ? `${everyone.length - active.length} turned off` : "All active"} />
+        <Stat label="Two-step on" value={`${active.filter((m) => m.user.mfaEnabled).length} / ${active.length}`} hint="Required for Console users" tone={active.some((m) => !m.user.mfaEnabled) ? "warn" : undefined} />
+        <Stat label="Never signed in" value={active.filter((m) => !m.user.lastLoginAt).length} hint="Send them a new login link" />
+        <Stat label="Roles in use" value={new Set(active.map((m) => m.role.key)).size} hint={partner ? undefined : "See Roles & permissions"} href={partner ? undefined : "/console/roles"} />
+      </StatGrid>
+
+      <div className="flex gap-1 overflow-x-auto rounded-xl border bg-card p-1" role="tablist" aria-label="Role">
+        {[{ key: "", name: "Everyone" }, ...roles.data.data.filter((r) => everyone.some((m) => m.role.key === r.key))].map((r) => (
+          <button key={r.key || "all"} type="button" role="tab" aria-selected={roleFilter === r.key} onClick={() => setRoleFilter(r.key)} className={cn("h-8 shrink-0 rounded-lg px-3 text-[13px] font-medium transition-colors", roleFilter === r.key ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground")}>
+            {r.name}
+          </button>
+        ))}
+      </div>
+
       <Panel padded={false}>
         {!all.length ? (
           <Empty icon={Users} title="Nobody here yet" />
@@ -212,6 +232,7 @@ export default function TeamPage() {
                 <tr className="border-b text-left text-xs text-muted-foreground">
                   <th className="px-5 py-3 font-medium">Person</th>
                   <th className="px-3 py-3 font-medium">Role</th>
+                  <th className="px-3 py-3 font-medium">Two-step</th>
                   <th className="px-3 py-3 font-medium">Last signed in</th>
                   <th className="px-5 py-3" />
                 </tr>
@@ -230,7 +251,8 @@ export default function TeamPage() {
                         </div>
                         <div className="text-[13px] text-muted-foreground">{m.user.email}</div>
                       </td>
-                      <td className="px-3 py-3.5">{m.role.name}</td>
+                      <td className="px-3 py-3.5 whitespace-nowrap">{partner ? m.role.name : <Link href={`/console/roles/${m.role.id}`} className="hover:underline">{m.role.name}</Link>}</td>
+                      <td className="px-3 py-3.5">{m.user.mfaEnabled ? <Chip tone="green">On</Chip> : <Chip tone="amber">Off</Chip>}</td>
                       <td className="px-3 py-3.5 text-muted-foreground">{m.user.lastLoginAt ? ago(m.user.lastLoginAt) : "Not yet"}</td>
                       <td className="px-5 py-3.5 text-right">
                         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -251,19 +273,6 @@ export default function TeamPage() {
         )}
       </Panel>
 
-      <Panel title="What each role can do">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {roles.data.data.map((r) => (
-            <div key={r.key} className="rounded-xl border p-3">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold">{r.name}</span>
-                <span className="text-xs text-muted-foreground">{r.members} active</span>
-              </div>
-              <p className="mt-1 text-[13px] text-muted-foreground">{r.description}</p>
-            </div>
-          ))}
-        </div>
-      </Panel>
 
       <AddDialog open={open} onOpenChange={setOpen} roles={assignable} onSaved={members.reload} />
       {editing && <EditDialog member={editing} self={editing.user.id === me?.user.id} roles={assignable} onClose={() => setEditing(null)} onSave={(body) => save(editing, body)} />}
