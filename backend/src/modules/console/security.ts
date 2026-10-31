@@ -4,6 +4,7 @@ import { AppError, notFound } from '../../kernel/errors';
 import type { ConsoleCtx } from '../../kernel/context';
 import { audit } from '../audit/service';
 import { invalidatePlatformMember } from './service';
+import { listArgs, listPage } from '../../kernel/query';
 
 // Console Security & audit (blueprint Phase C, S7). Admin only. Shows who changed what in the
 // Console (before and after), Console sign-ins and open Console sessions. Business records
@@ -15,8 +16,8 @@ export const AUDIT_AREAS = {
   businesses: { label: 'Businesses', prefixes: ['console.client', 'console.trial', 'console.partner_client', 'console.partner_plan', 'console.onboarding', 'console.handover', 'tenant.acquisition', 'tenant.handover', 'console.note'] },
   billing: { label: 'Billing', prefixes: ['console.order', 'console.payment', 'console.credit_note'] },
   product: { label: 'Plans & pricing', prefixes: ['console.plan', 'console.price', 'console.coupon'] },
-  people: { label: 'People & roles', prefixes: ['console.member', 'console.role', 'console.partner_created', 'console.partner_updated', 'console.session'] },
-  settings: { label: 'Settings', prefixes: ['settings.'] },
+  people: { label: 'People & roles', prefixes: ['console.member', 'console.role', 'console.partner_created', 'console.partner_updated', 'console.session', 'console.application'] },
+  settings: { label: 'Settings', prefixes: ['settings.', 'console.job_run', 'console.event_', 'console.webhook_'] },
   signin: { label: 'Sign-ins', prefixes: ['auth.', 'account.'] },
 } as const;
 export type AuditArea = keyof typeof AUDIT_AREAS;
@@ -77,6 +78,7 @@ export interface AuditQuery {
   riskyOnly?: boolean;
   limit: number;
   cursor?: string;
+  page?: number;
 }
 
 /** Console-level events (not a business's own records), newest first. */
@@ -101,8 +103,11 @@ export async function listAudit(q: AuditQuery) {
     ...(q.actorId ? { actorId: q.actorId } : {}),
     AND: [...(or.length ? [{ OR: or }] : []), ...(searchWhere ? [searchWhere] : [])],
   };
-  const rows = await db().auditLog.findMany({ where, orderBy: { id: 'desc' }, take: q.limit + 1, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) });
-  const page = rows.slice(0, q.limit);
+  const [rows, total] = await Promise.all([
+    db().auditLog.findMany({ where, ...listArgs(q, { id: 'desc' as const }) }),
+    q.page ? db().auditLog.count({ where }) : null,
+  ]);
+  const { data: page, nextCursor } = listPage(rows, q);
   const people = new Map((await db().user.findMany({ where: { id: { in: page.map((r) => r.actorId).filter((x): x is string => !!x) } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   const entityIds = page.map((r) => r.entityId).filter((x): x is string => !!x && /^[0-9a-f-]{36}$/.test(x));
   const [tenants, roles, users] = await Promise.all([
@@ -126,7 +131,8 @@ export async function listAudit(q: AuditQuery) {
       after: r.after,
       ip: r.ip,
     })),
-    nextCursor: rows.length > q.limit ? page[page.length - 1].id : null,
+    nextCursor,
+    total,
   };
 }
 

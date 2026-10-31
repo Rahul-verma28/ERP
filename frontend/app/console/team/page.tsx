@@ -2,16 +2,18 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Pencil, UserPlus, Users } from "lucide-react"
+import { Copy, KeyRound, Pencil, UserCheck, UserPlus, UserX, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { ConfirmDialog } from "@/components/common"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import Link from "next/link"
-import { Chip, Empty, Failed, Loading, Page, Panel, Stat, StatGrid, ago } from "@/components/console/kit"
-import { cn } from "@/lib/utils"
-import { LoginLinkBox, SendNewLink, type LoginLink } from "@/components/console/login-link"
+import { Chip, Failed, Loading, Page, Stat, StatGrid, ago } from "@/components/console/kit"
+import { Count, DataTable, FilterSelect, IdCell, type Column, type RowAction } from "@/components/console/data-table"
+import { LoginLinkBox, type LoginLink } from "@/components/console/login-link"
+import { useClientTable } from "@/lib/use-table"
+import { formatDate } from "@/lib/format"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
@@ -170,6 +172,47 @@ export default function TeamPage() {
   const partner = me?.console?.audience === "partner"
   const canEdit = canConsole("platform.member.edit")
   const isSuper = me?.console?.role.key === "super_admin"
+  const [statusFilter, setStatusFilter] = React.useState("")
+  const [linkFor, setLinkFor] = React.useState<ConsoleMember | null>(null)
+  const filtered = React.useMemo(
+    () => members.data?.data.filter((m) => (!roleFilter || m.role.key === roleFilter) && (!statusFilter || (statusFilter === "active" ? m.status === "active" : m.status !== "active"))) ?? null,
+    [members.data, roleFilter, statusFilter],
+  )
+  const table = useClientTable(filtered, {
+    name: (m) => m.user.name, email: (m) => m.user.email, mobile: (m) => m.user.mobile, role: (m) => m.role.name,
+    status: (m) => m.status, mfa: (m) => (m.user.mfaEnabled ? 1 : 0), lastLogin: (m) => m.user.lastLoginAt ?? "", joined: (m) => m.joinedAt,
+  })
+  const columns: Column<ConsoleMember>[] = [
+    { key: "id", header: "ID", cell: (m) => <IdCell id={m.id} /> },
+    {
+      key: "name", header: "Name", always: true, sortable: true,
+      cell: (m) => (
+        <span className="flex items-center gap-2 font-medium">
+          {m.user.name}
+          {m.user.id === me?.user.id && <span className="text-xs font-normal text-muted-foreground">(you)</span>}
+        </span>
+      ),
+    },
+    { key: "role", header: "Role", sortable: true, cell: (m) => (partner ? <Chip tone="blue">{m.role.name}</Chip> : <Link href={`/console/roles/${m.role.id}`} onClick={(e) => e.stopPropagation()}><Chip tone="blue">{m.role.name}</Chip></Link>) },
+    { key: "email", header: "Email", sortable: true, cell: (m) => m.user.email },
+    { key: "mobile", header: "Phone", cell: (m) => <span className="tabular-nums">{m.user.mobile.replace(/^[+]91/, "+91 ")}</span> },
+    { key: "reportsTo", header: "Reports to", hidden: partner, cell: (m) => m.reportsTo?.name ?? "—" },
+    { key: "mfa", header: "Two-step", sortable: true, cell: (m) => (m.user.mfaEnabled ? <Chip tone="green">On</Chip> : <Chip tone="amber">Off</Chip>) },
+    { key: "lastLogin", header: "Last signed in", sortable: true, cell: (m) => <span className="text-muted-foreground">{m.user.lastLoginAt ? ago(m.user.lastLoginAt) : "Not yet"}</span> },
+    { key: "joined", header: "Added", sortable: true, cell: (m) => <span className="text-muted-foreground">{formatDate(m.joinedAt)}</span> },
+    { key: "status", header: "Status", sortable: true, cell: (m) => (m.status === "active" ? <Chip tone="green">Active</Chip> : <Chip tone="red">Turned off</Chip>) },
+  ]
+  const actions = (m: ConsoleMember): RowAction[] => {
+    const self = m.user.id === me?.user.id
+    const locked = !canEdit || (m.role.key === "super_admin" && !isSuper)
+    return [
+      { label: "Edit role and access", icon: Pencil, onClick: () => setEditing(m), hidden: locked },
+      { label: "Send new login link", icon: KeyRound, onClick: () => setLinkFor(m), hidden: m.status !== "active" || !canConsole("platform.member.create") },
+      { label: "Turn off", icon: UserX, danger: true, separator: true, onClick: () => void save(m, { status: "deactivated" }), hidden: locked || self || m.status !== "active" },
+      { label: "Turn back on", icon: UserCheck, separator: true, onClick: () => void save(m, { status: "active" }), hidden: locked || m.status === "active" },
+      { label: "Copy email", icon: Copy, separator: true, onClick: () => navigator.clipboard.writeText(m.user.email).then(() => toast.success("Email copied")) },
+    ]
+  }
 
   async function send(m: ConsoleMember, body: Patch) {
     try {
@@ -190,12 +233,12 @@ export default function TeamPage() {
   if (members.error) return <Failed error={members.error} onRetry={members.reload} />
   if (!members.data || !roles.data) return <Loading rows={5} className="mx-auto max-w-6xl" />
   const everyone = members.data.data
-  const all = roleFilter ? everyone.filter((m) => m.role.key === roleFilter) : everyone
   const active = everyone.filter((m) => m.status === "active")
   const assignable = roles.data.data.filter((r) => r.key !== "super_admin" || isSuper)
 
   return (
     <Page
+      wide
       eyebrow={partner ? "People" : "People & access"}
       title={partner ? "Team" : "People"}
       subtitle={partner ? `People at ${me?.console?.partner?.name} who use this panel.` : "AHEAD's team, salespeople and vendors. Each role decides what that person can do."}
@@ -214,68 +257,26 @@ export default function TeamPage() {
         <Stat label="Roles in use" value={new Set(active.map((m) => m.role.key)).size} hint={partner ? undefined : "See Roles & permissions"} href={partner ? undefined : "/console/roles"} />
       </StatGrid>
 
-      <div className="flex gap-1 overflow-x-auto rounded-xl border bg-card p-1" role="tablist" aria-label="Role">
-        {[{ key: "", name: "Everyone" }, ...roles.data.data.filter((r) => everyone.some((m) => m.role.key === r.key))].map((r) => (
-          <button key={r.key || "all"} type="button" role="tab" aria-selected={roleFilter === r.key} onClick={() => setRoleFilter(r.key)} className={cn("h-8 shrink-0 rounded-lg px-3 text-[13px] font-medium transition-colors", roleFilter === r.key ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground")}>
-            {r.name}
-          </button>
-        ))}
-      </div>
-
-      <Panel padded={false}>
-        {!all.length ? (
-          <Empty icon={Users} title="Nobody here yet" />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="px-5 py-3 font-medium">Person</th>
-                  <th className="px-3 py-3 font-medium">Role</th>
-                  <th className="px-3 py-3 font-medium">Two-step</th>
-                  <th className="px-3 py-3 font-medium">Last signed in</th>
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {all.map((m) => {
-                  const self = m.user.id === me?.user.id
-                  const locked = !canEdit || (m.role.key === "super_admin" && !isSuper)
-                  return (
-                    <tr key={m.id} className="border-b last:border-0">
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-2 font-medium">
-                          {m.user.name}
-                          {self && <span className="text-xs font-normal text-muted-foreground">(you)</span>}
-                          {m.status !== "active" && <Chip tone="grey">Turned off</Chip>}
-                        </div>
-                        <div className="text-[13px] text-muted-foreground">{m.user.email}</div>
-                      </td>
-                      <td className="px-3 py-3.5 whitespace-nowrap">{partner ? m.role.name : <Link href={`/console/roles/${m.role.id}`} className="hover:underline">{m.role.name}</Link>}</td>
-                      <td className="px-3 py-3.5">{m.user.mfaEnabled ? <Chip tone="green">On</Chip> : <Chip tone="amber">Off</Chip>}</td>
-                      <td className="px-3 py-3.5 text-muted-foreground">{m.user.lastLoginAt ? ago(m.user.lastLoginAt) : "Not yet"}</td>
-                      <td className="px-5 py-3.5 text-right">
-                        <div className="flex flex-wrap items-center justify-end gap-2">
-                        {!m.user.lastLoginAt && m.status === "active" && canConsole("platform.member.create") && <SendNewLink path={`/console/members/${m.id}/login-link`} mobile={m.user.mobile} />}
-                        {!locked && (
-                          <Button size="sm" variant="ghost" onClick={() => setEditing(m)} aria-label={`Edit ${m.user.name}`}>
-                            <Pencil /> Edit
-                          </Button>
-                        )}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
-
+      <DataTable
+        id="team"
+        label="People"
+        table={table}
+        columns={columns}
+        actions={actions}
+        searchFields={[{ key: "name", label: "Name" }, { key: "email", label: "Email" }, { key: "mobile", label: "Phone" }, { key: "role", label: "Role" }]}
+        summary={<><Count tone="green" n={active.length} label="Active" /><Count tone="red" n={everyone.length - active.length} label="Turned off" /></>}
+        filters={
+          <>
+            <FilterSelect value={roleFilter} onChange={setRoleFilter} label="Role" options={[["", "Any role"], ...roles.data.data.filter((r) => everyone.some((m) => m.role.key === r.key)).map((r) => [r.key, r.name] as [string, string])]} />
+            <FilterSelect value={statusFilter} onChange={setStatusFilter} label="Access" options={[["", "Any access"], ["active", "Can sign in"], ["deactivated", "Turned off"]]} />
+          </>
+        }
+        empty={<span className="inline-flex items-center gap-2"><Users className="size-4" /> Nobody here yet</span>}
+      />
 
       <AddDialog open={open} onOpenChange={setOpen} roles={assignable} onSaved={members.reload} />
       {editing && <EditDialog member={editing} self={editing.user.id === me?.user.id} roles={assignable} onClose={() => setEditing(null)} onSave={(body) => save(editing, body)} />}
+      {linkFor && <NewLinkDialog member={linkFor} onClose={() => setLinkFor(null)} />}
       <ConfirmDialog
         open={!!turnOff}
         onOpenChange={(o) => {
@@ -296,5 +297,42 @@ export default function TeamPage() {
         }}
       />
     </Page>
+  )
+}
+
+/** Sends a fresh login link (the old one stops working) and shows it to copy or share. */
+function NewLinkDialog({ member, onClose }: { member: ConsoleMember; onClose: () => void }) {
+  const [link, setLink] = React.useState<LoginLink | null>(null)
+  const [busy, setBusy] = React.useState(false)
+  async function send() {
+    setBusy(true)
+    try {
+      setLink(await api.post<LoginLink>(`/console/members/${member.id}/login-link`))
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{link ? "New login link sent" : `Send ${member.user.name} a new login link?`}</DialogTitle>
+          <DialogDescription>{link ? "We sent it by SMS and email. You can also copy it or send it on WhatsApp." : "Their old link stops working. They verify their mobile and set their own password."}</DialogDescription>
+        </DialogHeader>
+        {link && <LoginLinkBox link={link} mobile={member.user.mobile} message="Your AHEAD Console login:" />}
+        <DialogFooter>
+          {link ? (
+            <Button onClick={onClose}>Done</Button>
+          ) : (
+            <>
+              <Button variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button onClick={send} disabled={busy}>{busy ? "Sending…" : "Send link"}</Button>
+            </>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -160,12 +160,27 @@ interface NotificationList {
 }
 
 function Notifications() {
+  const router = useRouter()
   const { data, reload } = useApi<NotificationList>("/notifications")
+  // Check for new ones every minute and when you come back to the tab
+  React.useEffect(() => {
+    const refresh = () => document.visibilityState === "visible" && void reload().catch(() => undefined)
+    const t = setInterval(refresh, 60_000)
+    document.addEventListener("visibilitychange", refresh)
+    return () => {
+      clearInterval(t)
+      document.removeEventListener("visibilitychange", refresh)
+    }
+  }, [reload])
+  const open = async (n: NotificationList["data"][number]) => {
+    if (!n.readAt) await api.post("/notifications/read", { id: n.id }).then(reload).catch(() => undefined)
+    if (n.link) router.push(n.link)
+  }
   return (
     <DropdownMenu onOpenChange={(open) => open && void reload()}>
-      <DropdownMenuTrigger className={buttonVariants({ variant: "ghost", size: "icon", className: "relative" })} aria-label="Notifications">
+      <DropdownMenuTrigger className={buttonVariants({ variant: "ghost", size: "icon", className: "relative" })} aria-label={data?.unread ? `${data.unread} unread notifications` : "Notifications"}>
         <Bell className="size-4" />
-        {!!data?.unread && <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-destructive" />}
+        {!!data?.unread && <span className="absolute top-1 right-1 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] leading-4 font-semibold text-white tabular-nums">{data.unread > 9 ? "9+" : data.unread}</span>}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-80">
         <DropdownMenuGroup>
@@ -179,7 +194,7 @@ function Notifications() {
           </DropdownMenuLabel>
           {!data?.data.length && <p className="px-2 py-6 text-center text-sm text-muted-foreground">You&apos;re all caught up.</p>}
           {data?.data.map((n) => (
-            <DropdownMenuItem key={n.id} className="flex-col items-start gap-0.5">
+            <DropdownMenuItem key={n.id} onClick={() => void open(n)} className="flex-col items-start gap-0.5">
               <span className={cn("text-sm", !n.readAt && "font-medium")}>{n.title}</span>
               {n.body && <span className="text-xs text-muted-foreground">{n.body}</span>}
               <span className="text-[11px] text-muted-foreground">{formatDateTime(n.createdAt)}</span>
@@ -212,9 +227,6 @@ export function UserMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => router.push("/app/account")}>
           <UserRound className="size-4" /> My account
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push("/app/account/security")}>
-          <ShieldCheck className="size-4" /> Security
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

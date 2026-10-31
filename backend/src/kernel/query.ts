@@ -40,8 +40,21 @@ export const ListQuery = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
   cursor: z.string().uuid().optional(),
   q: z.string().trim().max(100).optional(),
+  /** Numbered pages (Console tables): skip/take and a total instead of a cursor */
+  page: z.coerce.number().int().min(1).max(100_000).optional(),
 });
 export type ListQuery = z.infer<typeof ListQuery>;
+
+/** Prisma paging args for a list: numbered page, or cursor over UUID v7 ids (newest first). */
+export function listArgs<O>(q: { limit: number; cursor?: string; page?: number }, orderBy: O) {
+  return q.page ? { orderBy, skip: (q.page - 1) * q.limit, take: q.limit } : { orderBy, take: q.limit + 1, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) };
+}
+
+/** The rows to return and the next cursor (numbered pages have none; they carry a total). */
+export function listPage<T extends { id: string }>(rows: T[], q: { limit: number; page?: number }) {
+  const data = q.page ? rows : rows.slice(0, q.limit);
+  return { data, nextCursor: !q.page && rows.length > q.limit ? data[data.length - 1].id : null };
+}
 
 /** Cursor pagination over UUID v7 ids (newest first). */
 export function pageArgs(q: { limit: number; cursor?: string }) {

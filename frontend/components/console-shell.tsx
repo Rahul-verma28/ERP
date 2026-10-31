@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Building2, LogOut, Menu, ShieldCheck, UserRound, X } from "lucide-react"
+import { Building2, LogOut, Menu, UserRound, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -110,9 +110,6 @@ function AccountMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => router.push(`${base}/account`)}>
           <UserRound className="size-4" /> My account
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => router.push(`${base}/account/security`)}>
-          <ShieldCheck className="size-4" /> Password &amp; two-step
         </DropdownMenuItem>
         {me.memberships.length > 0 && (
           <DropdownMenuItem onClick={() => router.push("/app")}>

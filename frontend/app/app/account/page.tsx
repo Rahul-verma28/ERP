@@ -14,51 +14,120 @@ import { Field, FormError, NativeSelect } from "@/components/form"
 import { ChoiceChip, OtpInput } from "@/components/onboarding"
 import { ErrorState } from "@/components/page-states"
 import { api, ApiError, errorMessage } from "@/lib/api"
-import { formatMobile, type AccountOverview } from "@/lib/account"
+import { formatMobile, type AccountOverview, type SessionRow } from "@/lib/account"
+import { useAccountBase } from "@/lib/account-base"
+import { BackupCodesCard, PasswordCard, SessionsCard, SignInsCard, TwoStepCard } from "@/components/account/security-sections"
+import { NotificationsSection } from "@/components/account/notifications-section"
 import { useAuth } from "@/lib/auth"
-import { initials } from "@/lib/format"
+import { formatDate, initials } from "@/lib/format"
 import { MODULE_NAV } from "@/lib/nav"
 import { useApi } from "@/lib/use-api"
 import { useForm } from "@/lib/use-form"
 import { cn } from "@/lib/utils"
 
-// My account › Profile & preferences (wireframe A1).
+// My account (one page): profile, password and sign-in, look and preferences, notifications,
+// and where you're signed in. The same in the ERP, the Console and the partner portal.
 
-export default function ProfilePage() {
+export default function AccountPage() {
   const { data, error, reload } = useApi<AccountOverview>("/account")
+  const sessions = useApi<{ sessions: SessionRow[] }>("/account/sessions")
   const auth = useAuth()
+  const base = useAccountBase()
+  const inErp = base.account === "/app/account"
   const [changing, setChanging] = React.useState<"email" | "mobile" | null>(null)
   const refresh = async () => {
     await Promise.all([reload(), auth.reload()])
   }
+  // Links like /account#security land on that section once it is drawn
+  React.useEffect(() => {
+    if (data && window.location.hash) document.getElementById(window.location.hash.slice(1))?.scrollIntoView({ block: "start" })
+  }, [data])
   if (error && !data) return <ErrorState error={error} onRetry={reload} />
   return (
-    <div className="grid max-w-5xl content-start gap-3.5 lg:grid-cols-2">
-      <div className="lg:col-span-2">
-        <h1 className="text-[22px] font-bold tracking-tight">Profile &amp; preferences</h1>
-        <p className="mt-0.5 text-[13px] text-muted-foreground">Only for you — the same in every business you belong to.</p>
+    <div className="mx-auto grid max-w-5xl content-start gap-3.5">
+      <div>
+        <h1 className="text-[22px] font-bold tracking-tight">My account</h1>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">Only for you, and the same everywhere you use AHEAD.</p>
       </div>
       {!data ? (
         <>
           <Skeleton className="h-64 rounded-xl" />
-          <Skeleton className="h-64 rounded-xl" />
+          <Skeleton className="h-40 rounded-xl" />
         </>
       ) : (
         <>
-          <ProfileCard key={data.profile.name} account={data} onSaved={refresh} onChange={setChanging} />
-          {changing ? (
-            <ChangeContactCard key={changing} kind={changing} account={data} onDone={async () => {
-              setChanging(null)
-              await refresh()
-            }} onCancel={() => setChanging(null)} />
-          ) : (
+          <SectionTitle id="profile" title="Profile" />
+          <div className="grid gap-3.5 lg:grid-cols-2">
+            <ProfileCard key={data.profile.name} account={data} onSaved={refresh} onChange={setChanging} />
+            {changing ? (
+              <ChangeContactCard key={changing} kind={changing} account={data} onDone={async () => {
+                setChanging(null)
+                await refresh()
+              }} onCancel={() => setChanging(null)} />
+            ) : (
+              <AccountFacts account={data} />
+            )}
+          </div>
+
+          <SectionTitle id="security" title="Password & sign-in" />
+          <div className="grid gap-3.5 lg:grid-cols-2">
+            <div className="flex flex-col gap-3.5">
+              <PasswordCard account={data} onChanged={sessions.reload} />
+              {data.security.mfaEnabled && <BackupCodesCard account={data} onChanged={reload} />}
+            </div>
+            <TwoStepCard account={data} onChanged={reload} />
+          </div>
+
+          <SectionTitle id="preferences" title="Look & preferences" />
+          <div className="grid gap-3.5 lg:grid-cols-2">
             <LookCard account={data} onSaved={refresh} />
+            {inErp && <WorkingCard account={data} onSaved={refresh} />}
+          </div>
+
+          {inErp && (
+            <>
+              <SectionTitle id="notifications" title="Notifications" />
+              <NotificationsSection data={data} reload={reload} />
+            </>
           )}
-          {changing && <LookCard account={data} onSaved={refresh} />}
-          <WorkingCard account={data} onSaved={refresh} />
+
+          <SectionTitle id="devices" title="Devices & sign-ins" />
+          <div className="grid gap-3.5 lg:grid-cols-2">
+            <SessionsCard rows={sessions.data?.sessions ?? null} reload={sessions.reload} />
+            <SignInsCard />
+          </div>
         </>
       )}
     </div>
+  )
+}
+
+function SectionTitle({ id, title }: { id: string; title: string }) {
+  return <h2 id={id} className="mt-3 scroll-mt-20 text-xs font-semibold tracking-[0.08em] text-muted-foreground uppercase">{title}</h2>
+}
+
+/** The account at a glance: when it was made, last sign-in, two-step and verified contacts. */
+function AccountFacts({ account }: { account: AccountOverview }) {
+  const s = account.security
+  const rows: [string, React.ReactNode][] = [
+    ["Two-step verification", s.mfaEnabled ? <span className="font-semibold text-emerald-700 dark:text-emerald-400">On</span> : <span className="font-semibold text-amber-700">Off</span>],
+    ["Password changed", s.passwordChangedAt ? formatDate(s.passwordChangedAt) : "—"],
+    ["Email", account.profile.emailVerified ? "Verified" : "Not verified"],
+    ["Mobile", account.profile.mobileVerified ? "Verified" : "Not verified"],
+    ["Businesses you belong to", account.businesses.length || "None"],
+  ]
+  return (
+    <section className={card}>
+      <h2 className="text-[15px] font-bold">Account</h2>
+      <dl className="grid gap-2 text-[13px]">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex items-center justify-between gap-3 border-b border-border/60 pb-2 last:border-0 last:pb-0">
+            <dt className="text-muted-foreground">{k}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   )
 }
 

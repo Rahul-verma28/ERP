@@ -72,7 +72,7 @@ function Result({ failed }: { failed: string[] }) {
   )
 }
 
-function LinkDialog({ rows, skipped, onClose, onDone }: { rows: ClientRow[]; skipped: number; onClose: () => void; onDone: () => void }) {
+export function LinkDialog({ rows, skipped, onClose, onDone }: { rows: ClientRow[]; skipped: number; onClose: () => void; onDone: () => void }) {
   const [busy, setBusy] = React.useState(false)
   const [failed, setFailed] = React.useState<string[] | null>(null)
   async function send() {
@@ -112,7 +112,7 @@ function LinkDialog({ rows, skipped, onClose, onDone }: { rows: ClientRow[]; ski
   )
 }
 
-function DaysDialog({ rows, skipped, onClose, onDone }: { rows: ClientRow[]; skipped: number; onClose: () => void; onDone: () => void }) {
+export function DaysDialog({ rows, skipped, onClose, onDone }: { rows: ClientRow[]; skipped: number; onClose: () => void; onDone: () => void }) {
   const [days, setDays] = React.useState("7")
   const [reason, setReason] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)

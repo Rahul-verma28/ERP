@@ -213,6 +213,14 @@ export interface OrderRow {
   clientName: string | null
   createdByName: string | null
   invoice: { id: string; number: string } | null
+  planName?: string | null
+  listPaise: number | null
+  couponCode: string | null
+  discountPaise: number | null
+  taxablePaise: number | null
+  cgstPaise: number | null
+  sgstPaise: number | null
+  igstPaise: number | null
 }
 
 export interface OrderDetail extends Omit<OrderRow, "clientName" | "invoice"> {
@@ -364,6 +372,8 @@ export interface PartnerRow {
   liveClients: number
   people: number
   createdAt: string
+  gstin: string | null
+  stateCode: string | null
 }
 
 export interface PartnerBill {
@@ -449,6 +459,8 @@ export interface ConsoleRoleRow {
   locked: boolean
   permissions: number
   members: number
+  createdAt: string
+  changedAt: string | null
 }
 
 export interface MatrixRow {
@@ -524,8 +536,8 @@ export type PlanChangePreview =
   | { kind: "scheduled"; from: string; to: string; cycle: string; effectiveAt: string; renewalPaise: number }
 
 export interface BillingSummary { receivedPaise: number; receivedCount: number; receivedLastMonthPaise: number; waitingPaise: number; waitingCount: number; approvals: number; overdue: number; renewals30d: number }
-export interface PaymentRow { id: string; orderId: string; tenantId: string; business: string; method: string; amountPaise: number; reference: string | null; receivedAt: string; recordedBy: string | null; kind: string; invoice: { id: string; number: string } | null }
-export interface InvoiceRow { id: string; number: string; tenantId: string; business: string; issuedAt: string; taxablePaise: number; gstPaise: number; totalPaise: number }
+export interface PaymentRow { id: string; orderId: string; tenantId: string; business: string; method: string; amountPaise: number; reference: string | null; receivedAt: string; recordedBy: string | null; kind: string; invoice: { id: string; number: string } | null; gatewayPaymentId: string | null; cycle: string | null; plan: string | null }
+export interface InvoiceRow { id: string; number: string; orderId: string | null; tenantId: string; business: string; issuedAt: string; taxablePaise: number; gstPaise: number; totalPaise: number }
 export interface RenewalRow { tenantId: string; business: string; status: TenantStatus; plan: string; cycle: string; renewsAt: string | null; graceEndsAt: string | null; order: { id: string; status: string; totalPaise: number; hasLink: boolean } | null; changeTo: string | null }
 
 

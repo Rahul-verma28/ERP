@@ -3,6 +3,7 @@ import { db } from '../../kernel/db';
 import { notFound } from '../../kernel/errors';
 import type { ConsoleCtx } from '../../kernel/context';
 import { scopedTenantFilter } from '../console/service';
+import { listArgs, listPage } from '../../kernel/query';
 
 // Console → Payments: orders, payments and AHEAD invoices, within the caller's client scope.
 // Runs inside consoleTx.
@@ -41,22 +42,22 @@ const orderView = (o: Prisma.PlatformOrderGetPayload<object>) => ({
   createdAt: o.createdAt,
 });
 
-export async function listOrders(ctx: ConsoleCtx, q: { status?: PlatformOrderStatus; tenantId?: string; limit: number; cursor?: string }) {
+export async function listOrders(ctx: ConsoleCtx, q: { status?: PlatformOrderStatus; tenantId?: string; limit: number; cursor?: string; page?: number }) {
   const ids = await tenantIdsInScope(ctx);
   const tenantFilter = q.tenantId ? (ids && !ids.includes(q.tenantId) ? { in: [] } : q.tenantId) : ids ? { in: ids } : undefined;
-  const rows = await db().platformOrder.findMany({
-    where: { ...(tenantFilter ? { tenantId: tenantFilter } : {}), ...(q.status ? { status: q.status } : {}) },
-    orderBy: { id: 'desc' },
-    take: q.limit + 1,
-    ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
-    include: { invoice: { select: { id: true, number: true } } },
-  });
-  const pageRows = rows.slice(0, q.limit);
+  const where = { ...(tenantFilter ? { tenantId: tenantFilter } : {}), ...(q.status ? { status: q.status } : {}) };
+  const [rows, total] = await Promise.all([
+    db().platformOrder.findMany({ where, ...listArgs(q, { id: 'desc' as const }), include: { invoice: { select: { id: true, number: true } } } }),
+    q.page ? db().platformOrder.count({ where }) : null,
+  ]);
+  const { data: pageRows, nextCursor } = listPage(rows, q);
   const tenants = new Map((await db().tenant.findMany({ where: { id: { in: pageRows.map((r) => r.tenantId) } }, select: { id: true, name: true } })).map((t) => [t.id, t.name]));
   const people = new Map((await db().user.findMany({ where: { id: { in: pageRows.map((r) => r.createdBy) } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+  const plans = new Map((await db().plan.findMany({ select: { id: true, name: true } })).map((p) => [p.id, p.name]));
   return {
-    data: pageRows.map((o) => ({ ...orderView(o), clientName: tenants.get(o.tenantId) ?? null, createdByName: people.get(o.createdBy) ?? null, invoice: o.invoice })),
-    nextCursor: rows.length > q.limit ? pageRows[pageRows.length - 1].id : null,
+    data: pageRows.map((o) => ({ ...orderView(o), planName: plans.get(o.planId) ?? null, clientName: tenants.get(o.tenantId) ?? null, createdByName: people.get(o.createdBy) ?? null, invoice: o.invoice })),
+    nextCursor,
+    total,
   };
 }
 

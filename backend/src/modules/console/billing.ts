@@ -1,6 +1,7 @@
 import { db } from '../../kernel/db';
 import type { ConsoleCtx } from '../../kernel/context';
 import { scopedTenantFilter } from './service';
+import { listArgs, listPage } from '../../kernel/query';
 
 // Console Billing (blueprint Phase D): the numbers on top, money received, AHEAD invoices and
 // renewals coming up, all inside the person's scope. Orders keep their own list (orders.ts).
@@ -45,35 +46,39 @@ export async function billingSummary(ctx: ConsoleCtx, now = new Date()) {
   };
 }
 
-export async function listPayments(ctx: ConsoleCtx, q: { limit: number; cursor?: string }) {
+export async function listPayments(ctx: ConsoleCtx, q: { limit: number; cursor?: string; page?: number }) {
   const ids = await idsInScope(ctx);
-  const rows = await db().platformPayment.findMany({
-    where: inScope(ids),
-    orderBy: { id: 'desc' },
-    take: q.limit + 1,
-    ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
-    include: { order: { select: { kind: true, invoice: { select: { id: true, number: true } } } } },
-  });
-  const page = rows.slice(0, q.limit);
+  const [rows, total] = await Promise.all([
+    db().platformPayment.findMany({ where: inScope(ids), ...listArgs(q, { id: 'desc' as const }), include: { order: { select: { kind: true, cycle: true, planId: true, invoice: { select: { id: true, number: true } } } } } }),
+    q.page ? db().platformPayment.count({ where: inScope(ids) }) : null,
+  ]);
+  const { data: page, nextCursor } = listPage(rows, q);
   const tenant = await names(page.map((r) => r.tenantId));
   const people = new Map((await db().user.findMany({ where: { id: { in: page.map((r) => r.recordedBy).filter((x): x is string => !!x) } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+  const plans = new Map((await db().plan.findMany({ select: { id: true, name: true } })).map((x) => [x.id, x.name]));
   return {
     data: page.map((p) => ({
       id: p.id, orderId: p.orderId, tenantId: p.tenantId, business: tenant.get(p.tenantId) ?? '—', method: p.method, amountPaise: n(p.amountPaise),
       reference: p.reference, receivedAt: p.receivedAt, recordedBy: p.recordedBy ? people.get(p.recordedBy) ?? null : 'Online payment', kind: p.order.kind, invoice: p.order.invoice,
+      gatewayPaymentId: p.gatewayPaymentId, cycle: p.order.cycle, plan: plans.get(p.order.planId) ?? null,
     })),
-    nextCursor: rows.length > q.limit ? page[page.length - 1].id : null,
+    nextCursor,
+    total,
   };
 }
 
-export async function listInvoices(ctx: ConsoleCtx, q: { limit: number; cursor?: string }) {
+export async function listInvoices(ctx: ConsoleCtx, q: { limit: number; cursor?: string; page?: number }) {
   const ids = await idsInScope(ctx);
-  const rows = await db().platformInvoice.findMany({ where: inScope(ids), orderBy: { id: 'desc' }, take: q.limit + 1, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) });
-  const page = rows.slice(0, q.limit);
+  const [rows, total] = await Promise.all([
+    db().platformInvoice.findMany({ where: inScope(ids), ...listArgs(q, { id: 'desc' as const }) }),
+    q.page ? db().platformInvoice.count({ where: inScope(ids) }) : null,
+  ]);
+  const { data: page, nextCursor } = listPage(rows, q);
   const tenant = await names(page.map((r) => r.tenantId));
   return {
-    data: page.map((i) => ({ id: i.id, number: i.number, tenantId: i.tenantId, business: tenant.get(i.tenantId) ?? '—', issuedAt: i.issuedAt, taxablePaise: n(i.taxablePaise), gstPaise: n(i.cgstPaise) + n(i.sgstPaise) + n(i.igstPaise), totalPaise: n(i.totalPaise) })),
-    nextCursor: rows.length > q.limit ? page[page.length - 1].id : null,
+    data: page.map((i) => ({ id: i.id, number: i.number, orderId: i.orderId, tenantId: i.tenantId, business: tenant.get(i.tenantId) ?? '—', issuedAt: i.issuedAt, taxablePaise: n(i.taxablePaise), gstPaise: n(i.cgstPaise) + n(i.sgstPaise) + n(i.igstPaise), totalPaise: n(i.totalPaise) })),
+    nextCursor,
+    total,
   };
 }
 

@@ -81,7 +81,7 @@ export async function listPartners() {
   });
   const live = await db().tenant.groupBy({ by: ['partnerId'], where: { partnerId: { in: rows.map((r) => r.id) }, status: { in: [...LIVE] } }, _count: true });
   const liveBy = new Map(live.map((l) => [l.partnerId, l._count]));
-  return rows.map((p) => ({ id: p.id, name: p.name, contactName: p.contactName, email: p.email, mobile: p.mobile, discountPercent: p.discountBp / 100, status: p.status, clients: p._count.tenants, liveClients: liveBy.get(p.id) ?? 0, people: p._count.members, createdAt: p.createdAt }));
+  return rows.map((p) => ({ id: p.id, name: p.name, contactName: p.contactName, email: p.email, mobile: p.mobile, discountPercent: p.discountBp / 100, status: p.status, clients: p._count.tenants, liveClients: liveBy.get(p.id) ?? 0, people: p._count.members, createdAt: p.createdAt, gstin: p.gstin, stateCode: p.stateCode }));
 }
 
 export async function partnerDetail(id: string) {

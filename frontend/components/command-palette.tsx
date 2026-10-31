@@ -96,7 +96,7 @@ function Palette({ onClose }: { onClose: () => void }) {
     ...MODULE_NAV.filter((m) => canView(m.key)).map((m) => ({ group: "Actions and pages" as const, title: m.termKey ? term(m.termKey, m.label) : m.label, detail: "Module", href: `/app/m/${m.key}` })),
     ...SETTINGS_GROUPS.flatMap((g) => g.items.filter((i) => !i.later && can(i.permission)).map((i) => ({ group: "Actions and pages" as const, title: `Settings › ${i.label}`, href: i.href }))),
     { group: "Actions and pages", title: "My account", href: "/app/account" },
-    { group: "Actions and pages", title: "Security & two-step verification", href: "/app/account/security" },
+    { group: "Actions and pages", title: "Security & two-step verification", href: "/app/account#security" },
   ]
   const actions: Hit[] = [
     ...(contact && query.length >= 2 ? [{ group: "Actions and pages" as const, title: `New invoice for ${contact.name}`, href: `/app/m/billing/new?contact=${contact.id}` }] : []),

@@ -2,14 +2,11 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Pencil, Plus } from "lucide-react"
+import { Blocks, Building2, CircleStop, Copy, Pencil, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import Link from "next/link"
-import { Button, buttonVariants } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -18,7 +15,9 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { paiseToRupees, rupeesToPaise } from "@/lib/money"
 import type { Catalog } from "@/lib/console"
 import { ConfirmDialog } from "@/components/common"
-import { Failed, Loading, Page } from "@/components/console/kit"
+import { Chip, Failed, Loading, Page } from "@/components/console/kit"
+import { Count, DataTable, IdCell, type Column, type RowAction } from "@/components/console/data-table"
+import { useClientTable } from "@/lib/use-table"
 
 
 function PriceCell({ price, label, editable, onSaved }: { price: Catalog["prices"][number]; label: string; editable: boolean; onSaved: () => void }) {
@@ -139,6 +138,10 @@ function CouponDialog({ open, onOpenChange, onSaved }: { open: boolean; onOpenCh
   )
 }
 
+type PlanRow = Catalog["plans"][number] & { id: string; monthly: number | null; yearly: number | null }
+type PriceRow = Catalog["prices"][number] & { item: string }
+type CouponRow = Catalog["coupons"][number] & { id: string }
+
 export default function PlansPage() {
   const { canConsole } = useAuth()
   const { data, error, reload } = useApi<Catalog>("/console/catalog")
@@ -146,141 +149,92 @@ export default function PlansPage() {
   const canEdit = canConsole("platform.plan.edit")
   const [ending, setEnding] = React.useState<string | null>(null)
 
+  const moduleName = (key: string) => data?.modules.find((m) => m.key === key)?.name ?? key
+  const priceOf = (key: string, cycle: "monthly" | "yearly") => data?.prices.find((p) => p.itemType === "plan" && p.itemRef === key && p.cycle === cycle)?.amountPaise ?? null
+  const itemName = (p: Catalog["prices"][number]) =>
+    p.itemType === "plan" ? data?.plans.find((x) => x.key === p.itemRef)?.name ?? p.itemRef : p.itemType === "extra_user" ? "Extra user" : `${moduleName(p.itemRef)} add-on`
+  // Console v3: plans for sale, plus old plans only while clients are still on them; no module add-ons
+  const plans: PlanRow[] | null = data
+    ? data.plans.filter((p) => p.isPublic || p.subscribers > 0).sort((a, b) => Number(b.isPublic) - Number(a.isPublic)).map((p) => ({ ...p, id: p.key, monthly: priceOf(p.key, "monthly"), yearly: priceOf(p.key, "yearly") }))
+    : null
+  const forSale = new Set(data?.plans.filter((p) => p.isPublic).map((p) => p.key))
+  const prices: PriceRow[] | null = data ? data.prices.filter((p) => p.itemType === "extra_user" || (p.itemType === "plan" && forSale.has(p.itemRef))).map((p) => ({ ...p, item: itemName(p) })) : null
+  const coupons: CouponRow[] | null = data ? data.coupons.map((c) => ({ ...c, id: c.code })) : null
+
+  const planTable = useClientTable(plans, { name: (p) => p.name, monthly: (p) => p.monthly ?? 0, yearly: (p) => p.yearly ?? 0, users: (p) => p.limits.users ?? 0, subscribers: (p) => p.subscribers })
+  const priceTable = useClientTable(prices, { item: (p) => p.item, cycle: (p) => p.cycle, since: (p) => p.activeFrom, amount: (p) => p.amountPaise })
+  const couponTable = useClientTable(coupons, { code: (c) => c.code, used: (c) => c.redeemed, until: (c) => c.validTo ?? "9999", status: (c) => (c.active ? 1 : 0) })
+
   if (error) return <Failed error={error} onRetry={reload} />
   if (!data) return <Loading rows={6} className="mx-auto max-w-6xl" />
-  const moduleName = (key: string) => data.modules.find((m) => m.key === key)?.name ?? key
-  const itemName = (p: Catalog["prices"][number]) =>
-    p.itemType === "plan" ? data.plans.find((x) => x.key === p.itemRef)?.name ?? p.itemRef : p.itemType === "extra_user" ? "Extra user" : `${moduleName(p.itemRef)} add-on`
 
-  // Console v3: plans for sale, plus old plans only while clients are still on them; no module add-ons
-  const plans = data.plans.filter((p) => p.isPublic || p.subscribers > 0).sort((a, b) => Number(b.isPublic) - Number(a.isPublic))
-  const forSale = new Set(data.plans.filter((p) => p.isPublic).map((p) => p.key))
-  const prices = data.prices.filter((p) => p.itemType === "extra_user" || (p.itemType === "plan" && forSale.has(p.itemRef)))
+  const modulesOf = (p: PlanRow) => (p.key === "free" ? data.modules.filter((m) => m.freeTier).map((m) => m.key) : p.fullModules)
+  const planColumns: Column<PlanRow>[] = [
+    { key: "key", header: "Plan key", cell: (p) => <span className="font-mono text-[12.5px] text-muted-foreground">{p.key}</span> },
+    { key: "name", header: "Plan", always: true, sortable: true, cell: (p) => <div><div className="font-medium">{p.name}</div>{p.tagline && <div className="max-w-64 truncate text-[12.5px] text-muted-foreground">{p.tagline}</div>}</div> },
+    { key: "status", header: "Status", cell: (p) => (p.isPublic ? <Chip tone="green">For sale</Chip> : <Chip tone="grey">Old · not sold</Chip>) },
+    { key: "monthly", header: "Monthly", align: "right", sortable: true, cell: (p) => (p.monthly === null ? "—" : formatPaise(p.monthly)) },
+    { key: "yearly", header: "Yearly", align: "right", sortable: true, cell: (p) => (p.yearly === null ? "—" : formatPaise(p.yearly)) },
+    { key: "users", header: "Users", align: "right", sortable: true, cell: (p) => p.limits.users ?? "No limit" },
+    { key: "branches", header: "Branches", align: "right", cell: (p) => p.limits.branches ?? "No limit" },
+    { key: "invoices", header: "Invoices / month", align: "right", cell: (p) => p.limits.invoicesPerMonth ?? "No limit" },
+    { key: "storage", header: "Storage", align: "right", hidden: true, cell: (p) => (p.limits.storageMb ? `${p.limits.storageMb} MB` : "—") },
+    {
+      key: "modules", header: "Modules",
+      cell: (p) => {
+        const keys = modulesOf(p)
+        return <span className="inline-flex items-center gap-1" title={keys.map(moduleName).join(", ")}>{keys.slice(0, 3).map((k) => <Badge key={k} variant="secondary" className="h-5 px-1.5 text-[10px]">{moduleName(k)}</Badge>)}{keys.length > 3 && <span className="text-xs text-muted-foreground">+{keys.length - 3}</span>}</span>
+      },
+    },
+    { key: "subscribers", header: "Businesses", align: "right", sortable: true, cell: (p) => p.subscribers },
+  ]
+  const planActions = (p: PlanRow): RowAction[] => [
+    { label: "Edit plan", icon: Pencil, href: `/console/settings/plans/${p.key}`, hidden: !canEdit },
+    { label: "Businesses on this plan", icon: Building2, href: `/console/clients?planKey=${p.key}`, hidden: !p.subscribers },
+    { label: "Compare modules", icon: Blocks, href: "/console/modules" },
+  ]
+  const priceColumns: Column<PriceRow>[] = [
+    { key: "id", header: "Price ID", hidden: true, cell: (p) => <IdCell id={p.id} /> },
+    { key: "item", header: "Item", always: true, sortable: true, cell: (p) => <span className="font-medium">{p.item}</span> },
+    { key: "cycle", header: "Cycle", sortable: true, cell: (p) => <span className="capitalize">{p.cycle}</span> },
+    { key: "since", header: "Since", sortable: true, cell: (p) => <span className="text-muted-foreground">{formatDate(p.activeFrom)}</span> },
+    { key: "amount", header: "Price (₹, before GST)", align: "right", sortable: true, cell: (p) => <PriceCell key={`${p.id}-${p.amountPaise}`} price={p} label={p.item} editable={canEdit && p.itemType === "extra_user"} onSaved={reload} /> },
+  ]
+  const couponColumns: Column<CouponRow>[] = [
+    { key: "code", header: "Code", always: true, sortable: true, cell: (c) => <span className="font-mono text-[13px] font-medium">{c.code}</span> },
+    { key: "discount", header: "Discount", cell: (c) => (c.type === "percent" ? `${c.value}%` : formatPaise(c.value)) },
+    { key: "applies", header: "Applies to", cell: (c) => <span className="capitalize">{c.appliesTo.replace(/_/g, " ")}</span> },
+    { key: "used", header: "Used", align: "right", sortable: true, cell: (c) => `${c.redeemed}${c.maxRedemptions ? ` / ${c.maxRedemptions}` : ""}` },
+    { key: "from", header: "Valid from", hidden: true, cell: (c) => (c.validFrom ? formatDate(c.validFrom) : "—") },
+    { key: "until", header: "Valid until", sortable: true, cell: (c) => <span className="text-muted-foreground">{c.validTo ? formatDate(c.validTo) : "No end"}</span> },
+    { key: "status", header: "Status", sortable: true, cell: (c) => (c.active ? <Chip tone="green">Active</Chip> : <Chip tone="grey">Ended</Chip>) },
+  ]
+  const couponActions = (c: CouponRow): RowAction[] => [
+    { label: "Copy code", icon: Copy, onClick: () => navigator.clipboard.writeText(c.code).then(() => toast.success("Code copied")) },
+    { label: "End now", icon: CircleStop, danger: true, separator: true, onClick: () => setEnding(c.code), hidden: !canEdit || !c.active },
+  ]
 
   return (
-    <Page eyebrow="Product" title="Plans & pricing" subtitle="Free and three plans, each a fixed set of modules and users. The only extra is users. Prices are before GST.">
+    <Page wide eyebrow="Product" title="Plans & pricing" subtitle="Free and three plans, each a fixed set of modules and users. The only extra is users. Prices are before GST.">
+      <DataTable id="plans" label="Plans" table={planTable} columns={planColumns} actions={planActions} searchFields={[{ key: "name", label: "Plan" }]} summary={<Count tone="green" n={plans?.filter((p) => p.isPublic).length ?? 0} label="For sale" />} />
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {plans.map((p) => (
-          <Card key={p.key}>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between gap-2">
-                <span>
-                  {p.name} {!p.isPublic && <Badge variant="outline" className="ml-1 h-5 px-1.5 text-[10px]">old plan · not sold</Badge>}
-                </span>
-                {canEdit && (
-                  <Link href={`/console/settings/plans/${p.key}`} className={buttonVariants({ size: "icon", variant: "ghost" })} aria-label={`Edit ${p.name}`}>
-                    <Pencil className="size-4" />
-                  </Link>
-                )}
-              </CardTitle>
-              <CardDescription>{p.tagline}</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-2 text-sm">
-              <p className="text-muted-foreground">
-                {p.subscribers} client(s) · {p.limits.users} users · {p.limits.branches} branch{p.limits.branches === 1 ? "" : "es"} ·{" "}
-                {p.limits.invoicesPerMonth === null ? "unlimited invoices" : `${p.limits.invoicesPerMonth} invoices/month`}
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {(p.key === "free" ? data.modules.filter((m) => m.freeTier).map((m) => m.key) : p.fullModules).map((k) => (
-                  <Badge key={k} variant="secondary" className="h-5 px-1.5 text-[10px]">{moduleName(k)}</Badge>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="grid gap-6 xl:grid-cols-2">
+        <div className="grid content-start gap-2">
+          <h2 className="text-base font-semibold">Prices</h2>
+          <p className="-mt-1 text-sm text-muted-foreground">Changing a price starts a new version; businesses already subscribed keep the old one until renewal. Plan prices change in the plan editor.</p>
+          <DataTable id="prices" label="Prices" table={priceTable} columns={priceColumns} searchFields={[{ key: "item", label: "Item" }]} />
+        </div>
+        <div className="grid content-start gap-2">
+          <div className="flex items-end justify-between gap-2">
+            <div>
+              <h2 className="text-base font-semibold">Coupons</h2>
+              <p className="text-sm text-muted-foreground">For campaigns: first payment only, never with a manual discount.</p>
+            </div>
+            {canEdit && <Button size="sm" onClick={() => setCouponOpen(true)}><Plus /> New coupon</Button>}
+          </div>
+          <DataTable id="coupons" label="Coupons" table={couponTable} columns={couponColumns} actions={couponActions} searchFields={[{ key: "code", label: "Code" }]} empty="No coupons yet." />
+        </div>
       </div>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Prices</CardTitle>
-          <CardDescription>Changing a price starts a new version; clients already subscribed keep the old one until renewal.</CardDescription>
-        </CardHeader>
-        <CardContent className="overflow-x-auto p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="pl-6">Item</TableHead>
-                <TableHead>Cycle</TableHead>
-                <TableHead>Since</TableHead>
-                <TableHead className="pr-6 text-right">Price (₹)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {prices.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell className="pl-6">{itemName(p)}</TableCell>
-                  <TableCell className="capitalize">{p.cycle}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{formatDate(p.activeFrom)}</TableCell>
-                  <TableCell className="pr-6 text-right">
-                    <PriceCell key={`${p.id}-${p.amountPaise}`} price={p} label={itemName(p)} editable={canEdit && p.itemType === "extra_user"} onSaved={reload} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between gap-2">
-            <span>
-              Coupons
-              <span className="mt-1 block text-sm font-normal text-muted-foreground">For campaigns. A coupon works on the first payment, and never together with a manual discount. Referral codes get the welcome discount set in Company details &amp; rules.</span>
-            </span>
-            {canEdit && (
-              <Button size="sm" onClick={() => setCouponOpen(true)}>
-                <Plus /> New coupon
-              </Button>
-            )}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="overflow-x-auto p-0">
-          {!data.coupons.length ? (
-            <p className="px-6 pb-6 text-sm text-muted-foreground">No coupons yet.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-6">Code</TableHead>
-                  <TableHead>Discount</TableHead>
-                  <TableHead>Used</TableHead>
-                  <TableHead>Valid until</TableHead>
-                  <TableHead className="pr-6 text-right">Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {data.coupons.map((c) => (
-                  <TableRow key={c.code}>
-                    <TableCell className="pl-6 font-mono text-sm">{c.code}</TableCell>
-                    <TableCell>{c.type === "percent" ? `${c.value}%` : formatPaise(c.value)}</TableCell>
-                    <TableCell className="tabular-nums">{c.redeemed}{c.maxRedemptions ? ` / ${c.maxRedemptions}` : ""}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{c.validTo ? formatDate(c.validTo) : "No end"}</TableCell>
-                    <TableCell className="pr-6 text-right">
-                      {c.active ? (
-                        canEdit ? (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => setEnding(c.code)}
-                          >
-                            End now
-                          </Button>
-                        ) : (
-                          <Badge variant="secondary">Active</Badge>
-                        )
-                      ) : (
-                        <Badge variant="outline">Ended</Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
 
       <CouponDialog open={couponOpen} onOpenChange={setCouponOpen} onSaved={reload} />
       <ConfirmDialog

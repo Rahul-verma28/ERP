@@ -2,16 +2,19 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Handshake, Plus } from "lucide-react"
+import { Copy, ExternalLink, Handshake, Plus, ReceiptText } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Field, FormError, NativeSelect } from "@/components/form"
-import { Chip, Empty, Failed, Loading, Page, Panel } from "@/components/console/kit"
+import { Chip, Failed, Page } from "@/components/console/kit"
+import { Count, DataTable, FilterSelect, IdCell, type Column, type RowAction } from "@/components/console/data-table"
+import { useClientTable } from "@/lib/use-table"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
-import { GST_STATES, formatNumber } from "@/lib/format"
+import { GST_STATES, formatDate, formatNumber } from "@/lib/format"
 import type { PartnerRow } from "@/lib/console"
 import { LoginLinkBox, type LoginLink } from "@/components/console/login-link"
 
@@ -109,13 +112,41 @@ export default function PartnersPage() {
   const { canConsole } = useAuth()
   const { data, error, reload } = useApi<{ data: PartnerRow[] }>("/console/partners")
   const [open, setOpen] = React.useState(false)
+  const [status, setStatus] = React.useState("")
   const canAdd = canConsole("platform.partner.create")
+  const rows = React.useMemo(() => data?.data.filter((p) => !status || p.status === status) ?? null, [data, status])
+  const table = useClientTable(rows, {
+    name: (p) => p.name, contact: (p) => p.contactName, email: (p) => p.email, mobile: (p) => p.mobile, gstin: (p) => p.gstin ?? "",
+    clients: (p) => p.liveClients, discount: (p) => p.discountPercent, people: (p) => p.people, status: (p) => p.status, created: (p) => p.createdAt,
+  })
+  const state = (code: string | null) => (code ? GST_STATES.find(([c]) => c === code)?.[1] ?? code : "—")
+  const columns: Column<PartnerRow>[] = [
+    { key: "id", header: "ID", cell: (p) => <IdCell id={p.id} href={`/console/partners/${p.id}`} /> },
+    { key: "name", header: "Partner", always: true, sortable: true, cell: (p) => <span className="font-medium">{p.name}</span> },
+    { key: "contact", header: "Contact", sortable: true, cell: (p) => p.contactName },
+    { key: "mobile", header: "Phone", cell: (p) => <span className="tabular-nums">{p.mobile.replace(/^[+]91/, "+91 ")}</span> },
+    { key: "email", header: "Email", sortable: true, cell: (p) => p.email },
+    { key: "clients", header: "Live businesses", align: "right", sortable: true, cell: (p) => <span>{formatNumber(p.liveClients)}<span className="text-muted-foreground"> of {formatNumber(p.clients)}</span></span> },
+    { key: "discount", header: "Discount", align: "right", sortable: true, cell: (p) => `${p.discountPercent}%` },
+    { key: "people", header: "Portal users", align: "right", sortable: true, cell: (p) => p.people },
+    { key: "state", header: "State", cell: (p) => state(p.stateCode) },
+    { key: "gstin", header: "GSTIN", hidden: true, cell: (p) => <span className="font-mono text-[12.5px]">{p.gstin ?? "—"}</span> },
+    { key: "created", header: "Added", sortable: true, cell: (p) => <span className="text-muted-foreground">{formatDate(p.createdAt)}</span> },
+    { key: "status", header: "Status", sortable: true, cell: (p) => (p.status === "active" ? <Chip tone="green">Active</Chip> : <Chip tone="amber">Paused</Chip>) },
+  ]
+  const actions = (p: PartnerRow): RowAction[] => [
+    { label: "Open partner", icon: ExternalLink, href: `/console/partners/${p.id}` },
+    { label: "Businesses and monthly bill", icon: ReceiptText, href: `/console/partners/${p.id}` },
+    { label: "Copy email", icon: Copy, separator: true, onClick: () => navigator.clipboard.writeText(p.email).then(() => toast.success("Email copied")) },
+  ]
+  const active = data?.data.filter((p) => p.status === "active").length ?? 0
 
   return (
     <Page
+      wide
       eyebrow="Workspace"
       title="Partners"
-      subtitle="Resellers who bring and look after their own clients. They're billed monthly at the list price minus their discount."
+      subtitle="Resellers who bring and look after their own businesses. They're billed monthly at the list price minus their discount."
       actions={
         canAdd && (
           <Button onClick={() => setOpen(true)}>
@@ -124,61 +155,22 @@ export default function PartnersPage() {
         )
       }
     >
-      <Panel padded={false}>
-        {error ? (
-          <div className="p-5">
-            <Failed error={error} onRetry={reload} />
-          </div>
-        ) : !data ? (
-          <Loading rows={4} className="p-5" />
-        ) : !data.data.length ? (
-          <Empty
-            icon={Handshake}
-            title="No partners yet"
-            text="A partner gets their own panel to add clients. You bill them once a month."
-            action={
-              canAdd && (
-                <Button size="sm" onClick={() => setOpen(true)}>
-                  <Plus /> Add partner
-                </Button>
-              )
-            }
-          />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="px-5 py-3 font-medium">Partner</th>
-                  <th className="px-3 py-3 font-medium">Live clients</th>
-                  <th className="px-3 py-3 font-medium">Discount</th>
-                  <th className="px-3 py-3 font-medium">People</th>
-                  <th className="px-5 py-3 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.data.map((p) => (
-                  <tr key={p.id} onClick={() => router.push(`/console/partners/${p.id}`)} className="cursor-pointer border-b last:border-0 hover:bg-muted/50">
-                    <td className="px-5 py-3.5">
-                      <div className="font-medium">{p.name}</div>
-                      <div className="text-[13px] text-muted-foreground">
-                        {p.contactName} · {p.email}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3.5 tabular-nums">
-                      {formatNumber(p.liveClients)}
-                      <span className="text-muted-foreground"> of {formatNumber(p.clients)}</span>
-                    </td>
-                    <td className="px-3 py-3.5 tabular-nums">{p.discountPercent}%</td>
-                    <td className="px-3 py-3.5 tabular-nums">{p.people}</td>
-                    <td className="px-5 py-3.5">{p.status === "active" ? <Chip tone="green">Active</Chip> : <Chip tone="amber">Paused</Chip>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
+      {error ? (
+        <Failed error={error} onRetry={reload} />
+      ) : (
+        <DataTable
+          id="partners"
+          label="Partners"
+          table={table}
+          columns={columns}
+          actions={actions}
+          onRowClick={(p) => router.push(`/console/partners/${p.id}`)}
+          searchFields={[{ key: "name", label: "Partner" }, { key: "contact", label: "Contact" }, { key: "email", label: "Email" }, { key: "mobile", label: "Phone" }, { key: "gstin", label: "GSTIN" }]}
+          summary={data && <><Count tone="green" n={active} label="Active" /><Count tone="amber" n={data.data.length - active} label="Paused" /></>}
+          filters={<FilterSelect value={status} onChange={setStatus} label="Status" options={[["", "Any status"], ["active", "Active"], ["paused", "Paused"]]} />}
+          empty={<span className="inline-flex items-center gap-2"><Handshake className="size-4" /> No partners yet. Add one, or approve one from Applications.</span>}
+        />
+      )}
       {open && <AddPartnerDialog open onOpenChange={setOpen} />}
     </Page>
   )

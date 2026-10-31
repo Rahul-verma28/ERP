@@ -10,6 +10,7 @@ import { healthFor } from './insights';
 import { clientFacts, type OnboardedKind } from './clientFacts';
 import { progressOf, readHandover } from './onboarding';
 import { pendingChange } from '../platformBilling/service';
+import { listArgs, listPage } from '../../kernel/query';
 
 // Console → Clients (design v2 §3). Only account metadata: plan, status, usage counts and who
 // brought the client in. Business records (customers, invoices, salaries) are never read here.
@@ -38,6 +39,8 @@ export interface ClientQuery {
   partnerId?: string;
   limit: number;
   cursor?: string;
+  page?: number;
+  sort?: ClientSort;
 }
 
 /** Filter on "Onboarded by" (sales vs AHEAD team depends on the acquirer's Console role). */
@@ -50,6 +53,16 @@ async function onboardedFilter(kind: OnboardedKind): Promise<Prisma.TenantWhereI
   return { partnerId: null, acquisition: { acquiredByType: 'sales_user', acquiredByUserId: { in: people.map((m) => m.userId) } } };
 }
 
+const SORTS: Record<ClientSort, Prisma.TenantOrderByWithRelationInput[]> = {
+  newest: [{ id: 'desc' }],
+  oldest: [{ id: 'asc' }],
+  name: [{ name: 'asc' }, { id: 'desc' }],
+  name_desc: [{ name: 'desc' }, { id: 'desc' }],
+  status: [{ status: 'asc' }, { id: 'desc' }],
+};
+export const CLIENT_SORTS = ['newest', 'oldest', 'name', 'name_desc', 'status'] as const;
+export type ClientSort = (typeof CLIENT_SORTS)[number];
+
 export async function listClients(ctx: ConsoleCtx, q: ClientQuery) {
   const partners = ctx.partnerId ? 'include' : q.partners ?? 'exclude';
   const and: Prisma.TenantWhereInput[] = [];
@@ -58,8 +71,10 @@ export async function listClients(ctx: ConsoleCtx, q: ClientQuery) {
   if (q.onboarded) and.push(await onboardedFilter(q.onboarded));
   if (q.search) {
     const digits = q.search.replace(/\D/g, '');
+    const isId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(q.search);
     and.push({
       OR: [
+        ...(isId ? [{ id: q.search.toLowerCase() }] : []),
         { name: { contains: q.search, mode: 'insensitive' } },
         { gstin: { contains: q.search.toUpperCase() } },
         { members: { some: { user: { OR: [{ name: { contains: q.search, mode: 'insensitive' } }, ...(digits.length >= 4 ? [{ mobile: { contains: digits } }] : [])] } } } },
@@ -75,19 +90,22 @@ export async function listClients(ctx: ConsoleCtx, q: ClientQuery) {
     ...(q.partnerId && !ctx.partnerId ? { partnerId: q.partnerId } : partners === 'exclude' ? { partnerId: null } : partners === 'only' ? { partnerId: { not: null } } : {}),
     ...(and.length ? { AND: and } : {}),
   };
-  const rows = await db().tenant.findMany({
+  // UUID v7: id order is creation order. Other orders only with numbered pages
+  const orderBy: Prisma.TenantOrderByWithRelationInput[] = q.page && q.sort ? SORTS[q.sort] : [{ id: 'desc' }];
+  const [rows, total] = await Promise.all([
+    db().tenant.findMany({
     where,
-    orderBy: { id: 'desc' }, // UUID v7: newest first
-    take: q.limit + 1,
-    ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
+    ...listArgs(q, orderBy),
     include: {
       subscription: { select: { status: true, trialEndsAt: true, currentPeriodEnd: true, cycle: true, planId: true } },
       acquisition: { select: { acquiredByType: true, acquiredByUserId: true, method: true } },
       partner: { select: { name: true } },
       _count: { select: { members: { where: { status: 'active' } } } },
     },
-  });
-  const pageRows = rows.slice(0, q.limit);
+    }),
+    q.page ? db().tenant.count({ where }) : null,
+  ]);
+  const { data: pageRows, nextCursor } = listPage(rows, q);
   const ids = pageRows.map((t) => t.id);
   const [plans, people, health, lastPaid, nextSteps, facts, modules] = await Promise.all([
     db().plan.findMany({ select: { id: true, key: true, name: true, limits: true } }),
@@ -133,7 +151,8 @@ export async function listClients(ctx: ConsoleCtx, q: ClientQuery) {
       health: health.get(t.id) ?? null,
       next: next.get(t.id) ?? null,
     })),
-    nextCursor: rows.length > q.limit ? pageRows[pageRows.length - 1].id : null,
+    nextCursor,
+    total,
   };
 }
 

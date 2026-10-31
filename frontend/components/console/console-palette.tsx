@@ -91,7 +91,7 @@ function Palette({ onClose }: { onClose: () => void }) {
     ...groups.flatMap((g) => g.items.map((i) => ({ group: "Pages" as const, title: i.label, detail: g.label, href: i.href }))),
     ...(settings ? [{ group: "Pages" as const, title: settings.label, href: settings.href }] : []),
     { group: "Pages", title: "My account", href: `${base}/account` },
-    { group: "Pages", title: "Password & two-step", href: `${base}/account/security` },
+    { group: "Pages", title: "Password & two-step", href: `${base}/account#security` },
   ]
   const matching = (h: Hit) => !lower || h.title.toLowerCase().includes(lower)
   const hits: Hit[] = [...(query.length >= 2 ? records : []), ...actions.filter(matching), ...pages.filter(matching).slice(0, lower ? 8 : 6)]

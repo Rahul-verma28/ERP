@@ -1,16 +1,21 @@
 "use client"
 
+import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ClipboardCheck, Plus } from "lucide-react"
+import { ArrowRight, Building2, Copy, Plus } from "lucide-react"
+import { toast } from "sonner"
 import { buttonVariants } from "@/components/ui/button"
-import { Chip, Empty, Failed, Loading, Page, Panel, industryLabel, relDays, type Tone } from "@/components/console/kit"
+import { Chip, ClientStatus, Failed, Page, industryLabel, relDays, type Tone } from "@/components/console/kit"
+import { Count, DataTable, FilterSelect, IdCell, type Column, type RowAction } from "@/components/console/data-table"
 import { useApi } from "@/lib/use-api"
+import { useClientTable } from "@/lib/use-table"
 import { useConsoleBase } from "@/lib/console-base"
+import { formatDate } from "@/lib/format"
 import type { OnboardingRow } from "@/lib/console"
 
 // Onboarding (blueprint Phase B): every business still being set up or waiting for its owner,
-// with how far along it is and one button to continue.
+// with how far along it is and one click to continue.
 
 const STAGE: Record<OnboardingRow["stage"], { label: string; tone: Tone }> = {
   setting_up: { label: "Setting up", tone: "blue" },
@@ -24,8 +29,41 @@ export default function OnboardingPage() {
   const router = useRouter()
   const base = useConsoleBase()
   const { data, error, reload } = useApi<{ data: OnboardingRow[] }>("/console/onboarding")
+  const [stage, setStage] = React.useState("")
+  const rows = React.useMemo(() => data?.data.filter((r) => !stage || r.stage === stage) ?? null, [data, stage])
+  const table = useClientTable(rows, { name: (r) => r.name, owner: (r) => r.owner ?? "", stage: (r) => r.stage, percent: (r) => r.percent, added: (r) => r.createdAt })
+  if (error) return <Failed error={error} onRetry={reload} />
+
+  const hrefOf = (r: OnboardingRow) => (r.nextStep ? `${base}/onboarding/${r.id}?step=${r.nextStep}` : `${base}/clients/${r.id}?tab=handover`)
+  const columns: Column<OnboardingRow>[] = [
+    { key: "id", header: "ID", cell: (r) => <IdCell id={r.id} href={`${base}/clients/${r.id}`} /> },
+    { key: "name", header: "Business", always: true, sortable: true, cell: (r) => <div><div className="font-medium">{r.name}</div><div className="text-[12.5px] text-muted-foreground">{industryLabel(r.industryKey)}</div></div> },
+    { key: "owner", header: "Owner", sortable: true, cell: (r) => r.owner ?? "—" },
+    { key: "stage", header: "Stage", sortable: true, cell: (r) => <Chip tone={STAGE[r.stage].tone}>{STAGE[r.stage].label}</Chip> },
+    {
+      key: "percent", header: "Progress", sortable: true,
+      cell: (r) => (
+        <span className="flex items-center gap-2">
+          <span className="h-1.5 w-24 overflow-hidden rounded-full bg-muted"><span className="block h-full bg-primary" style={{ width: `${r.percent}%` }} /></span>
+          <span className="text-xs tabular-nums text-muted-foreground">{r.percent}%</span>
+        </span>
+      ),
+    },
+    { key: "next", header: "Next step", cell: (r) => <span className="text-muted-foreground">{r.nextStep ? NEXT[r.nextStep] : "Owner to accept"}</span> },
+    { key: "status", header: "Account", hidden: true, cell: (r) => <ClientStatus status={r.status} /> },
+    { key: "added", header: "Added", sortable: true, cell: (r) => <span className="text-muted-foreground" title={formatDate(r.createdAt)}>{relDays(r.createdAt)}</span> },
+    { key: "go", header: "", always: true, cell: (r) => <Link href={hrefOf(r)} onClick={(e) => e.stopPropagation()} className={buttonVariants({ size: "sm", variant: r.nextStep ? "default" : "outline" })}>{r.nextStep ? "Continue" : "Open"}</Link> },
+  ]
+  const actions = (r: OnboardingRow): RowAction[] => [
+    { label: r.nextStep ? `Continue: ${NEXT[r.nextStep]}` : "Open handover", icon: ArrowRight, href: hrefOf(r) },
+    { label: "Open business", icon: Building2, href: `${base}/clients/${r.id}` },
+    { label: "Copy ID", icon: Copy, separator: true, onClick: () => navigator.clipboard.writeText(r.id).then(() => toast.success("ID copied")) },
+  ]
+  const waiting = data?.data.filter((r) => r.stage !== "setting_up").length ?? 0
+
   return (
     <Page
+      wide
       eyebrow="Workspace"
       title="Onboarding"
       subtitle="Businesses being set up, and handovers the owner hasn't accepted yet."
@@ -35,57 +73,18 @@ export default function OnboardingPage() {
         </Link>
       }
     >
-      <Panel padded={false}>
-        {error ? (
-          <div className="p-5"><Failed error={error} onRetry={reload} /></div>
-        ) : !data ? (
-          <Loading rows={5} className="p-5" />
-        ) : !data.data.length ? (
-          <Empty icon={ClipboardCheck} title="Nothing in progress" text="When you onboard a business and choose “continue set-up”, it stays here until the owner accepts the handover." />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs whitespace-nowrap text-muted-foreground">
-                  <th className="px-5 py-3 font-medium">Business</th>
-                  <th className="px-3 py-3 font-medium">Owner</th>
-                  <th className="px-3 py-3 font-medium">Stage</th>
-                  <th className="px-3 py-3 font-medium">Progress</th>
-                  <th className="px-3 py-3 font-medium">Next</th>
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {data.data.map((r) => {
-                  const href = r.nextStep ? `${base}/onboarding/${r.id}?step=${r.nextStep}` : `${base}/clients/${r.id}?tab=handover`
-                  return (
-                    <tr key={r.id} onClick={() => router.push(href)} className="cursor-pointer border-b last:border-0 hover:bg-muted/50">
-                      <td className="px-5 py-3">
-                        <div className="font-medium">{r.name}</div>
-                        <div className="text-[13px] text-muted-foreground">{industryLabel(r.industryKey)} · added {relDays(r.createdAt)}</div>
-                      </td>
-                      <td className="px-3 py-3 whitespace-nowrap">{r.owner ?? "—"}</td>
-                      <td className="px-3 py-3"><Chip tone={STAGE[r.stage].tone}>{STAGE[r.stage].label}</Chip></td>
-                      <td className="px-3 py-3">
-                        <div className="flex items-center gap-2">
-                          <span className="h-1.5 w-24 overflow-hidden rounded-full bg-muted"><span className="block h-full bg-primary" style={{ width: `${r.percent}%` }} /></span>
-                          <span className="text-xs tabular-nums text-muted-foreground">{r.percent}%</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-3 whitespace-nowrap text-muted-foreground">{r.nextStep ? NEXT[r.nextStep] : "Owner to accept"}</td>
-                      <td className="px-5 py-3 text-right">
-                        <Link href={href} onClick={(e) => e.stopPropagation()} className={buttonVariants({ size: "sm", variant: r.nextStep ? "default" : "outline" })}>
-                          {r.nextStep ? "Continue" : "Open"}
-                        </Link>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
+      <DataTable
+        id="onboarding"
+        label="Onboarding"
+        table={table}
+        columns={columns}
+        actions={actions}
+        onRowClick={(r) => router.push(hrefOf(r))}
+        searchFields={[{ key: "name", label: "Business" }, { key: "owner", label: "Owner" }]}
+        summary={data && <><Count tone="blue" n={data.data.length - waiting} label="Setting up" /><Count tone="amber" n={waiting} label="With the owner" /></>}
+        filters={<FilterSelect value={stage} onChange={setStage} label="Stage" options={[["", "Any stage"], ...Object.entries(STAGE).map(([k, v]) => [k, v.label] as [string, string])]} />}
+        empty="Nothing in progress. When you onboard a business and continue its set-up, it stays here until the owner accepts the handover."
+      />
     </Page>
   )
 }

@@ -3,15 +3,17 @@
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { Inbox } from "lucide-react"
+import { Check, Copy, ExternalLink, FileText, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Field, FormError } from "@/components/form"
-import { Chip, Empty, Failed, Loading, Page, PageTabs, Panel, ago } from "@/components/console/kit"
+import { Chip, Facts, Failed, Page, PageTabs, ago } from "@/components/console/kit"
+import { DataTable, FilterSelect, IdCell, type Column, type RowAction } from "@/components/console/data-table"
 import { LoginLinkBox, type LoginLink } from "@/components/console/login-link"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
+import { useClientTable } from "@/lib/use-table"
 import { formatDate, GST_STATES } from "@/lib/format"
 import type { ApplicationRow } from "@/lib/console"
 
@@ -19,15 +21,55 @@ import type { ApplicationRow } from "@/lib/console"
 // or a partner. Approve to create them with a login link, or turn them down. Admin only.
 
 type Status = "new" | "approved" | "rejected"
+const stateName = (code: string | null) => (code ? GST_STATES.find(([c]) => c === code)?.[1] ?? code : null)
 
 export default function ApplicationsPage() {
   const [status, setStatus] = React.useState<Status>("new")
+  const [kind, setKind] = React.useState("")
   const { data, error, reload } = useApi<{ counts: Record<Status, number>; data: ApplicationRow[] }>(`/console/applications?status=${status}`)
+  const [reading, setReading] = React.useState<ApplicationRow | null>(null)
   const [approving, setApproving] = React.useState<ApplicationRow | null>(null)
-
+  const [rejecting, setRejecting] = React.useState<ApplicationRow | null>(null)
+  const rows = React.useMemo(() => data?.data.filter((a) => !kind || a.kind === kind) ?? null, [data, kind])
+  const table = useClientTable(rows, {
+    name: (a) => a.name, company: (a) => a.company ?? "", email: (a) => a.email, mobile: (a) => a.mobile, city: (a) => a.city ?? "", applied: (a) => a.createdAt, kind: (a) => a.kind,
+  })
   if (error) return <Failed error={error} onRetry={reload} />
+
+  const columns: Column<ApplicationRow>[] = [
+    { key: "id", header: "ID", cell: (a) => <IdCell id={a.id} /> },
+    {
+      key: "name", header: "Applicant", always: true, sortable: true,
+      cell: (a) => (
+        <div>
+          <div className="font-medium">{a.kind === "partner" ? a.company : a.name}</div>
+          {a.kind === "partner" && <div className="text-[12.5px] text-muted-foreground">{a.name}</div>}
+        </div>
+      ),
+    },
+    { key: "kind", header: "Wants to be", sortable: true, cell: (a) => <Chip tone={a.kind === "partner" ? "blue" : "grey"}>{a.kind === "partner" ? "Partner" : "Vendor"}</Chip> },
+    { key: "email", header: "Email", sortable: true, cell: (a) => a.email },
+    { key: "mobile", header: "Phone", cell: (a) => <span className="tabular-nums">{a.mobile.replace(/^[+]91/, "+91 ")}</span> },
+    { key: "city", header: "Place", sortable: true, cell: (a) => [a.city, stateName(a.stateCode)].filter(Boolean).join(", ") || "—" },
+    { key: "gstin", header: "GSTIN", hidden: true, cell: (a) => <span className="font-mono text-[12.5px]">{a.gstin ?? "—"}</span> },
+    { key: "message", header: "Message", cell: (a) => <span className="block max-w-xs truncate text-muted-foreground" title={a.message ?? undefined}>{a.message ?? "—"}</span> },
+    { key: "flags", header: "Check", cell: (a) => (a.alreadyInConsole ? <Chip tone="amber">Already a Console user</Chip> : a.alreadyPartner ? <Chip tone="amber">Email used by a partner</Chip> : <span className="text-muted-foreground">—</span>) },
+    { key: "applied", header: "Applied", sortable: true, cell: (a) => <span className="text-muted-foreground">{ago(a.createdAt)}</span> },
+    ...(status !== "new"
+      ? [{ key: "decided", header: status === "approved" ? "Approved" : "Turned down", cell: (a: ApplicationRow) => <span className="text-muted-foreground">{a.decidedAt ? formatDate(a.decidedAt) : "—"}{a.decidedBy ? ` · ${a.decidedBy}` : ""}</span> }]
+      : []),
+  ]
+  const actions = (a: ApplicationRow): RowAction[] => [
+    { label: "Read application", icon: FileText, onClick: () => setReading(a) },
+    { label: "Approve", icon: Check, onClick: () => setApproving(a), hidden: a.status !== "new" },
+    { label: "Turn down", icon: X, danger: true, onClick: () => setRejecting(a), hidden: a.status !== "new" },
+    { label: a.kind === "partner" ? "Open partner" : "Open Team", icon: ExternalLink, href: a.kind === "partner" ? `/console/partners/${a.resultId}` : "/console/team", hidden: a.status !== "approved" || !a.resultId },
+    { label: "Copy email", icon: Copy, separator: true, onClick: () => navigator.clipboard.writeText(a.email).then(() => toast.success("Email copied")) },
+  ]
+
   return (
     <Page
+      wide
       eyebrow="People & access"
       title="Applications"
       subtitle={<>People who applied on the website to become a vendor or partner. Approve to give them a login link; they set their own password. The form is at <Link href="/apply" target="_blank" className="font-medium text-primary hover:underline">/apply</Link>.</>}
@@ -41,85 +83,102 @@ export default function ApplicationsPage() {
         active={status}
         onChange={setStatus}
       />
-      {!data ? (
-        <Loading rows={4} />
-      ) : !data.data.length ? (
-        <Empty icon={Inbox} title={status === "new" ? "Nothing to review" : "None yet"} text={status === "new" ? "New applications from the website appear here." : undefined} />
-      ) : (
-        <div className="grid gap-4">
-          {data.data.map((a) => (
-            <ApplicationCard key={a.id} a={a} onApprove={() => setApproving(a)} onDone={reload} />
-          ))}
-        </div>
+      <DataTable
+        id="applications"
+        label="Applications"
+        table={table}
+        columns={columns}
+        actions={actions}
+        onRowClick={setReading}
+        searchFields={[{ key: "name", label: "Name" }, { key: "company", label: "Company" }, { key: "email", label: "Email" }, { key: "mobile", label: "Phone" }, { key: "city", label: "City" }]}
+        filters={<FilterSelect value={kind} onChange={setKind} label="Type" options={[["", "Vendors and partners"], ["vendor", "Vendors"], ["partner", "Partners"]]} />}
+        empty={status === "new" ? "Nothing to review. New applications from the website appear here." : "None yet."}
+      />
+      {reading && (
+        <ReadDialog
+          a={reading}
+          onClose={() => setReading(null)}
+          onApprove={() => (setApproving(reading), setReading(null))}
+          onReject={() => (setRejecting(reading), setReading(null))}
+        />
       )}
-      {approving && <ApproveDialog a={approving} onClose={() => { setApproving(null); reload() }} />}
+      {approving && <ApproveDialog a={approving} onClose={() => (setApproving(null), reload())} />}
+      {rejecting && <RejectDialog a={rejecting} onClose={() => setRejecting(null)} onDone={reload} />}
     </Page>
   )
 }
 
-function ApplicationCard({ a, onApprove, onDone }: { a: ApplicationRow; onApprove: () => void; onDone: () => void }) {
-  const [rejecting, setRejecting] = React.useState(false)
+function ReadDialog({ a, onClose, onApprove, onReject }: { a: ApplicationRow; onClose: () => void; onApprove: () => void; onReject: () => void }) {
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{a.kind === "partner" ? a.company : a.name}</DialogTitle>
+          <DialogDescription>Wants to be a {a.kind} · applied {ago(a.createdAt).toLowerCase()}</DialogDescription>
+        </DialogHeader>
+        <Facts
+          items={[
+            { label: "Name", value: a.name },
+            { label: "Company", value: a.company },
+            { label: "Email", value: a.email },
+            { label: "Phone", value: a.mobile },
+            { label: "Place", value: [a.city, stateName(a.stateCode)].filter(Boolean).join(", ") || null },
+            { label: "GSTIN", value: a.gstin },
+          ]}
+        />
+        {a.message && <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm whitespace-pre-line">{a.message}</p>}
+        {(a.alreadyInConsole || a.alreadyPartner) && <p className="text-sm text-amber-700 dark:text-amber-400">{a.alreadyInConsole ? "This email already belongs to a Console user." : "This email is already used by a partner."}</p>}
+        {a.status !== "new" && <p className="text-sm text-muted-foreground">{a.status === "approved" ? "Approved" : "Turned down"} {a.decidedAt ? formatDate(a.decidedAt) : ""}{a.decidedBy ? ` by ${a.decidedBy}` : ""}{a.decisionNote ? ` · “${a.decisionNote}”` : ""}</p>}
+        <DialogFooter>
+          {a.status === "new" ? (
+            <>
+              <Button variant="outline" onClick={onReject}>Turn down</Button>
+              <Button onClick={onApprove}>Approve</Button>
+            </>
+          ) : (
+            <Button onClick={onClose}>Close</Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RejectDialog({ a, onClose, onDone }: { a: ApplicationRow; onClose: () => void; onDone: () => void }) {
   const [note, setNote] = React.useState("")
   const [busy, setBusy] = React.useState(false)
-  const state = a.stateCode ? GST_STATES.find(([c]) => c === a.stateCode)?.[1] : null
-
-  async function reject() {
+  async function reject(e: React.FormEvent) {
+    e.preventDefault()
     setBusy(true)
     try {
       await api.post(`/console/applications/${a.id}/reject`, { note: note || null })
       toast.success("Turned down")
       onDone()
-    } catch (e) {
-      toast.error(errorMessage(e))
+      onClose()
+    } catch (x) {
+      toast.error(errorMessage(x))
     } finally {
       setBusy(false)
     }
   }
-
   return (
-    <Panel>
-      <div className="grid gap-4 md:grid-cols-[1fr_auto]">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-base font-semibold">{a.kind === "partner" ? a.company : a.name}</span>
-            <Chip tone={a.kind === "partner" ? "blue" : "grey"}>{a.kind === "partner" ? "Partner" : "Vendor"}</Chip>
-            {a.alreadyInConsole && <Chip tone="amber">Already a Console user</Chip>}
-            {a.alreadyPartner && <Chip tone="amber">Email used by a partner</Chip>}
-          </div>
-          <div className="mt-1 text-sm text-muted-foreground">
-            {a.kind === "partner" && <>{a.name} · </>}{a.email} · {a.mobile}{a.city || state ? ` · ${[a.city, state].filter(Boolean).join(", ")}` : ""}{a.gstin ? ` · GSTIN ${a.gstin}` : ""}
-          </div>
-          {a.message && <p className="mt-2 rounded-lg bg-muted/50 px-3 py-2 text-sm whitespace-pre-line">{a.message}</p>}
-          <div className="mt-2 text-xs text-muted-foreground">
-            Applied {ago(a.createdAt).toLowerCase()}
-            {a.status !== "new" && a.decidedAt && <> · {a.status === "approved" ? "Approved" : "Turned down"} {formatDate(a.decidedAt)}{a.decidedBy ? ` by ${a.decidedBy}` : ""}</>}
-            {a.decisionNote && <> · “{a.decisionNote}”</>}
-          </div>
-        </div>
-        {a.status === "new" && !rejecting && (
-          <div className="flex gap-2 md:flex-col md:items-stretch">
-            <Button onClick={onApprove} disabled={busy}>Approve</Button>
-            <Button variant="outline" onClick={() => setRejecting(true)} disabled={busy}>Turn down</Button>
-          </div>
-        )}
-        {a.status === "approved" && a.resultId && (
-          <Link href={a.kind === "partner" ? `/console/partners/${a.resultId}` : "/console/team"} className="self-start text-sm font-medium text-primary hover:underline">
-            {a.kind === "partner" ? "Open partner" : "Open Team"}
-          </Link>
-        )}
-      </div>
-      {rejecting && (
-        <div className="mt-4 grid gap-3 border-t pt-4 sm:grid-cols-[1fr_auto] sm:items-end">
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <form onSubmit={reject} className="grid gap-4">
+          <DialogHeader>
+            <DialogTitle>Turn down {a.kind === "partner" ? a.company : a.name}?</DialogTitle>
+            <DialogDescription>They don&apos;t get access. Nothing is sent to them.</DialogDescription>
+          </DialogHeader>
           <Field label="Note for the record (optional)" hint="Only the AHEAD team sees it">
-            <Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="e.g. Not in our area yet" />
+            <Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="e.g. Not in our area yet" autoFocus />
           </Field>
-          <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setRejecting(false)} disabled={busy}>Cancel</Button>
-            <Button variant="destructive" onClick={reject} disabled={busy}>Turn down</Button>
-          </div>
-        </div>
-      )}
-    </Panel>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button type="submit" variant="destructive" disabled={busy}>Turn down</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   )
 }
 

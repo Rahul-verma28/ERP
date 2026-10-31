@@ -2,12 +2,17 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { KeyRound, Lock, Plus } from "lucide-react"
+import { CopyPlus, KeyRound, Lock, Plus, Trash2, Users } from "lucide-react"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Field, FormError, NativeSelect } from "@/components/form"
-import { Chip, Empty, Failed, Loading, Page, Panel } from "@/components/console/kit"
+import { Chip, Failed, Page } from "@/components/console/kit"
+import { ConfirmDialog } from "@/components/common"
+import { Count, DataTable, FilterSelect, IdCell, type Column, type RowAction } from "@/components/console/data-table"
+import { useClientTable } from "@/lib/use-table"
+import { formatDate } from "@/lib/format"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
@@ -79,53 +84,74 @@ function Roles() {
   const { me } = useAuth()
   const isAdmin = me?.console?.role.key === "super_admin"
   const { data, error, reload } = useApi<{ data: ConsoleRoleRow[] }>("/console/access/roles")
-  const [open, setOpen] = React.useState(!!copyFrom)
+  const [open, setOpen] = React.useState<string | null | false>(copyFrom ?? false)
+  const [deleting, setDeleting] = React.useState<ConsoleRoleRow | null>(null)
+  const [type, setType] = React.useState("")
+  const typeOf = (r: ConsoleRoleRow) => (r.locked ? "fixed" : r.builtIn ? "builtin" : "custom")
+  const rows = React.useMemo(() => data?.data.filter((r) => !type || typeOf(r) === type) ?? null, [data, type])
+  const table = useClientTable(rows, { name: (r) => r.name, description: (r) => r.description ?? "", type: typeOf, permissions: (r) => (r.locked ? 999 : r.permissions), members: (r) => r.members, created: (r) => r.createdAt, changed: (r) => r.changedAt ?? "" })
+
+  const columns: Column<ConsoleRoleRow>[] = [
+    { key: "id", header: "ID", cell: (r) => <IdCell id={r.id} href={`/console/roles/${r.id}`} /> },
+    { key: "name", header: "Role", always: true, sortable: true, cell: (r) => <span className="flex items-center gap-2 font-medium">{r.name} {r.locked && <Lock className="size-3.5 text-muted-foreground" aria-label="Fixed" />}</span> },
+    { key: "description", header: "What it is for", cell: (r) => <span className="block max-w-md truncate text-muted-foreground" title={r.description ?? undefined}>{r.description ?? "—"}</span> },
+    { key: "type", header: "Type", sortable: true, cell: (r) => (r.locked ? <Chip tone="grey">Fixed</Chip> : r.builtIn ? (r.customized ? <Chip tone="amber">Built-in · changed</Chip> : <Chip tone="grey">Built-in</Chip>) : <Chip tone="blue">Custom</Chip>) },
+    { key: "permissions", header: "Permissions", align: "right", sortable: true, cell: (r) => (r.locked ? "All" : r.permissions) },
+    { key: "members", header: "People", align: "right", sortable: true, cell: (r) => r.members },
+    { key: "changed", header: "Last changed", sortable: true, cell: (r) => <span className="text-muted-foreground">{r.changedAt ? formatDate(r.changedAt) : "—"}</span> },
+    { key: "created", header: "Created", sortable: true, hidden: true, cell: (r) => <span className="text-muted-foreground">{formatDate(r.createdAt)}</span> },
+  ]
+  const actions = (r: ConsoleRoleRow): RowAction[] => [
+    { label: r.locked || !isAdmin ? "See permissions" : "Edit permissions", icon: KeyRound, href: `/console/roles/${r.id}` },
+    { label: "Copy as a new role", icon: CopyPlus, onClick: () => setOpen(r.id), hidden: !isAdmin || r.locked },
+    { label: "People with this role", icon: Users, href: `/console/team`, hidden: !r.members },
+    { label: "Delete role", icon: Trash2, danger: true, separator: true, onClick: () => setDeleting(r), hidden: !isAdmin || r.builtIn },
+  ]
 
   return (
     <Page
+      wide
       eyebrow="People & access"
       title="Roles & permissions"
       subtitle="What each Console role can see and do. Every request is checked on the server, not just hidden in the menu."
-      actions={isAdmin && data && <Button onClick={() => setOpen(true)}><Plus /> New role</Button>}
+      actions={isAdmin && data && <Button onClick={() => setOpen(null)}><Plus /> New role</Button>}
     >
-      <Panel padded={false}>
-        {error ? (
-          <div className="p-5"><Failed error={error} onRetry={reload} /></div>
-        ) : !data ? (
-          <Loading rows={5} className="p-5" />
-        ) : !data.data.length ? (
-          <Empty icon={KeyRound} title="No roles" />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs whitespace-nowrap text-muted-foreground">
-                  <th className="px-5 py-3 font-medium">Role</th>
-                  <th className="px-3 py-3 font-medium">Type</th>
-                  <th className="px-3 py-3 text-right font-medium">Permissions</th>
-                  <th className="px-5 py-3 text-right font-medium">People</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.data.map((r) => (
-                  <tr key={r.id} onClick={() => router.push(`/console/roles/${r.id}`)} className="cursor-pointer border-b last:border-0 hover:bg-muted/50">
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-2 font-medium">{r.name} {r.locked && <Lock className="size-3.5 text-muted-foreground" aria-label="Fixed" />}</div>
-                      <div className="max-w-xl text-[13px] text-muted-foreground">{r.description}</div>
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      {r.locked ? <Chip tone="grey">Fixed</Chip> : r.builtIn ? (r.customized ? <Chip tone="amber">Built-in · changed</Chip> : <Chip tone="grey">Built-in</Chip>) : <Chip tone="blue">Custom</Chip>}
-                    </td>
-                    <td className="px-3 py-3 text-right tabular-nums">{r.locked ? "All" : r.permissions}</td>
-                    <td className="px-5 py-3 text-right tabular-nums">{r.members}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Panel>
-      {open && isAdmin && data && <NewRoleDialog roles={data.data} from={copyFrom} open onOpenChange={setOpen} />}
+      {error ? (
+        <Failed error={error} onRetry={reload} />
+      ) : (
+        <DataTable
+          id="roles"
+          label="Roles"
+          table={table}
+          columns={columns}
+          actions={actions}
+          onRowClick={(r) => router.push(`/console/roles/${r.id}`)}
+          searchFields={[{ key: "name", label: "Role" }, { key: "description", label: "What it is for" }]}
+          summary={data && <><Count tone="blue" n={data.data.length} label="Roles" /><Count tone="green" n={data.data.reduce((a, r) => a + r.members, 0)} label="People" /></>}
+          filters={<FilterSelect value={type} onChange={setType} label="Type" options={[["", "Any type"], ["builtin", "Built-in"], ["custom", "Custom"], ["fixed", "Fixed"]]} />}
+          empty="No roles."
+        />
+      )}
+      {open !== false && isAdmin && data && <NewRoleDialog roles={data.data} from={open} open onOpenChange={(o) => !o && setOpen(false)} />}
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title={`Delete ${deleting?.name ?? ""}?`}
+        description={deleting?.members ? `${deleting.members} people have this role. Give them another role first.` : "Nobody has this role. It is removed for good."}
+        confirmLabel="Delete role"
+        destructive
+        onConfirm={async () => {
+          if (!deleting) return
+          try {
+            await api.delete(`/console/access/roles/${deleting.id}`)
+            toast.success("Role deleted")
+            await reload()
+          } catch (e) {
+            toast.error(errorMessage(e))
+          }
+          setDeleting(null)
+        }}
+      />
     </Page>
   )
 }

@@ -4,14 +4,14 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { ChevronRight, ScrollText } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { ConfirmDialog, LoadMore, SearchInput } from "@/components/common"
-import { NativeSelect } from "@/components/form"
-import { Chip, Empty, Failed, Loading, Page, PageTabs, Panel, ago } from "@/components/console/kit"
+import { Copy, ExternalLink, LogOut, ScrollText } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ConfirmDialog } from "@/components/common"
+import { Chip, Failed, Page, PageTabs, ago } from "@/components/console/kit"
+import { Count, DataTable, FilterSelect, IdCell, type Column, type RowAction } from "@/components/console/data-table"
+import { useClientTable, useServerTable } from "@/lib/use-table"
 import { api, errorMessage } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
-import { useDebounced, useList } from "@/lib/use-list"
 import type { AuditArea, AuditEvent, SecurityStats, SessionRow, SignInRow } from "@/lib/console"
 import { cn } from "@/lib/utils"
 
@@ -114,151 +114,120 @@ function Changes({ before, after }: { before: unknown; after: unknown }) {
 }
 
 function AuditTrail() {
-  const [search, setSearch] = React.useState("")
   const [area, setArea] = React.useState<AuditArea | "">("")
   const [days, setDays] = React.useState("30")
-  const [risky, setRisky] = React.useState(false)
-  const [open, setOpen] = React.useState<string | null>(null)
-  const q = useDebounced(search)
-  const list = useList<AuditEvent>("/console/security/audit", { search: q, area, days, riskyOnly: risky ? "true" : undefined })
+  const [risky, setRisky] = React.useState("")
+  const [open, setOpen] = React.useState<AuditEvent | null>(null)
+  const table = useServerTable<AuditEvent>("/console/security/audit", { area, days, riskyOnly: risky || undefined })
+  const columns: Column<AuditEvent>[] = [
+    { key: "id", header: "Event ID", hidden: true, cell: (e) => <IdCell id={e.id} /> },
+    { key: "at", header: "When", always: true, cell: (e) => <span title={new Date(e.at).toLocaleString("en-IN")}><Mono className="text-muted-foreground">{stamp(e.at)}</Mono></span> },
+    { key: "area", header: "Area", cell: (e) => <Mono className="rounded-md bg-muted px-1.5 py-0.5 tracking-[0.12em]">{e.area ? AREA_TAG[e.area] : "OTHER"}</Mono> },
+    { key: "actor", header: "Who", cell: (e) => <span className="font-medium">{e.actor}</span> },
+    { key: "text", header: "What happened", cell: (e) => <span className="block max-w-md truncate" title={e.text}>{e.text}</span> },
+    { key: "subject", header: "On", cell: (e) => (e.subject ? e.subjectHref ? <Link href={e.subjectHref} onClick={(x) => x.stopPropagation()} className="font-medium hover:underline">{e.subject}</Link> : e.subject : "—") },
+    { key: "risky", header: "Risk", cell: (e) => (e.risky ? <Chip tone="amber">Risky</Chip> : <span className="text-muted-foreground">—</span>) },
+    { key: "action", header: "Action key", hidden: true, cell: (e) => <Mono className="text-muted-foreground">{e.action}</Mono> },
+    { key: "ip", header: "Network", cell: (e) => <Mono className="text-muted-foreground">{e.ip ?? "—"}</Mono> },
+  ]
+  const actions = (e: AuditEvent): RowAction[] => [
+    { label: "See what changed", icon: ScrollText, onClick: () => setOpen(e) },
+    { label: `Open ${e.subject ?? ""}`.trim(), icon: ExternalLink, href: e.subjectHref ?? undefined, hidden: !e.subjectHref },
+    { label: "Copy event ID", icon: Copy, separator: true, onClick: () => navigator.clipboard.writeText(e.id).then(() => toast.success("Event ID copied")) },
+  ]
   return (
-    <div className="grid gap-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Mono className="mr-1 tracking-[0.14em] text-muted-foreground uppercase">{"// filters"}</Mono>
-        <SearchInput value={search} onChange={setSearch} placeholder="Search person, business or action" className="min-w-60 flex-1" />
-        <NativeSelect className="w-44" value={area} onChange={(e) => setArea(e.target.value as AuditArea | "")} aria-label="Area">
-          {AREAS.map(([k, l]) => (
-            <option key={k} value={k}>{l}</option>
-          ))}
-        </NativeSelect>
-        <NativeSelect className="w-36" value={days} onChange={(e) => setDays(e.target.value)} aria-label="Period">
-          <option value="1">Last 24 hours</option>
-          <option value="7">Last 7 days</option>
-          <option value="30">Last 30 days</option>
-          <option value="90">Last 90 days</option>
-          <option value="365">Last year</option>
-        </NativeSelect>
-        <label className="inline-flex h-9 items-center gap-2 rounded-lg border bg-card px-3 text-[13px]">
-          <input type="checkbox" checked={risky} onChange={(e) => setRisky(e.target.checked)} className="size-4 accent-amber-600" /> Risky only
-        </label>
-      </div>
-      <Panel padded={false}>
-        {list.error ? (
-          <div className="p-5"><Failed error={list.error} onRetry={list.reload} /></div>
-        ) : list.loading ? (
-          <Loading rows={6} className="p-5" />
-        ) : !list.rows.length ? (
-          <Empty icon={ScrollText} title="No events" text="Try a longer period or another area." />
-        ) : (
-          <ul className="divide-y">
-            {list.rows.map((e) => (
-              <li key={e.id}>
-                <button type="button" onClick={() => setOpen(open === e.id ? null : e.id)} aria-expanded={open === e.id} className="grid w-full grid-cols-[10px_118px_96px_1fr_16px] items-center gap-3 px-5 py-3 text-left hover:bg-muted/40 max-sm:grid-cols-[10px_1fr_16px]">
-                  <span className={cn("size-2 rounded-full", e.risky ? "bg-amber-500" : e.area === "signin" ? "bg-muted-foreground/50" : "bg-primary")} />
-                  <Mono className="text-muted-foreground max-sm:hidden">{stamp(e.at)}</Mono>
-                  <Mono className="rounded-md bg-muted px-1.5 py-0.5 text-center tracking-[0.12em] max-sm:hidden">{e.area ? AREA_TAG[e.area] : "OTHER"}</Mono>
-                  <span className="min-w-0">
-                    <span className="block truncate text-[13.5px]"><b className="font-semibold">{e.actor}</b> {e.text}{e.subject ? <> · <span className="font-medium">{e.subject}</span></> : null}</span>
-                    <Mono className="text-muted-foreground">{e.action}{e.ip ? ` · ${e.ip}` : ""}<span className="sm:hidden"> · {ago(e.at)}</span></Mono>
-                  </span>
-                  <ChevronRight className={cn("size-4 text-muted-foreground transition-transform", open === e.id && "rotate-90")} />
-                </button>
-                {open === e.id && (
-                  <div className="grid gap-2 border-t bg-muted/20 px-5 py-3 sm:pl-[160px]">
-                    {e.risky && <p className="text-xs font-medium text-amber-700 dark:text-amber-400">Risky change: access, prices, refunds or settings.</p>}
-                    <Changes before={e.before} after={e.after} />
-                    {e.subjectHref && <Link href={e.subjectHref} className="text-xs font-medium text-primary hover:underline">Open {e.subject}</Link>}
-                  </div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-        <LoadMore hasMore={list.hasMore} loading={list.loadingMore} onClick={list.loadMore} />
-      </Panel>
-    </div>
+    <>
+      <DataTable
+        id="audit"
+        label="Audit trail"
+        table={table}
+        columns={columns}
+        actions={actions}
+        onRowClick={setOpen}
+        searchPlaceholder="Search person, business or action"
+        filters={
+          <>
+            <FilterSelect value={area} onChange={(v) => setArea(v as AuditArea | "")} label="Area" options={AREAS} />
+            <FilterSelect value={days} onChange={setDays} label="Period" options={[["1", "Last 24 hours"], ["7", "Last 7 days"], ["30", "Last 30 days"], ["90", "Last 90 days"], ["365", "Last year"]]} />
+            <FilterSelect value={risky} onChange={setRisky} label="Risk" options={[["", "All changes"], ["true", "Risky only"]]} />
+          </>
+        }
+        empty="No events. Try a longer period or another area."
+      />
+      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          {open && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{open.actor} {open.text}</DialogTitle>
+                <DialogDescription>
+                  {new Date(open.at).toLocaleString("en-IN")}{open.subject ? ` · ${open.subject}` : ""}{open.ip ? ` · ${open.ip}` : ""} · <Mono>{open.action}</Mono>
+                </DialogDescription>
+              </DialogHeader>
+              {open.risky && <p className="text-xs font-medium text-amber-700 dark:text-amber-400">Risky change: access, prices, refunds or settings.</p>}
+              <Changes before={open.before} after={open.after} />
+              {open.subjectHref && <Link href={open.subjectHref} className="text-sm font-medium text-primary hover:underline">Open {open.subject}</Link>}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
 function SignIns() {
   const { data, error, reload } = useApi<{ data: SignInRow[] }>("/console/security/sign-ins")
+  const [result, setResult] = React.useState("")
+  const rows = React.useMemo(() => data?.data.filter((r) => !result || (result === "ok" ? r.outcome === "success" : r.outcome !== "success")) ?? null, [data, result])
+  const table = useClientTable(rows, { person: (r) => r.person, device: (r) => r.device, ip: (r) => r.ip ?? "", at: (r) => r.at, outcome: (r) => r.outcome })
   if (error) return <Failed error={error} onRetry={reload} />
+  const columns: Column<SignInRow>[] = [
+    { key: "at", header: "When", always: true, sortable: true, cell: (r) => <Mono className="text-muted-foreground">{stamp(r.at)}</Mono> },
+    { key: "person", header: "Person", sortable: true, cell: (r) => <span className="font-medium">{r.person}</span> },
+    { key: "outcome", header: "Result", sortable: true, cell: (r) => { const o = OUTCOME[r.outcome] ?? { label: r.outcome, tone: "grey" as const }; return <Chip tone={o.tone}>{o.label}</Chip> } },
+    { key: "device", header: "Device", cell: (r) => <span className="text-muted-foreground">{r.device}</span> },
+    { key: "ip", header: "Network", cell: (r) => <Mono className="text-muted-foreground">{r.ip ?? "—"}</Mono> },
+  ]
+  const failed = data?.data.filter((r) => r.outcome !== "success").length ?? 0
   return (
-    <Panel padded={false} title="Sign-ins" description="Console sign-ins in the last 30 days (AHEAD team, sales and vendors).">
-      {!data ? (
-        <Loading rows={5} className="p-5" />
-      ) : !data.data.length ? (
-        <p className="px-5 pb-5 text-sm text-muted-foreground">No sign-ins yet.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs whitespace-nowrap text-muted-foreground">
-                <th className="px-5 py-2.5 font-medium">When</th>
-                <th className="px-3 py-2.5 font-medium">Person</th>
-                <th className="px-3 py-2.5 font-medium">Result</th>
-                <th className="px-3 py-2.5 font-medium">Device</th>
-                <th className="px-5 py-2.5 font-medium">Network</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.data.map((r) => {
-                const o = OUTCOME[r.outcome] ?? { label: r.outcome, tone: "grey" as const }
-                return (
-                  <tr key={r.id} className="border-b last:border-0">
-                    <td className="px-5 py-2.5 whitespace-nowrap"><Mono className="text-muted-foreground">{stamp(r.at)}</Mono></td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">{r.person}</td>
-                    <td className="px-3 py-2.5"><Chip tone={o.tone}>{o.label}</Chip></td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-muted-foreground">{r.device}</td>
-                    <td className="px-5 py-2.5"><Mono className="text-muted-foreground">{r.ip ?? "—"}</Mono></td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Panel>
+    <DataTable
+      id="signins"
+      label="Sign-ins"
+      table={table}
+      columns={columns}
+      searchFields={[{ key: "person", label: "Person" }, { key: "device", label: "Device" }, { key: "ip", label: "Network" }]}
+      summary={data && <><Count tone="green" n={data.data.length - failed} label="Signed in" /><Count tone="red" n={failed} label="Failed" /></>}
+      filters={<FilterSelect value={result} onChange={setResult} label="Result" options={[["", "Any result"], ["ok", "Signed in"], ["failed", "Failed"]]} />}
+      empty="No sign-ins in the last 30 days."
+    />
   )
 }
 
 function Sessions() {
   const { data, error, reload } = useApi<{ data: SessionRow[] }>("/console/security/sessions")
   const [revoke, setRevoke] = React.useState<SessionRow | null>(null)
+  const table = useClientTable(data?.data, { person: (s) => s.person, email: (s) => s.email, role: (s) => s.role, device: (s) => s.device, since: (s) => s.since })
   if (error) return <Failed error={error} onRetry={reload} />
+  const columns: Column<SessionRow>[] = [
+    { key: "person", header: "Person", always: true, sortable: true, cell: (s) => <span className="font-medium">{s.person} {s.current && <span className="text-xs font-normal text-muted-foreground">(this session)</span>}</span> },
+    { key: "email", header: "Email", sortable: true, cell: (s) => s.email },
+    { key: "role", header: "Role", sortable: true, cell: (s) => <Chip tone="blue">{s.role}</Chip> },
+    { key: "device", header: "Device", cell: (s) => <span className="text-muted-foreground">{s.device}</span> },
+    { key: "ip", header: "Network", cell: (s) => <Mono className="text-muted-foreground">{s.ip ?? "—"}</Mono> },
+    { key: "since", header: "Signed in", sortable: true, cell: (s) => <span className="text-muted-foreground">{ago(s.since)}</span> },
+  ]
+  const actions = (s: SessionRow): RowAction[] => [{ label: "Sign out", icon: LogOut, danger: true, onClick: () => setRevoke(s), hidden: s.current }]
   return (
-    <Panel padded={false} title="Open Console sessions" description="Everyone signed in to the Console right now. Signing someone out ends that session on every device it was copied to.">
-      {!data ? (
-        <Loading rows={4} className="p-5" />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs whitespace-nowrap text-muted-foreground">
-                <th className="px-5 py-2.5 font-medium">Person</th>
-                <th className="px-3 py-2.5 font-medium">Role</th>
-                <th className="px-3 py-2.5 font-medium">Device</th>
-                <th className="px-3 py-2.5 font-medium">Since</th>
-                <th className="px-5 py-2.5" />
-              </tr>
-            </thead>
-            <tbody>
-              {data.data.map((s) => (
-                <tr key={s.id} className="border-b last:border-0">
-                  <td className="px-5 py-2.5">
-                    <div className="font-medium">{s.person} {s.current && <span className="text-xs font-normal text-muted-foreground">(this session)</span>}</div>
-                    <div className="text-xs text-muted-foreground">{s.email}</div>
-                  </td>
-                  <td className="px-3 py-2.5 whitespace-nowrap">{s.role}</td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-muted-foreground">{s.device}<Mono className="block">{s.ip ?? ""}</Mono></td>
-                  <td className="px-3 py-2.5 whitespace-nowrap text-muted-foreground">{ago(s.since)}</td>
-                  <td className="px-5 py-2.5 text-right">{!s.current && <Button size="sm" variant="outline" onClick={() => setRevoke(s)}>Sign out</Button>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+    <>
+      <DataTable
+        id="sessions"
+        label="Open Console sessions"
+        table={table}
+        columns={columns}
+        actions={actions}
+        searchFields={[{ key: "person", label: "Person" }, { key: "email", label: "Email" }, { key: "role", label: "Role" }]}
+        summary={<span className="text-muted-foreground">Signing someone out ends that session on every device it was copied to.</span>}
+      />
       <ConfirmDialog
         open={!!revoke}
         onOpenChange={(o) => !o && setRevoke(null)}
@@ -278,7 +247,7 @@ function Sessions() {
           setRevoke(null)
         }}
       />
-    </Panel>
+    </>
   )
 }
 

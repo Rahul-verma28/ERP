@@ -12,7 +12,7 @@ import { SETTINGS, SETTING_KEYS, type SettingKey } from '../../contracts/setting
 import { listSettings, resetSetting, setSetting } from '../settings/service';
 import { changeAcquisition } from '../tenancy/acquisition';
 import { consoleAccess } from './service';
-import { assertClientInScope, clientDetail, extendClient, listClients, vendorView } from './clients';
+import { assertClientInScope, CLIENT_SORTS, clientDetail, extendClient, listClients, vendorView } from './clients';
 import { catalogAdmin, createCoupon, endCoupon, setPrice, updatePlan } from './catalogAdmin';
 import { addMember, consoleRoles, listMembers, resendMemberLink, updateMember } from './members';
 import { sendAccessLink } from '../identity/accessLinks';
@@ -76,6 +76,7 @@ const ClientQuery = ListQuery.extend({
   onboarded: z.enum(['website', 'team', 'sales', 'vendor', 'partner']).optional(),
   partners: z.enum(['exclude', 'include', 'only']).optional(),
   partnerId: z.string().uuid().optional(),
+  sort: z.enum(CLIENT_SORTS).optional(),
 });
 
 router.get('/tenants', requirePlatformPermission('platform.tenant.view'), validate(ClientQuery, 'query'), consoleTx(async (req, res) => {
@@ -387,10 +388,10 @@ router.get('/billing/summary', requirePlatformPermission('platform.payment.view'
   res.json(await billing.billingSummary(ctx(req)));
 }));
 router.get('/billing/payments', requirePlatformPermission('platform.payment.view'), validate(ListQuery, 'query'), consoleTx(async (req, res) => {
-  res.json(await billing.listPayments(ctx(req), req.query as unknown as { limit: number; cursor?: string }));
+  res.json(await billing.listPayments(ctx(req), req.query as unknown as ListQuery));
 }));
 router.get('/billing/invoices', requirePlatformPermission('platform.payment.view'), validate(ListQuery, 'query'), consoleTx(async (req, res) => {
-  res.json(await billing.listInvoices(ctx(req), req.query as unknown as { limit: number; cursor?: string }));
+  res.json(await billing.listInvoices(ctx(req), req.query as unknown as ListQuery));
 }));
 router.get('/billing/renewals', requirePlatformPermission('platform.payment.view'), consoleTx(async (req, res) => {
   res.json({ data: await billing.listRenewals(ctx(req)) });

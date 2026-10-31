@@ -72,7 +72,7 @@ export async function listConsoleRoles() {
   return roles.map((r) => ({
     id: r.id, key: r.key, name: r.name, description: r.description,
     builtIn: r.isPredefined, customized: !!r.customizedAt, locked: r.key === 'super_admin',
-    permissions: r._count.permissions, members: r._count.platformMembers,
+    permissions: r._count.permissions, members: r._count.platformMembers, createdAt: r.createdAt, changedAt: r.customizedAt,
   }));
 }
 

@@ -4,11 +4,13 @@ import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import { Check, CircleDashed, Clock, CreditCard, FileText, Megaphone, MessageSquare, Plus, Sparkles, UserRound } from "lucide-react"
+import { Count, DataTable, FilterSelect, IdCell, type Column } from "@/components/console/data-table"
+import { useClientTable } from "@/lib/use-table"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { FormError } from "@/components/form"
-import { Chip, Empty, Facts, Failed, Loading, OnboardedChip, Panel, ProgressSteps, Row, ago, money, relDays, tomorrowAt11, type Tone } from "@/components/console/kit"
+import { Chip, Facts, Failed, Loading, Panel, ProgressSteps, Row, ago, money, relDays, tomorrowAt11, type Tone } from "@/components/console/kit"
 import { SendNewLink } from "@/components/console/login-link"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -39,18 +41,29 @@ export function PlanAndPayments({ client }: { client: ClientDetail }) {
         <div className="mt-5">
           <h3 className="mb-1 text-xs font-medium text-muted-foreground">Orders</h3>
           {client.orders.length ? (
-            <div className="divide-y rounded-xl border">
-              {client.orders.map((o) => (
-                <Link key={o.id} href={`/console/payments/${o.id}`} className="flex items-center gap-3 px-3 py-2.5 text-sm hover:bg-muted/50">
-                  <CreditCard className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1">
-                    <span className="font-medium tabular-nums">{money(o.totalPaise)}</span>
-                    <span className="text-muted-foreground"> · {o.cycle} · {formatDate(o.createdAt)}</span>
-                    {o.invoice && <span className="ml-2 font-mono text-xs text-muted-foreground">{o.invoice.number}</span>}
-                  </span>
-                  <Chip tone={ORDER_TONE[o.status]}>{ORDER_STATUS_LABEL[o.status]}</Chip>
-                </Link>
-              ))}
+            <div className="overflow-x-auto rounded-xl border">
+              <table className="w-full min-w-max text-sm">
+                <thead className="bg-muted/60 text-left text-xs text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Order</th>
+                    <th className="px-3 py-2 font-medium">Status</th>
+                    <th className="px-3 py-2 text-right font-medium">Total</th>
+                    <th className="px-3 py-2 font-medium">Created</th>
+                    <th className="px-3 py-2 font-medium">Invoice</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {client.orders.map((o) => (
+                    <tr key={o.id} className="border-t">
+                      <td className="px-3 py-2"><IdCell id={o.id} href={`/console/payments/${o.id}`} /> <span className="text-xs text-muted-foreground">{o.cycle}</span></td>
+                      <td className="px-3 py-2"><Chip tone={ORDER_TONE[o.status]}>{ORDER_STATUS_LABEL[o.status]}</Chip></td>
+                      <td className="px-3 py-2 text-right font-medium tabular-nums">{money(o.totalPaise)}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">{formatDate(o.paidAt ?? o.createdAt)}</td>
+                      <td className="px-3 py-2">{o.invoice ? <Link href={`/console/invoices/${o.invoice.id}`} className="font-mono text-xs text-primary hover:underline">{o.invoice.number}</Link> : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
             <p className="text-sm text-muted-foreground">No orders yet.</p>
@@ -105,16 +118,6 @@ export function GettingStarted({ client, canResend }: { client: ClientDetail; ca
           <SendNewLink path={`/console/tenants/${client.id}/login-link`} mobile={client.owner?.mobile} label={p.linkSentAt ? "Send new link" : "Send login link"} />
         </div>
       )}
-      <dl className="mt-4 grid gap-3 border-t pt-4 text-sm">
-        <div className="grid min-w-0 gap-1">
-          <dt className="text-muted-foreground">Onboarded by</dt>
-          <dd className="min-w-0"><OnboardedChip by={client.onboardedBy} /></dd>
-        </div>
-        <div className="grid gap-1">
-          <dt className="text-muted-foreground">Last active</dt>
-          <dd>{p.lastActiveAt ? ago(p.lastActiveAt) : "Never"}</dd>
-        </div>
-      </dl>
     </Panel>
   )
 }
@@ -178,26 +181,6 @@ export function ActivityAndNotes({ tenantId }: { tenantId: string }) {
             )
           })}
         </ol>
-      )}
-    </Panel>
-  )
-}
-
-export function OwnerPanel({ client, showContact }: { client: ClientDetail; showContact: boolean }) {
-  const o = client.owner
-  return (
-    <Panel title="Owner">
-      {o ? (
-        <Facts
-          className="sm:grid-cols-1"
-          items={[
-            { label: "Name", value: o.name },
-            ...(showContact ? [{ label: "Email", value: o.email }, { label: "Mobile", value: o.mobile }] : []),
-            { label: "Last signed in", value: o.lastLoginAt ? ago(o.lastLoginAt) : "Not yet" },
-          ]}
-        />
-      ) : (
-        <p className="text-sm text-muted-foreground">—</p>
       )}
     </Panel>
   )
@@ -339,22 +322,52 @@ export function SetupAndUsage({ tenantId }: { tenantId: string }) {
 
 export function UsersPanel({ tenantId }: { tenantId: string }) {
   const { data, error, reload } = useApi<{ data: ClientUser[] }>(`/console/tenants/${tenantId}/users`)
+  const [status, setStatus] = React.useState("")
+  const rows = React.useMemo(() => data?.data.filter((u) => !status || (status === "active" ? u.status === "active" : u.status !== "active")) ?? null, [data, status])
+  const table = useClientTable(rows, { name: (u) => u.name, role: (u) => u.role, status: (u) => u.status, lastSignIn: (u) => u.lastSignIn ?? "" })
   if (error) return <Failed error={error} onRetry={reload} />
+  const columns: Column<ClientUser>[] = [
+    { key: "id", header: "User ID", hidden: true, cell: (u) => <IdCell id={u.id} /> },
+    { key: "name", header: "Name", always: true, sortable: true, cell: (u) => <span className="font-medium">{u.name}</span> },
+    { key: "role", header: "Role", sortable: true, cell: (u) => <Chip tone="blue">{u.role}</Chip> },
+    { key: "twoStep", header: "Two-step", cell: (u) => (u.twoStep ? <Chip tone="green">On</Chip> : <Chip tone="grey">Off</Chip>) },
+    { key: "lastSignIn", header: "Last signed in", sortable: true, cell: (u) => <span className="text-muted-foreground">{u.lastSignIn ? ago(u.lastSignIn) : "Not yet"}</span> },
+    { key: "status", header: "Status", sortable: true, cell: (u) => (u.status === "active" ? <Chip tone="green">Active</Chip> : <Chip tone="grey">{u.status.replace(/_/g, " ")}</Chip>) },
+  ]
+  const active = data?.data.filter((u) => u.status === "active").length ?? 0
   return (
-    <Panel title={`Users${data ? ` · ${data.data.length}` : ""}`} description="Names and roles only" padded={false}>
-      <div className="px-3 pb-3">
-        {!data ? (
-          <Loading rows={2} className="px-2" />
-        ) : data.data.length ? (
-          <div className="divide-y">
-            {data.data.map((u) => (
-              <Row key={u.id} icon={UserRound} tone="grey" title={u.name} detail={`${u.role}${u.status !== "active" ? ` · ${u.status}` : ""} · ${u.lastSignIn ? `signed in ${ago(u.lastSignIn)}` : "not signed in yet"}`} />
-            ))}
-          </div>
-        ) : (
-          <Empty icon={UserRound} title="No users yet" />
-        )}
-      </div>
+    <DataTable
+      id="business-users"
+      label="Users"
+      table={table}
+      columns={columns}
+      searchFields={[{ key: "name", label: "Name" }, { key: "role", label: "Role" }]}
+      summary={data && <><Count tone="green" n={active} label="Active" /><Count tone="grey" n={data.data.length - active} label="Other" /></>}
+      filters={<FilterSelect value={status} onChange={setStatus} label="Status" options={[["", "Any status"], ["active", "Active"], ["other", "Invited or off"]]} />}
+      empty="No users yet. Names and roles only; the Console never shows the business's own records."
+    />
+  )
+}
+
+/** The latest few events on the Overview, with a link to the full activity. */
+export function RecentActivity({ tenantId, onAll }: { tenantId: string; onAll: () => void }) {
+  const { data, error, reload } = useApi<{ data: TimelineEvent[] }>(`/console/tenants/${tenantId}/timeline`)
+  return (
+    <Panel title="Recent activity" action={<button type="button" onClick={onAll} className="text-sm font-medium text-primary hover:underline">All activity & notes</button>}>
+      {error ? (
+        <Failed error={error} onRetry={reload} />
+      ) : !data ? (
+        <Loading rows={3} />
+      ) : !data.data.length ? (
+        <p className="text-sm text-muted-foreground">Nothing yet.</p>
+      ) : (
+        <ol className="grid gap-1">
+          {data.data.slice(0, 6).map((ev) => {
+            const k = KIND_ICON[ev.kind]
+            return <li key={ev.id}><Row icon={k.icon} tone={k.tone} title={<span className="whitespace-normal">{ev.text}</span>} detail={`${ev.who ? `${ev.who} · ` : ""}${formatDateTime(ev.at)}`} /></li>
+          })}
+        </ol>
+      )}
     </Panel>
   )
 }
