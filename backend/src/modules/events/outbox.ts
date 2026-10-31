@@ -61,7 +61,7 @@ export function consumer(name: string, type: EventType, handler: Handler, opts: 
   consumers.set(type, list);
 }
 
-const MAX_ATTEMPTS = 8;
+export const MAX_ATTEMPTS = 8;
 
 /** Claim a batch of unpublished events and dispatch them. Safe with several workers. */
 export async function relayOnce(batchSize = 100): Promise<number> {
@@ -86,6 +86,8 @@ export async function relayOnce(batchSize = 100): Promise<number> {
     };
     try {
       for (const c of consumers.get(evt.type) ?? []) await c.handler(evt);
+      // A later attempt worked: the earlier error is no longer a problem
+      if (row.attempts > 1) await prisma.outboxEvent.update({ where: { id: evt.id }, data: { lastError: null } });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error(`[outbox] ${evt.type} ${evt.id} failed (attempt ${row.attempts}):`, message);

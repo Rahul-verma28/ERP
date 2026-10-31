@@ -1,6 +1,6 @@
 "use client"
 
-import { Blocks, Building2, ClipboardCheck, CreditCard, Handshake, KeyRound, LayoutDashboard, Link2, ReceiptText, Settings2, ShieldCheck, Tags, Users, type LucideIcon } from "lucide-react"
+import { Activity, Blocks, BarChart3, Building2, ClipboardCheck, CreditCard, Handshake, KeyRound, LayoutDashboard, Link2, ReceiptText, Settings2, ShieldCheck, Tags, Users, type LucideIcon } from "lucide-react"
 import { useAuth } from "@/lib/auth"
 
 // The Console menu per role (blueprint Phase A). Groups and items appear only when the role
@@ -36,6 +36,7 @@ export function useNav(): { groups: NavGroup[]; settings: NavItem | null } {
           ],
         },
         { label: "People", items: [{ href: "/partner/team", label: "Team", icon: Users, show: canConsole("platform.member.view") }] },
+        { label: "Insights", items: [{ href: "/partner/analytics", label: "Analytics", icon: BarChart3, show: true }] },
       ]),
       settings: null,
     }
@@ -53,6 +54,7 @@ export function useNav(): { groups: NavGroup[]; settings: NavItem | null } {
             { href: "/console/referral", label: "My link & code", icon: Link2, show: true },
           ],
         },
+        { label: "Insights", items: [{ href: "/console/analytics", label: "My numbers", icon: BarChart3, show: true }] },
       ]),
       settings: null,
     }
@@ -82,6 +84,13 @@ export function useNav(): { groups: NavGroup[]; settings: NavItem | null } {
           { href: "/console/team", label: "Team", icon: Users, show: canConsole("platform.member.view") },
           { href: "/console/roles", label: "Roles & permissions", icon: KeyRound, show: canConsole("platform.member.view") },
           { href: "/console/security", label: "Security & audit", icon: ShieldCheck, show: canConsole("platform.audit.view") },
+        ],
+      },
+      {
+        label: "Insights",
+        items: [
+          { href: "/console/analytics", label: "Analytics", icon: BarChart3, show: true },
+          { href: "/console/health", label: "System health", icon: Activity, show: canConsole("platform.tenant.view") },
         ],
       },
     ]),

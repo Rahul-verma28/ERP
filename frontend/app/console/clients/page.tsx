@@ -85,7 +85,7 @@ function ClientsList() {
   const [search, setSearch] = React.useState("")
   const [status, setStatus] = React.useState(params.get("status") ?? "")
   const [planKey, setPlanKey] = React.useState("")
-  const [onboarded, setOnboarded] = React.useState("")
+  const [onboarded, setOnboarded] = React.useState(params.get("onboarded") ?? "")
   const [industryKey, setIndustryKey] = React.useState("")
   const q = useDebounced(search)
   const list = useList<ClientRow>("/console/tenants", { search: q, status, planKey, onboarded, industryKey })

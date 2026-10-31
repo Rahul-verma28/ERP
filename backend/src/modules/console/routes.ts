@@ -21,6 +21,8 @@ import * as access from './access';
 import * as product from './product';
 import * as billing from './billing';
 import * as security from './security';
+import * as health from './health';
+import { analytics } from './analytics';
 import { accountHealth, consoleHome, type Audience } from './insights';
 import { clientSummary, clientTimeline, clientUsers } from './client360';
 import { addNote, closeFollowup, createFollowup, createProspect, FollowupInput, listFollowups, listNotes, listProspects, NoteInput, ProspectInput, ProspectPatch, STAGES, updateProspect } from './sales';
@@ -565,6 +567,52 @@ const CloseFollowup = z.object({ done: z.boolean().optional(), snoozeDays: z.num
 
 router.post('/followups/:id/close', requirePlatformPermission('platform.prospect.edit'), validate(IdParam, 'params'), validate(CloseFollowup), consoleTx(async (req, res) => {
   res.json(await closeFollowup(ctx(req), String(req.params.id), req.body));
+}));
+
+// ── Insights (Phase F): Analytics for every role, System health for the AHEAD team ──
+const AnalyticsQuery = z.object({ months: z.coerce.number().int().refine((m) => [3, 6, 12].includes(m), 'Choose 3, 6 or 12 months').default(6) });
+
+router.get('/analytics', requirePlatformPermission('platform.dashboard.view'), validate(AnalyticsQuery, 'query'), consoleTx(async (req, res) => {
+  const access = await consoleAccess(ctx(req).userId);
+  const p = (access?.permissions ?? {}) as Record<string, string>;
+  const months = (req.query as unknown as z.infer<typeof AnalyticsQuery>).months;
+  res.json(await cache.getOrSet(`console:analytics:${ctx(req).userId}:${months}`, () => analytics(ctx(req), (access?.audience ?? 'team') as Audience, { income: !!p['platform.revenue.view'] }, months), 60_000));
+}));
+
+/** Admin and Staff (the AHEAD team with every business in scope). */
+async function teamOnly(req: Request) {
+  const access = await consoleAccess(ctx(req).userId);
+  if (access?.audience !== 'team' || ctx(req).scope !== 'all') throw new AppError('PERMISSION_DENIED', 'System health is for the AHEAD team.');
+}
+
+router.get('/health', requirePlatformPermission('platform.tenant.view'), async (req, res) => {
+  await teamOnly(req);
+  res.json(await health.healthOverview());
+});
+
+const JobParam = z.object({ key: z.string().max(40) });
+
+router.post('/health/jobs/:key/run', requirePlatformPermission('platform.setting.edit'), validate(JobParam, 'params'), async (req, res) => {
+  res.json(await health.runJobNow(ctx(req), String(req.params.key)));
+});
+
+router.post('/health/events/retry-all', requirePlatformPermission('platform.setting.edit'), consoleTx(async (_req, res) => {
+  res.json({ retried: await health.retryAllEvents() });
+}));
+
+router.post('/health/events/:id/retry', requirePlatformPermission('platform.setting.edit'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  await health.retryEvent(String(req.params.id));
+  res.status(204).end();
+}));
+
+router.post('/health/events/:id/dismiss', requirePlatformPermission('platform.setting.edit'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  await health.dismissEvent(String(req.params.id));
+  res.status(204).end();
+}));
+
+router.post('/health/webhooks/:id/resolve', requirePlatformPermission('platform.setting.edit'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
+  await health.resolveWebhook(ctx(req), String(req.params.id));
+  res.status(204).end();
 }));
 
 async function notVendor(req: Request) {

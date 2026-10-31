@@ -531,3 +531,25 @@ export interface RenewalRow { tenantId: string; business: string; status: Tenant
 
 // Console › Settings › Appearance
 export interface Branding { brandColor: string; font: string; theme: "light" | "dark" | "system"; density: "comfortable" | "compact" }
+
+// ── Phase F: Analytics and System health ──
+export interface AnalyticsMonth { month: string; label: string; newBusinesses: number; firstPayments: number; receivedPaise: number | null; activeBusinesses: number; invoices: number }
+export interface Analytics {
+  months: number
+  definitions: Record<"live" | "paying" | "conversion" | "active" | "lost", string>
+  kpis: { live: number; started: number; paying: number; trials: number; conversionPercent: number | null; converted: number; receivedPaise: number | null; lost: number }
+  series: AnalyticsMonth[]
+  sources: { key: "direct" | "vendor" | "sales" | "partner"; count: number }[]
+  revenueByPlan: { name: string; paise: number }[] | null
+  modules: { key: string; name: string; businesses: number; percent: number }[]
+  mine: { trialsEnding: { id: string; name: string; trialEndsAt: string }[]; linkSignups: number; discounts: { orders: number; averagePercent: number; approved: number } } | null
+  perBusiness: { id: string; name: string; status: TenantStatus; users: number; invoicesThisMonth: number; lastSignIn: string | null }[] | null
+}
+export type JobStatus = "ok" | "failed" | "late" | "running"
+export interface SystemHealth {
+  summary: { jobsFailing: number; jobsLate: number; eventsWaiting: number; eventsRetrying: number; eventsFailed: number; queueStuck: boolean; webhooks: number; businessesWithErrors: number }
+  jobs: { key: string; label: string; text: string; status: JobStatus; lastRunAt: string | null; lastOkAt: string | null; lastError: string | null; runs: number; failures: number }[]
+  failedEvents: { id: string; what: string; type: string; tenantId: string | null; business: string | null; attempts: number; error: string | null; at: string }[]
+  webhooks: { id: string; gateway: string; type: string; eventId: string; error: string | null; at: string }[]
+  businesses: { tenantId: string; business: string; errors: number }[]
+}

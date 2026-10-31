@@ -584,8 +584,24 @@ model WebhookEvent {
   receivedAt  DateTime  @default(now()) @map("received_at") @db.Timestamptz
   processedAt DateTime? @map("processed_at") @db.Timestamptz
   error       String?
+  /// Console › System health: a person dealt with the error
+  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz
+  resolvedBy  String?   @map("resolved_by") @db.Uuid
 
   @@map("webhook_events")
+}
+
+/// Platform table: last run of each scheduled job (Console › System health)
+model JobRun {
+  name           String    @id
+  lastStartedAt  DateTime? @map("last_started_at") @db.Timestamptz
+  lastFinishedAt DateTime? @map("last_finished_at") @db.Timestamptz
+  lastOkAt       DateTime? @map("last_ok_at") @db.Timestamptz
+  lastError      String?   @map("last_error")
+  runs           Int       @default(0)
+  failures       Int       @default(0)
+
+  @@map("job_runs")
 }
 
 /// Platform table: AHEAD's own document number series per financial year.
