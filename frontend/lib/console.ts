@@ -553,3 +553,11 @@ export interface SystemHealth {
   webhooks: { id: string; gateway: string; type: string; eventId: string; error: string | null; at: string }[]
   businesses: { tenantId: string; business: string; errors: number }[]
 }
+
+// ── Phase G: applications and saved views ──
+export interface ApplicationRow {
+  id: string; kind: "vendor" | "partner"; name: string; company: string | null; email: string; mobile: string; city: string | null; stateCode: string | null; gstin: string | null
+  message: string | null; status: "new" | "approved" | "rejected"; decidedBy: string | null; decidedAt: string | null; decisionNote: string | null; resultId: string | null; createdAt: string
+  alreadyInConsole: boolean; alreadyPartner: boolean
+}
+export interface SavedView { id: string; name: string; filters: { search?: string; status?: string; planKey?: string; onboarded?: string; industryKey?: string } }

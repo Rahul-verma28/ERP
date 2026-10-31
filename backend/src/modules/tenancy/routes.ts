@@ -5,6 +5,7 @@ import { notFound } from '../../kernel/errors';
 import { validate } from '../../middleware/request';
 import { publicRoute, requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { lookupLimiter, publicLimiter } from '../../middleware/rateLimit';
+import { ApplicationInput, submitApplication } from '../console/applications';
 import { PERMISSIONS } from '../../contracts/permissions';
 import { DEFAULT_TERMS, TEMPLATES, templateByKey } from '../../contracts/templates';
 import { getEntitlements } from '../subscription/entitlements';
@@ -61,6 +62,11 @@ router.get(
 );
 
 // Signup step 4: live check of a referral/coupon code (what it gives, never who owns it)
+/** Website: apply to become an AHEAD vendor or partner (an Admin decides in the Console) */
+router.post('/public/applications', publicRoute, lookupLimiter, validate(ApplicationInput), async (req, res) => {
+  res.status(201).json(await withPlatform(() => submitApplication(req.body)));
+});
+
 router.get('/public/coupons/:code', publicRoute, lookupLimiter, validate(z.object({ code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{2,20}$/, 'Use letters and digits') }), 'params'), async (req, res) => {
   const code = String(req.params.code);
   const c = await withPlatform(() => db().coupon.findUnique({ where: { code } }));

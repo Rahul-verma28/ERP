@@ -591,6 +591,31 @@ model WebhookEvent {
   @@map("webhook_events")
 }
 
+/// Platform table: someone applied on the website to be a vendor or partner (Console › Applications)
+model ConsoleApplication {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  kind         String // vendor | partner
+  name         String
+  company      String?
+  email        String
+  mobile       String
+  city         String?
+  stateCode    String?   @map("state_code") @db.Char(2)
+  gstin        String?   @db.VarChar(15)
+  message      String?
+  status       String    @default("new") // new | approved | rejected
+  decidedBy    String?   @map("decided_by") @db.Uuid
+  decidedAt    DateTime? @map("decided_at") @db.Timestamptz
+  decisionNote String?   @map("decision_note")
+  /// The partner or Console member created on approval
+  resultId     String?   @map("result_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([status, createdAt])
+  @@index([email])
+  @@map("console_applications")
+}
+
 /// Platform table: last run of each scheduled job (Console › System health)
 model JobRun {
   name           String    @id

@@ -14,6 +14,8 @@ import { useDebounced, useList } from "@/lib/use-list"
 import { downloadCsv } from "@/lib/csv"
 import { formatDate } from "@/lib/format"
 import { MODULE_SHORT, type Catalog, type ClientRow } from "@/lib/console"
+import { BulkBar } from "@/components/console/bulk-actions"
+import { SavedViews } from "@/components/console/saved-views"
 import { cn } from "@/lib/utils"
 import { useConsoleBase } from "@/lib/console-base"
 
@@ -93,11 +95,24 @@ function ClientsList() {
   const industries = useApi<{ data: { key: string; name: string }[] }>("/public/industries")
   const canAdd = canConsole("platform.tenant.create") && me?.console?.partner?.status !== "paused"
   const filtered = !!(q || status || planKey || onboarded || industryKey)
+  // Bulk actions (Phase G): ticked rows among those loaded
+  const [picked, setPicked] = React.useState<Set<string>>(new Set())
+  const selected = list.rows.filter((c) => picked.has(c.id))
+  const allPicked = list.rows.length > 0 && selected.length === list.rows.length
+  const toggle = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  function applyView(f: { search?: string; status?: string; planKey?: string; onboarded?: string; industryKey?: string }) {
+    setSearch(f.search ?? "")
+    setStatus(f.status ?? "")
+    setPlanKey(f.planKey ?? "")
+    setOnboarded(f.onboarded ?? "")
+    setIndustryKey(f.industryKey ?? "")
+    setPicked(new Set())
+  }
 
-  function exportCsv() {
+  function exportCsv(rows = list.rows) {
     downloadCsv("businesses.csv", [
       ["Business", "Industry", "Owner", "Mobile", "Email", "Status", "Plan", "Cycle", "Modules", "Users", "User limit", "Per month (₹)", "Onboarded by", "Created", "Last active"],
-      ...list.rows.map((c) => [
+      ...rows.map((c) => [
         c.name, industryLabel(c.industryKey), c.owner?.name ?? "", c.owner?.mobile ?? "", c.owner?.email ?? "", c.progress && !c.progress.loggedIn ? "Not logged in" : c.status,
         planText(c), c.cycle ?? "", c.modules.map((k) => MODULE_SHORT[k] ?? k).join(" "), c.activeUsers, c.userLimit ?? "", c.mrrPaise ? c.mrrPaise / 100 : "",
         c.onboardedBy ? [c.onboardedBy.kind, c.onboardedBy.name].filter(Boolean).join(" · ") : "", c.createdAt.slice(0, 10), c.progress?.lastActiveAt?.slice(0, 10) ?? "",
@@ -113,7 +128,7 @@ function ClientsList() {
       actions={
         <>
           {team && list.rows.length > 0 && (
-            <Button variant="outline" onClick={exportCsv}>
+            <Button variant="outline" onClick={() => exportCsv()}>
               <Download /> Export
             </Button>
           )}
@@ -126,6 +141,7 @@ function ClientsList() {
       }
     >
       <div className="flex flex-col gap-3">
+        <SavedViews current={{ search: q, status, planKey, onboarded, industryKey }} onApply={applyView} />
         <div className="flex gap-1 overflow-x-auto rounded-xl border bg-card p-1" role="tablist" aria-label="Status">
           {TABS.map((t) => (
             <button
@@ -164,6 +180,10 @@ function ClientsList() {
         </div>
       </div>
 
+      {selected.length > 0 && (
+        <BulkBar rows={selected} canExtend={canConsole("platform.grace.create")} canExport={team} onExport={() => exportCsv(selected)} onClear={() => setPicked(new Set())} onDone={list.reload} />
+      )}
+
       <Panel padded={false}>
         {list.error ? (
           <div className="p-5">
@@ -189,7 +209,10 @@ function ClientsList() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-left text-xs whitespace-nowrap text-muted-foreground">
-                  <th className="px-5 py-3 font-medium">Business</th>
+                  <th className="w-10 py-3 pr-0 pl-5">
+                    <input type="checkbox" checked={allPicked} ref={(el) => { if (el) el.indeterminate = selected.length > 0 && !allPicked }} onChange={() => setPicked(allPicked ? new Set() : new Set(list.rows.map((c) => c.id)))} aria-label="Select all shown" className="size-4 accent-[var(--primary)]" />
+                  </th>
+                  <th className="px-3 py-3 font-medium">Business</th>
                   <th className="px-3 py-3 font-medium">Owner</th>
                   <th className="px-3 py-3 font-medium">Status</th>
                   <th className="px-3 py-3 font-medium">Plan</th>
@@ -203,8 +226,11 @@ function ClientsList() {
               </thead>
               <tbody>
                 {list.rows.map((c) => (
-                  <tr key={c.id} onClick={() => router.push(`${base}/clients/${c.id}`)} className="cursor-pointer border-b align-top last:border-0 hover:bg-muted/50">
-                    <td className="px-5 py-3">
+                  <tr key={c.id} onClick={() => router.push(`${base}/clients/${c.id}`)} className={cn("cursor-pointer border-b align-top last:border-0 hover:bg-muted/50", picked.has(c.id) && "bg-accent/40")}>
+                    <td className="py-3 pr-0 pl-5" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={picked.has(c.id)} onChange={() => toggle(c.id)} aria-label={`Select ${c.name}`} className="mt-0.5 size-4 accent-[var(--primary)]" />
+                    </td>
+                    <td className="px-3 py-3">
                       <Link href={`${base}/clients/${c.id}`} className="font-medium whitespace-nowrap hover:underline" onClick={(e) => e.stopPropagation()}>
                         {c.name}
                       </Link>

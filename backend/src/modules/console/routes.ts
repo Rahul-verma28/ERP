@@ -22,6 +22,8 @@ import * as product from './product';
 import * as billing from './billing';
 import * as security from './security';
 import * as health from './health';
+import * as applications from './applications';
+import { listViews, saveViews, ViewsInput } from './views';
 import { analytics } from './analytics';
 import { accountHealth, consoleHome, type Audience } from './insights';
 import { clientSummary, clientTimeline, clientUsers } from './client360';
@@ -613,6 +615,32 @@ router.post('/health/events/:id/dismiss', requirePlatformPermission('platform.se
 router.post('/health/webhooks/:id/resolve', requirePlatformPermission('platform.setting.edit'), validate(IdParam, 'params'), consoleTx(async (req, res) => {
   await health.resolveWebhook(ctx(req), String(req.params.id));
   res.status(204).end();
+}));
+
+// ── Applications from the website (Phase G): Admin decides ──
+router.get('/applications', requirePlatformPermission('platform.partner.create'), validate(z.object({ status: z.enum(['new', 'approved', 'rejected']).default('new') }), 'query'), consoleTx(async (req, res) => {
+  aheadOnly(req);
+  res.json(await applications.listApplications((req.query as { status: 'new' | 'approved' | 'rejected' }).status));
+}));
+
+router.post('/applications/:id/approve', requirePlatformPermission('platform.partner.create'), validate(IdParam, 'params'), validate(applications.ApproveInput), consoleTx(async (req, res) => {
+  aheadOnly(req);
+  res.json(await applications.approveApplication(ctx(req), String(req.params.id), req.body));
+}));
+
+router.post('/applications/:id/reject', requirePlatformPermission('platform.partner.create'), validate(IdParam, 'params'), validate(applications.RejectInput), consoleTx(async (req, res) => {
+  aheadOnly(req);
+  await applications.rejectApplication(ctx(req), String(req.params.id), req.body);
+  res.status(204).end();
+}));
+
+// ── Saved views on the Businesses list (per person) ──
+router.get('/views', requirePlatformPermission('platform.tenant.view'), consoleTx(async (req, res) => {
+  res.json({ data: await listViews(ctx(req).userId) });
+}));
+
+router.put('/views', requirePlatformPermission('platform.tenant.view'), validate(ViewsInput), consoleTx(async (req, res) => {
+  res.json({ data: await saveViews(ctx(req).userId, req.body.views) });
 }));
 
 async function notVendor(req: Request) {

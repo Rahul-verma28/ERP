@@ -113,7 +113,7 @@ export default function AnalyticsPage() {
                     label: SOURCE_LABEL[s.key],
                     value: s.count,
                     percent: data.kpis.started ? Math.round((s.count / data.kpis.started) * 100) : 0,
-                    href: s.key === "direct" ? undefined : `${clients}?onboarded=${s.key}`,
+                    href: s.key === "direct" ? undefined : s.key === "partner" ? `${base}/partners` : `${clients}?onboarded=${s.key}`,
                   }))}
                   empty="No new businesses in this period."
                 />

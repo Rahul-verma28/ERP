@@ -192,7 +192,7 @@ function SiteFooter() {
   const year = new Date().getFullYear()
   const cols = [
     { title: "Product", links: [["Features", "#product"], ["Modules", "#modules"], ["Industries", "#industries"], ["FAQ", "#faq"]] },
-    { title: "Get started", links: [["Start free trial", "/signup"], ["Sign in", "/login"]] },
+    { title: "Get started", links: [["Start free trial", "/signup"], ["Sign in", "/login"], ["Become a partner", "/apply?type=partner"], ["Become a vendor", "/apply"]] },
     {
       title: "Built for",
       links: [["Salons & spas", "#industries"], ["Retail shops", "#industries"], ["Pharmacies", "#industries"], ["Gyms & studios", "#industries"], ["Coaching & schools", "#industries"], ["Service companies", "#industries"]],

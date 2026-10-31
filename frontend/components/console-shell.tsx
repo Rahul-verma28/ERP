@@ -10,6 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { ConsolePalette } from "@/components/console/console-palette"
 import { useNav, type NavItem } from "@/components/console/console-nav"
 import { NotificationsBell } from "@/components/console/notifications-bell"
+import { HelpPanel } from "@/components/console/help-panel"
 import { useAuth } from "@/lib/auth"
 import { initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -170,6 +171,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
           </Button>
           <ConsolePalette />
           <div className="flex-1" />
+          <HelpPanel />
           <NotificationsBell />
           <AccountMenu />
         </header>
