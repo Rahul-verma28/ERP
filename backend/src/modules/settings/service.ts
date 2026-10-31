@@ -36,12 +36,21 @@ export async function getSetting<K extends SettingKey>(key: K): Promise<SettingV
   return resolveSetting(key, stored.get(key)?.value);
 }
 
-/** For the Console settings screen: every definition with its effective value. */
+/** For the Console settings screen: every definition with its effective value and who changed it last. */
 export async function listSettings() {
-  const stored = await loadStored();
+  const [stored, changes] = await Promise.all([
+    loadStored(),
+    prisma.configValue.findMany({ where: { scope: SCOPE }, select: { key: true, updatedAt: true, updatedBy: true } }),
+  ]);
+  const ids = [...new Set(changes.map((c) => c.updatedBy).filter((x): x is string => !!x))];
+  const names = new Map((await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   return SETTING_KEYS.map((key) => {
     const row = stored.get(key);
-    return { key, description: SETTINGS[key].description, default: SETTINGS[key].default, value: resolveSetting(key, row?.value), overridden: !!row, version: row?.version ?? 0 };
+    const change = changes.find((c) => c.key === key);
+    return {
+      key, description: SETTINGS[key].description, default: SETTINGS[key].default, value: resolveSetting(key, row?.value), overridden: !!row, version: row?.version ?? 0,
+      changedAt: change?.updatedAt ?? null, changedBy: change?.updatedBy ? names.get(change.updatedBy) ?? null : null,
+    };
   });
 }
 
@@ -50,7 +59,11 @@ export async function setSetting<K extends SettingKey>(key: K, value: unknown, a
   const definition = SETTINGS[key];
   if (!definition) throw new AppError('VALIDATION_FAILED', 'Unknown setting.', { fields: { key: 'Unknown setting' } });
   const parsed = definition.schema.safeParse(value);
-  if (!parsed.success) throw new AppError('VALIDATION_FAILED', `Invalid value for ${key}.`, { fields: { value: parsed.error.issues[0]?.message ?? 'Invalid value' } });
+  if (!parsed.success) {
+    // The first problem in plain words (e.g. "Enter a valid GSTIN"), shown next to Save
+    const message = parsed.error.issues[0]?.message ?? 'Some values are not valid.';
+    throw new AppError('VALIDATION_FAILED', message, { fields: { value: message } });
+  }
 
   const tx = db();
   const before = await tx.configValue.findUnique({ where: { scope_key: { scope: SCOPE, key } } });

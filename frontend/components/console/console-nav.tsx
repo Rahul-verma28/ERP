@@ -85,6 +85,6 @@ export function useNav(): { groups: NavGroup[]; settings: NavItem | null } {
         ],
       },
     ]),
-    settings: canConsole("platform.setting.edit") ? { href: "/console/settings/rules", label: "Console settings", icon: Settings2, show: true } : null,
+    settings: canConsole("platform.setting.edit") ? { href: "/console/settings", label: "Settings", icon: Settings2, show: true } : null,
   }
 }

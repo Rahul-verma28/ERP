@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TRIAL_LIMITS, TRIAL_PLAN_KEY } from './plans';
+import { DEFAULT_PREFERENCES, FONTS } from './workspace';
 import { gstin as gstinRule, gstinStateMismatch, sac as sacRule, stateName, upperNoSpaces } from './validation';
 
 // Platform settings (design v2 §9): the definition lives in code, the value in `config_values`.
@@ -56,6 +57,18 @@ export const SETTINGS = {
     default: 10,
   }),
   'onboarding.unpaid_cancel_days': def({ description: 'Days a sales-created client may stay unpaid before the order lapses', schema: z.number().int().min(1).max(60), default: 14 }),
+  // Console › Settings › Appearance: the theme every new business starts with. Copied into the
+  // business when it is created, so a change never alters existing businesses.
+  'defaults.branding': def({
+    description: 'Theme every new business starts with: brand colour, font, appearance and density',
+    schema: z.object({
+      brandColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Use a colour like #2450D8'),
+      font: z.enum(FONTS.map((f) => f.key) as [string, ...string[]]),
+      theme: z.enum(['light', 'dark', 'system']),
+      density: z.enum(['comfortable', 'compact']),
+    }),
+    default: { ...DEFAULT_PREFERENCES.branding } as { brandColor: string; font: string; theme: 'light' | 'dark' | 'system'; density: 'comfortable' | 'compact' },
+  }),
   'announcement.banner': def({
     description: 'One line shown on top of every client workspace (empty = none)',
     schema: z.object({ text: z.string().trim().max(200), tone: z.enum(['info', 'warning']), until: z.string().datetime().nullable() }).nullable(),

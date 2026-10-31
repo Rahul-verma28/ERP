@@ -123,6 +123,8 @@ export interface SettingRow {
   value: unknown
   overridden: boolean
   version: number
+  changedAt: string | null
+  changedBy: string | null
 }
 
 export const STATUS_LABEL: Record<TenantStatus, string> = {
@@ -525,3 +527,7 @@ export interface BillingSummary { receivedPaise: number; receivedCount: number; 
 export interface PaymentRow { id: string; orderId: string; tenantId: string; business: string; method: string; amountPaise: number; reference: string | null; receivedAt: string; recordedBy: string | null; kind: string; invoice: { id: string; number: string } | null }
 export interface InvoiceRow { id: string; number: string; tenantId: string; business: string; issuedAt: string; taxablePaise: number; gstPaise: number; totalPaise: number }
 export interface RenewalRow { tenantId: string; business: string; status: TenantStatus; plan: string; cycle: string; renewsAt: string | null; graceEndsAt: string | null; order: { id: string; status: string; totalPaise: number; hasLink: boolean } | null; changeTo: string | null }
+
+
+// Console › Settings › Appearance
+export interface Branding { brandColor: string; font: string; theme: "light" | "dark" | "system"; density: "comfortable" | "compact" }

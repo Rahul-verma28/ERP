@@ -95,6 +95,9 @@ export async function createTenant(input: CreateTenantInput) {
     if (dup) throw new AppError('DUPLICATE_TRIAL', 'A free trial has already been used with these details.');
   }
 
+  // Console › Settings › Appearance: the look every new business starts with
+  const branding = await getSetting('defaults.branding');
+
   const now = new Date();
   const tenant = await tx.tenant.create({
     data: {
@@ -111,6 +114,7 @@ export async function createTenant(input: CreateTenantInput) {
       billingStateCode: input.billingStateCode,
       legalName: input.legalName ?? null,
       profile: (input.profile ?? {}) as Prisma.InputJsonValue,
+      preferences: { branding } as Prisma.InputJsonValue,
       ownerUserId: user.id,
     },
   });
