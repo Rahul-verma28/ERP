@@ -1,4 +1,3 @@
-import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { db, prisma, withPlatform } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
@@ -185,13 +184,9 @@ export async function runAutoFollowups(now = new Date()) {
   const make = async (autoKey: string, tenantId: string, title: string) => {
     const owner = await ownerOf(tenantId);
     if (!owner) return 0;
-    try {
-      await prisma.consoleFollowup.create({ data: { autoKey, tenantId, title, dueAt: now, ownerUserId: owner } });
-      return 1;
-    } catch (e) {
-      if ((e as Prisma.PrismaClientKnownRequestError).code === 'P2002') return 0; // made before
-      throw e;
-    }
+    // Made before (same autoKey): skipped quietly instead of failing on the unique key
+    const r = await prisma.consoleFollowup.createMany({ data: [{ autoKey, tenantId, title, dueAt: now, ownerUserId: owner }], skipDuplicates: true });
+    return r.count;
   };
   let made = 0;
   const trials = await prisma.tenant.findMany({ where: { status: 'trialing', isInternal: false, createdAt: { lt: new Date(now.getTime() - 3 * DAY) } }, select: { id: true, subscription: { select: { trialEndsAt: true } } } });

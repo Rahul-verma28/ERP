@@ -315,7 +315,9 @@ async function overviewExtras(live: Prisma.TenantWhereInput, audience: Audience)
     .map(({ finished: _f, ...t }) => t);
 
   const people = new Map((await prisma.user.findMany({ where: { id: { in: events.map((e) => e.actorId).filter((x): x is string => !!x) } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
-  const tenants = new Map((await prisma.tenant.findMany({ where: { id: { in: events.map((e) => e.entityId).filter((x): x is string => !!x) } }, select: { id: true, name: true } })).map((t) => [t.id, t.name]));
+  // Only business ids: a plan event's entity is the plan key (e.g. "professional"), not a UUID
+  const isUuid = (x: string | null): x is string => !!x && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x);
+  const tenants = new Map((await prisma.tenant.findMany({ where: { id: { in: events.map((e) => e.entityId).filter(isUuid) } }, select: { id: true, name: true } })).map((t) => [t.id, t.name]));
   const activity = events.map((e) => ({
     id: e.id,
     at: e.at,
