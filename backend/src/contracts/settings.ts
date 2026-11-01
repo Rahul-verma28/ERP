@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { TRIAL_LIMITS, TRIAL_PLAN_KEY } from './plans';
+import { DEFAULT_SECURITY } from './account';
 import { DEFAULT_PREFERENCES, FONTS } from './workspace';
 import { gstin as gstinRule, gstinStateMismatch, sac as sacRule, stateName, upperNoSpaces } from './validation';
 
@@ -57,17 +58,32 @@ export const SETTINGS = {
     default: 10,
   }),
   'onboarding.unpaid_cancel_days': def({ description: 'Days a sales-created client may stay unpaid before the order lapses', schema: z.number().int().min(1).max(60), default: 14 }),
-  // Console › Settings › Appearance: the theme every new business starts with. Copied into the
-  // business when it is created, so a change never alters existing businesses.
+  // Console › Settings › Appearance: the look of the Console and the partner portal, and what
+  // every new business starts with. Copied into the business when it is created, so a change
+  // never alters existing businesses. Light, dark or system is each person's own choice.
   'defaults.branding': def({
-    description: 'Theme every new business starts with: brand colour, font, appearance and density',
+    description: 'Look of the Console and of every new business: colour theme, font and density',
     schema: z.object({
       brandColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Use a colour like #2450D8'),
+      preset: z.string().max(40).default('default'),
       font: z.enum(FONTS.map((f) => f.key) as [string, ...string[]]),
-      theme: z.enum(['light', 'dark', 'system']),
+      theme: z.enum(['light', 'dark', 'system']).default('system'),
       density: z.enum(['comfortable', 'compact']),
     }),
-    default: { ...DEFAULT_PREFERENCES.branding } as { brandColor: string; font: string; theme: 'light' | 'dark' | 'system'; density: 'comfortable' | 'compact' },
+    default: { ...DEFAULT_PREFERENCES.branding } as { brandColor: string; preset: string; font: string; theme: 'light' | 'dark' | 'system'; density: 'comfortable' | 'compact' },
+  }),
+  // Console › Settings › Passwords: for everyone with a Console or partner portal login
+  'console.password': def({
+    description: 'Password rules for people who sign in to the Console or the partner portal',
+    schema: z.object({
+      minLength: z.number().int().min(8, 'Use 8–32 characters').max(32, 'Use 8–32 characters'),
+      requireNumber: z.boolean(),
+      requireSymbol: z.boolean(),
+      blockCommon: z.boolean(),
+      expiryDays: z.union([z.literal(0), z.literal(90), z.literal(180)]),
+      reuseBlock: z.union([z.literal(0), z.literal(3), z.literal(5)]),
+    }),
+    default: { ...DEFAULT_SECURITY.password },
   }),
   'announcement.banner': def({
     description: 'One line shown on top of every client workspace (empty = none)',

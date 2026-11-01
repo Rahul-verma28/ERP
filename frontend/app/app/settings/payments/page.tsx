@@ -93,7 +93,7 @@ function BankCard({ tenant, workspace, refresh }: CardProps) {
             <Input {...form.field("bankAccountConfirm")} inputMode="numeric" autoComplete="off" onPaste={(e) => e.preventDefault()} />
           </Field>
           <Field label="IFSC" error={form.errors.ifsc} hint="11 characters, e.g. HDFC0001234">
-            <Input {...form.field("ifsc")} maxLength={11} className="font-mono uppercase" />
+            <Input mask="ifsc" {...form.field("ifsc")} maxLength={11} className="font-mono uppercase" />
           </Field>
         </div>
       </EditableSection>
@@ -148,7 +148,7 @@ function UpiCard({ tenant, workspace, refresh }: CardProps) {
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="UPI ID" error={form.errors.upiId} hint="name@bank">
-            <Input {...form.field("upiId")} autoComplete="off" autoFocus />
+            <Input mask="noSpaces" {...form.field("upiId")} autoComplete="off" autoFocus />
           </Field>
           <label className="flex items-center gap-3 self-end pb-2 text-sm">
             <input type="checkbox" className="size-4 accent-primary" checked={form.values.showUpiQr} onChange={(e) => form.set("showUpiQr", e.target.checked)} /> Print a UPI QR code on invoices

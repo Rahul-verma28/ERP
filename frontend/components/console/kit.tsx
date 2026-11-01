@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { AlertCircle, ArrowLeft, ArrowRight, Check, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { industryName } from "@contracts/workspace"
 import { formatPaise } from "@/lib/format"
 import type { ApiError } from "@/lib/api"
 import type { TenantStatus } from "@/lib/types"
@@ -329,7 +330,7 @@ export const greeting = () => {
 /** Default due time for a new follow-up: tomorrow 11 am, as a datetime-local value */
 export const tomorrowAt11 = () => `${new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)}T11:00`
 
-export const industryLabel = (key: string) => key.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())
+export const industryLabel = (key: string | null | undefined) => industryName(key)
 
 // ── Tabs (blueprint S2): each tab has its own link, ?tab=key ──
 

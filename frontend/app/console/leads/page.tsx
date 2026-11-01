@@ -1,5 +1,7 @@
 "use client"
 
+import { email as emailRule, length, mobileIN, personName } from "@contracts/validation"
+import { IndustrySelect } from "@/components/search-select"
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -9,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { SearchInput } from "@/components/common"
-import { Field, FormError, NativeSelect } from "@/components/form"
+import { Field, FormError } from "@/components/form"
 import { Chip, Empty, Failed, Loading, Page, Panel, Row, relDays, tomorrowAt11, type Tone } from "@/components/console/kit"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -26,7 +28,6 @@ const STAGE_TONE: Record<Stage, Tone> = { new: "blue", contacted: "blue", demo: 
 const OPEN: Stage[] = ["new", "contacted", "demo", "trial"]
 
 function LeadDialog({ lead, onClose, onSaved }: { lead: Prospect | null; onClose: () => void; onSaved: () => void }) {
-  const industries = useApi<{ data: { key: string; name: string }[] }>("/public/industries")
   const [form, setForm] = React.useState({
     businessName: lead?.businessName ?? "",
     name: lead?.name ?? "",
@@ -45,8 +46,18 @@ function LeadDialog({ lead, onClose, onSaved }: { lead: Prospect | null; onClose
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
+    const bad = Object.fromEntries(
+      Object.entries({
+        businessName: !form.businessName.trim() ? "Enter the business name" : length(2, 100, "Business name")(form.businessName),
+        name: !form.name.trim() ? "Enter the contact person" : personName(form.name),
+        mobile: form.mobile && mobileIN(form.mobile),
+        email: form.email && emailRule(form.email),
+        lostReason: form.stage === "lost" && !form.lostReason.trim() ? "Say why it was lost" : null,
+      }).filter(([, v]) => v)
+    ) as Record<string, string>
+    setErrors(bad)
+    if (Object.keys(bad).length) return
     setBusy(true)
-    setErrors({})
     const body = { businessName: form.businessName, name: form.name, mobile: form.mobile, email: form.email, city: form.city || null, industryKey: form.industryKey || null, source: form.source || null }
     try {
       if (lead) {
@@ -69,7 +80,7 @@ function LeadDialog({ lead, onClose, onSaved }: { lead: Prospect | null; onClose
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[92svh] overflow-y-auto sm:max-w-xl">
-        <form onSubmit={save} className="grid gap-4">
+        <form onSubmit={save} noValidate className="grid gap-4">
           <DialogHeader>
             <DialogTitle>{lead ? lead.businessName : "New lead"}</DialogTitle>
             <DialogDescription>{lead ? `Looked after by ${lead.owner ?? "—"}` : "A business that might become a client."}</DialogDescription>
@@ -90,26 +101,19 @@ function LeadDialog({ lead, onClose, onSaved }: { lead: Prospect | null; onClose
           )}
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Business name" required error={errors.businessName}>
-              <Input value={form.businessName} onChange={set("businessName")} required autoFocus={!lead} />
+              <Input value={form.businessName} onChange={set("businessName")} autoFocus={!lead} />
             </Field>
             <Field label="Contact person" required error={errors.name}>
-              <Input value={form.name} onChange={set("name")} required />
+              <Input mask="name" value={form.name} onChange={set("name")} />
             </Field>
             <Field label="Mobile" hint="Links the lead when they sign up" error={errors.mobile}>
-              <Input value={form.mobile} onChange={set("mobile")} inputMode="tel" placeholder="98765 43210" />
+              <Input mask="mobile" value={form.mobile} onChange={set("mobile")} placeholder="98765 43210" />
             </Field>
             <Field label="Email" error={errors.email}>
-              <Input type="email" value={form.email} onChange={set("email")} />
+              <Input mask="email" type="email" value={form.email} onChange={set("email")} />
             </Field>
             <Field label="Industry" error={errors.industryKey}>
-              <NativeSelect value={form.industryKey} onChange={set("industryKey")}>
-                <option value="">Not sure yet</option>
-                {industries.data?.data.map((i) => (
-                  <option key={i.key} value={i.key}>
-                    {i.name}
-                  </option>
-                ))}
-              </NativeSelect>
+              <IndustrySelect value={form.industryKey} onChange={(v) => setForm({ ...form, industryKey: v })} emptyLabel="Not sure yet" placeholder="Not sure yet" />
             </Field>
             <Field label="City" error={errors.city}>
               <Input value={form.city} onChange={set("city")} />

@@ -12,7 +12,7 @@ export default function BrandingSettingsPage() {
   return (
     <SettingsStepPage
       title="Branding"
-      description="Logo, colour, theme and font for everyone in the business. People can still pick their own theme in My account."
+      description="Logo, colour theme and font for everyone in the business. Light, dark or system is each person's own switch in the top bar."
       stepKey="branding"
       Step={BrandingStep}
       before={(p) => <LogoCard {...p} />}

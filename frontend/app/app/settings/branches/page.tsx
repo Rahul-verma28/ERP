@@ -1,5 +1,6 @@
 "use client"
 
+import { StateSelect } from "@/components/search-select"
 import * as React from "react"
 import { toast } from "sonner"
 import { Plus } from "lucide-react"
@@ -9,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Field, FormError, NativeSelect } from "@/components/form"
+import { Field, FormError } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
@@ -99,17 +100,10 @@ export default function BranchesPage() {
               <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} required />
             </Field>
             <Field label="State" error={errors.stateCode}>
-              <NativeSelect value={form.stateCode} onChange={(e) => setForm({ ...form, stateCode: e.target.value })}>
-                <option value="">Select state</option>
-                {GST_STATES.map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {name}
-                  </option>
-                ))}
-              </NativeSelect>
+              <StateSelect value={form.stateCode} onChange={(v) => setForm({ ...form, stateCode: v })} />
             </Field>
             <Field label="GSTIN (optional)" error={errors.gstin}>
-              <Input value={form.gstin} onChange={(e) => setForm({ ...form, gstin: e.target.value.toUpperCase() })} maxLength={15} />
+              <Input mask="gstin" value={form.gstin} onChange={(e) => setForm({ ...form, gstin: e.target.value })} />
             </Field>
             <FormError message={error} />
             <DialogFooter>

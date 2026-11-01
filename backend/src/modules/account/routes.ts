@@ -7,6 +7,7 @@ import { accountLimiter } from '../../middleware/rateLimit';
 import { validate } from '../../middleware/request';
 import { zEmail, zMobileIN, zPersonName } from '../../kernel/zodRules';
 import { DATE_FORMATS, TEAM_EVENTS } from '../../contracts/account';
+import { FONTS } from '../../contracts/workspace';
 import { clearRefreshCookie } from '../identity/tokens';
 import { cache } from '../../kernel/cache';
 import { audit } from '../audit/service';
@@ -34,13 +35,13 @@ router.patch('/profile', validate(z.object({ name: zPersonName })), async (req, 
 const teamKeys = TEAM_EVENTS.map((e) => e.key) as [string, ...string[]];
 const Preferences = z.object({
   theme: z.enum(['workspace', 'light', 'dark', 'system']),
-  font: z.enum(['workspace', 'inter', 'manrope', 'plex', 'source']),
+  font: z.enum(['workspace', ...FONTS.map((f) => f.key)] as [string, ...string[]]),
   density: z.enum(['workspace', 'comfortable', 'compact']),
   startPage: z.string().regex(/^[a-z_]{2,30}$/, 'Choose a start page'),
   dateFormat: z.enum(DATE_FORMATS.map((d) => d.key) as [string, ...string[]]),
   mutedAlerts: z.object({ email: z.array(z.enum(teamKeys)).max(20), inApp: z.array(z.enum(teamKeys)).max(20) }),
   defaultTenantId: z.string().uuid().nullish(),
-});
+}).partial(); // A choice can be saved on its own; what isn't sent stays as stored
 
 router.put('/preferences', validate(Preferences), async (req, res) => {
   const { defaultTenantId, ...prefs } = req.body as z.infer<typeof Preferences>;

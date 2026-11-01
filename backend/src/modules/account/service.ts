@@ -65,6 +65,7 @@ export async function accountOverview(userId: string, sessionId: string) {
       passwordPolicy: policy.password,
       passwordPolicyText: describePasswordPolicy(policy.password),
       passwordPolicySetBy: policy.passwordSetBy,
+      passwordPolicyWhere: policy.passwordSetWhere,
     },
     businesses: memberships.map((m) => ({
       tenantId: m.tenantId, name: m.tenant.name, status: m.tenant.status, logoUrl: m.tenant.logoUrl,

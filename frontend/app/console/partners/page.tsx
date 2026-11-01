@@ -1,5 +1,7 @@
 "use client"
 
+import { email as emailRule, gstin as gstinRule, gstinStateMismatch, length, mobileIN, personName } from "@contracts/validation"
+import { StateSelect } from "@/components/search-select"
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Copy, ExternalLink, Handshake, Plus, ReceiptText } from "lucide-react"
@@ -7,7 +9,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Field, FormError, NativeSelect } from "@/components/form"
+import { Field, FormError } from "@/components/form"
 import { Chip, Failed, Page } from "@/components/console/kit"
 import { Count, DataTable, FilterSelect, IdCell, type Column, type RowAction } from "@/components/console/data-table"
 import { useClientTable } from "@/lib/use-table"
@@ -30,8 +32,18 @@ function AddPartnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value })
   async function save(e: React.FormEvent) {
     e.preventDefault()
+    const bad = Object.fromEntries(
+      Object.entries({
+        name: !form.name.trim() ? "Enter the partner name" : length(2, 100, "Partner name")(form.name),
+        contactName: !form.contactName.trim() ? "Enter the contact person" : personName(form.contactName),
+        email: !form.email.trim() ? "Enter the email" : emailRule(form.email),
+        mobile: !form.mobile ? "Enter the mobile number" : mobileIN(form.mobile),
+        gstin: form.gstin ? gstinRule(form.gstin) ?? gstinStateMismatch(form.gstin, form.stateCode) : null,
+      }).filter(([, v]) => v)
+    ) as Record<string, string>
+    setErrors(bad)
+    if (Object.keys(bad).length) return
     setBusy(true)
-    setErrors({})
     try {
       const r = await api.post<{ id: string; loginLink: LoginLink }>("/console/partners", { ...form, gstin: form.gstin || null, stateCode: form.stateCode || null, discountPercent: Number(form.discountPercent) || 0 })
       setAdded(r)
@@ -60,20 +72,20 @@ function AddPartnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
-        <form onSubmit={save} className="grid gap-4">
+        <form onSubmit={save} noValidate className="grid gap-4">
           <DialogHeader>
             <DialogTitle>Add a partner</DialogTitle>
             <DialogDescription>The contact person becomes the partner owner and gets a login link to their own partner portal.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Partner name" required error={errors.name} className="sm:col-span-2">
-              <Input value={form.name} onChange={set("name")} placeholder="e.g. Acme Software Solutions" required autoFocus />
+              <Input value={form.name} onChange={set("name")} placeholder="e.g. Acme Software Solutions" autoFocus />
             </Field>
             <Field label="Contact person" required error={errors.contactName}>
-              <Input value={form.contactName} onChange={set("contactName")} required />
+              <Input mask="name" value={form.contactName} onChange={set("contactName")} />
             </Field>
             <Field label="Mobile" required error={errors.mobile}>
-              <Input value={form.mobile} onChange={set("mobile")} inputMode="tel" placeholder="98765 43210" required />
+              <Input mask="mobile" value={form.mobile} onChange={set("mobile")} placeholder="98765 43210" />
             </Field>
             <Field label="Email" required error={errors.email}>
               <Input type="email" value={form.email} onChange={set("email")} required />
@@ -82,17 +94,10 @@ function AddPartnerDialog({ open, onOpenChange }: { open: boolean; onOpenChange:
               <Input type="number" min={0} max={90} value={form.discountPercent} onChange={set("discountPercent")} required />
             </Field>
             <Field label="State" hint="For GST on their bill" error={errors.stateCode}>
-              <NativeSelect value={form.stateCode} onChange={set("stateCode")}>
-                <option value="">Choose…</option>
-                {GST_STATES.map(([code, name]) => (
-                  <option key={code} value={code}>
-                    {name}
-                  </option>
-                ))}
-              </NativeSelect>
+              <StateSelect value={form.stateCode} onChange={(v) => setForm({ ...form, stateCode: v })} />
             </Field>
             <Field label="GSTIN" hint="Optional" error={errors.gstin}>
-              <Input value={form.gstin} onChange={(e) => setForm({ ...form, gstin: e.target.value.toUpperCase() })} maxLength={15} />
+              <Input mask="gstin" value={form.gstin} onChange={(e) => setForm({ ...form, gstin: e.target.value })} />
             </Field>
           </div>
           <FormError message={errors.form} />

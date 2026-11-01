@@ -1,10 +1,10 @@
 "use client"
 
 import * as React from "react"
-import { createPortal } from "react-dom"
 import { usePathname } from "next/navigation"
-import { CircleHelp, X } from "lucide-react"
+import { CircleHelp } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { SidePanel } from "@/components/side-panel"
 
 // Help panel (blueprint Phase G): the "?" in the top bar opens a short guide for the page you
 // are on: what it is for, how to do the usual things, and what to know. Plain words, no links
@@ -28,7 +28,7 @@ const HELP: [RegExp, Help][] = [
   [/^\/billing/, { title: "Monthly bill", about: "What AHEAD bills you this month for your businesses, after your partner discount.", steps: ["Each business is listed with its plan and price.", "Plan changes you make apply from the next bill."] }],
   [/^\/partners/, { title: "Partners", about: "Resellers, their businesses, their discount and their monthly bill.", steps: ["Add a partner, or approve one from Applications.", "Open a partner to change its discount or pause it."] }],
   [/^\/settings\/plans/, { title: "Plans & pricing", about: "What each plan includes and costs.", steps: ["Open a plan and edit it as a draft.", "Check the impact panel: who is on the plan and who would lose a module.", "Publish when ready. Prices apply to new orders and renewals."] }],
-  [/^\/settings/, { title: "Settings", about: "How AHEAD works for every business.", steps: ["Pick a section on the left, change what you need and press Save changes.", "Appearance is the look every new business starts with."], notes: ["Changes reach everyone within a minute and are kept in the audit trail."] }],
+  [/^\/settings/, { title: "Settings", about: "How AHEAD works for every business.", steps: ["Pick a section on the left, change what you need and press Save changes.", "Appearance is the look of the Console and of every new business.", "Passwords sets the rules for everyone who signs in to the Console or the partner portal."], notes: ["Changes reach everyone within a minute and are kept in the audit trail."] }],
   [/^\/modules/, { title: "Modules & features", about: "Every module, which plans include it and how many businesses use it.", steps: ["Change a plan's modules in Plans & pricing.", "Turn a module on or off for one business from that business's Plan tab."] }],
   [/^\/team/, { title: "Team", about: "People who use the Console, and their role.", steps: ["Add a person: they get a login link and set their own password.", "Change a role or turn someone off; their sessions end at once."] }],
   [/^\/roles/, { title: "Roles & permissions", about: "What each Console role can see and do.", steps: ["Open a role to see its permissions.", "Copy a built-in role to make your own, then change it."], notes: ["Permissions marked risky (prices, people, roles) are best kept to Admins."] }],
@@ -37,7 +37,7 @@ const HELP: [RegExp, Help][] = [
   [/^\/analytics/, { title: "Analytics", about: "How AHEAD is doing over the last 3, 6 or 12 months, within the businesses you can see.", steps: ["Switch the period at the top.", "Click a card to open the businesses behind it.", "Open “How these numbers are counted” at the bottom for each definition."] }],
   [/^\/health/, { title: "System health", about: "The work AHEAD does in the background.", steps: ["Scheduled jobs run every hour; Run now runs one at once.", "Retry failed background work once the cause is fixed, or dismiss it.", "Payment notices that did not match an order: sort it out in Billing, then mark it handled."] }],
   [/^\/referral/, { title: "My link & code", about: "Your own link and code. Businesses that sign up with them are yours.", steps: ["Share the link, or give the code to type at signup.", "They appear under My businesses with you as “Onboarded by”."] }],
-  [/^\/account/, { title: "My account", about: "Your name, password, two-step sign-in and sessions." , steps: ["Turn on two-step sign-in for extra safety.", "Sign out of devices you no longer use."] }],
+  [/^\/account/, { title: "My account", about: "Your name, password, two-step sign-in and sessions.", steps: ["Turn on two-step sign-in for extra safety.", "Sign out of devices you no longer use.", "Switch between light, dark and system with the icons in the top bar."] }],
 ]
 
 const FALLBACK: Help = { title: "Help", about: "Each Console page has a short guide here.", steps: ["Use the menu on the left to move between areas.", "Press Ctrl K to search businesses and pages."] }
@@ -51,36 +51,14 @@ export function HelpPanel() {
   const path = usePathname()
   const [open, setOpen] = React.useState(false)
   const help = helpFor(path)
-  const closeRef = React.useRef<HTMLButtonElement>(null)
-
-  React.useEffect(() => {
-    if (!open) return
-    closeRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false)
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [open])
 
   return (
     <>
       <Button variant="ghost" size="icon" onClick={() => setOpen(true)} aria-label="Help for this page" title="Help for this page">
         <CircleHelp className="size-5" />
       </Button>
-      {/* Portalled: the top bar's backdrop blur would otherwise trap a fixed panel inside it */}
-      {open && createPortal(
-        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-labelledby="help-title">
-          <div className="absolute inset-0 bg-black/20" onClick={() => setOpen(false)} />
-          <aside className="absolute inset-y-0 right-0 flex w-96 max-w-[92vw] flex-col border-l bg-card shadow-xl">
-            <div className="flex items-start justify-between gap-3 border-b px-5 py-4">
-              <div>
-                <div className="text-[11px] font-semibold tracking-[0.08em] text-primary uppercase">Help</div>
-                <h2 id="help-title" className="text-lg font-semibold">{help.title}</h2>
-              </div>
-              <Button ref={closeRef} variant="ghost" size="icon" onClick={() => setOpen(false)} aria-label="Close help">
-                <X className="size-4" />
-              </Button>
-            </div>
-            <div className="grid content-start gap-5 overflow-y-auto px-5 py-5 text-sm">
+      <SidePanel open={open} onOpenChange={setOpen} eyebrow="Help" title={help.title}>
+            <div className="grid content-start gap-5 px-5 py-5 text-sm">
               <p className="text-muted-foreground">{help.about}</p>
               <section>
                 <h3 className="mb-2 font-medium">How to</h3>
@@ -101,10 +79,7 @@ export function HelpPanel() {
               )}
               <p className="text-xs text-muted-foreground">Press Ctrl K anywhere to search businesses and pages.</p>
             </div>
-          </aside>
-        </div>,
-        document.body,
-      )}
+      </SidePanel>
     </>
   )
 }

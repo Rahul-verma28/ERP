@@ -3,9 +3,10 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, Columns3, Download, Plus, Rows3, X } from "lucide-react"
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3, Download, Plus, Rows3, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
+import { SearchSelect } from "@/components/search-select"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import {
@@ -639,17 +640,10 @@ export function DataList<T extends { id: string }>({
             Showing {formatNumber(from)}–{formatNumber(to)}
             {total !== null && <> of {formatNumber(total)}</>}
             <span aria-hidden> · </span>
-            <label className="inline-flex items-center gap-1">
+            <span className="inline-flex items-center gap-1">
               Rows per page
-              <span className="relative inline-flex items-center">
-                <select className="appearance-none rounded-md bg-transparent py-0.5 pr-5 pl-1 font-medium text-foreground" value={prefs.pageSize} onChange={(e) => setPrefs({ ...prefs, pageSize: Number(e.target.value) })}>
-                  {PAGE_SIZES.map((n) => (
-                    <option key={n}>{n}</option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-0.5 size-3.5" />
-              </span>
-            </label>
+              <SearchSelect value={String(prefs.pageSize)} onChange={(v) => setPrefs({ ...prefs, pageSize: Number(v) })} aria-label="Rows per page" options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))} className="h-7 w-auto gap-1 border-0 bg-transparent px-1 font-medium" />
+            </span>
           </span>
           <div className="flex gap-2">
             <Button variant="outline" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex(pageIndex - 1)}>

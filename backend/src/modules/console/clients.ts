@@ -1,5 +1,6 @@
 import type { Prisma, TenantSource, TenantStatus } from '@prisma/client';
 import { db } from '../../kernel/db';
+import { industryKeysFor } from '../../contracts/workspace';
 import { AppError, notFound } from '../../kernel/errors';
 import type { ConsoleCtx } from '../../kernel/context';
 import { audit } from '../audit/service';
@@ -85,7 +86,7 @@ export async function listClients(ctx: ConsoleCtx, q: ClientQuery) {
     ...(await scopedTenantFilter(ctx)),
     ...(q.status ? { status: q.status } : {}),
     ...(q.source ? { source: q.source } : {}),
-    ...(q.industryKey ? { industryKey: q.industryKey } : {}),
+    ...(q.industryKey ? { industryKey: { in: industryKeysFor(q.industryKey) } } : {}),
     ...(q.planKey ? { subscription: { planId: (await db().plan.findUnique({ where: { key: q.planKey }, select: { id: true } }))?.id ?? '00000000-0000-0000-0000-000000000000' } } : {}),
     ...(q.partnerId && !ctx.partnerId ? { partnerId: q.partnerId } : partners === 'exclude' ? { partnerId: null } : partners === 'only' ? { partnerId: { not: null } } : {}),
     ...(and.length ? { AND: and } : {}),

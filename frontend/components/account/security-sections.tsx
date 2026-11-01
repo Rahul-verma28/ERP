@@ -25,13 +25,32 @@ import { cn } from "@/lib/utils"
 // last 30 days of sign-ins. Shown together on the one account page.
 
 const card = "flex flex-col gap-2.5 rounded-xl border bg-card px-[18px] py-4"
+
+export function Rows({ children }: { children: React.ReactNode }) {
+  return <div className="divide-y rounded-xl border bg-card">{children}</div>
+}
+
+/** One line of the page: what it is, its value, and the button that changes it. */
+export function Row({ label, hint, value, action, children }: { label: string; hint?: string; value?: React.ReactNode; action?: React.ReactNode; children?: React.ReactNode }) {
+  return (
+    <div className="grid items-center gap-x-4 gap-y-2 px-4 py-3.5 sm:grid-cols-[11rem_minmax(0,1fr)_auto] sm:px-5">
+      <div>
+        <div className="text-[13.5px] font-medium">{label}</div>
+        {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
+      </div>
+      <div className="min-w-0 text-[13.5px] break-words">{value}</div>
+      {action && <div className="flex flex-wrap gap-2 sm:justify-end">{action}</div>}
+      {children}
+    </div>
+  )
+}
 const pill = "inline-flex h-5 items-center rounded-full px-[7px] text-[11px] font-semibold"
 
 // ── Change password ──
 
 const STRENGTH_TONE = ["bg-muted", "bg-red-600", "bg-amber-600", "bg-amber-600", "bg-emerald-600"]
 
-export function PasswordCard({ account, onChanged }: { account: AccountOverview; onChanged: () => Promise<void> }) {
+export function PasswordRow({ account, onChanged }: { account: AccountOverview; onChanged: () => Promise<void> }) {
   const policy = account.security.passwordPolicy
   const [current, setCurrent] = React.useState("")
   const [next, setNext] = React.useState("")
@@ -74,95 +93,99 @@ export function PasswordCard({ account, onChanged }: { account: AccountOverview;
     }
   }
 
-  if (!open)
-    return (
-      <section className={card}>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-[15px] font-bold">Password</h2>
-            <p className="text-[13px] text-muted-foreground">{account.security.passwordChangedAt ? `Last changed ${formatDate(account.security.passwordChangedAt)}` : "Set when you first signed in"}</p>
-          </div>
-          <Button variant="outline" size="sm" onClick={() => setOpen(true)}>Change password</Button>
-        </div>
-      </section>
-    )
+  const close = () => {
+    setOpen(false)
+    setErrors({})
+    setCurrent("")
+    setNext("")
+    setConfirm("")
+  }
+
   return (
-    <form className={cn(card, "border-primary/50 ring-2 ring-primary/15")} onSubmit={submit} noValidate>
-      <h2 className="text-[15px] font-bold">Change password</h2>
-      <Field label="Current password" error={errors.current}>
-        <Input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
-      </Field>
-      <Field label="New password" error={errors.password} hint={!errors.password ? `Needs ${account.security.passwordPolicyText}` : undefined}>
-        <Input type="password" value={next} onChange={(e) => setNext(e.target.value)} onBlur={() => next && setErrors((x) => ({ ...x, password: policyError(next) }))} autoComplete="new-password" />
-      </Field>
-      {next && (
-        <div className="-mt-1 flex gap-1" aria-label={`Strength ${strength} of 4`}>
-          {[1, 2, 3, 4].map((i) => (
-            <span key={i} className={cn("h-1 flex-1 rounded-full", i <= strength ? STRENGTH_TONE[strength] : "bg-muted")} />
-          ))}
-        </div>
-      )}
-      <Field label="Confirm new password" error={errors.confirm}>
-        <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
-      </Field>
-      <label className="flex items-center gap-2 text-xs">
-        <input type="checkbox" className="size-4 accent-primary" checked={signOutOthers} onChange={(e) => setSignOutOthers(e.target.checked)} />
-        Sign out my other devices
-      </label>
-      <FormError message={errors.form} />
-      <div className="flex justify-end gap-2">
-        <Button type="button" variant="ghost" disabled={busy} onClick={() => (setOpen(false), setErrors({}), setCurrent(""), setNext(""), setConfirm(""))}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={busy}>
-          {busy ? "Updating…" : "Update password"}
-        </Button>
-      </div>
-    </form>
+    <Row
+      label="Password"
+      value={<span className="text-muted-foreground">{account.security.passwordChangedAt ? `Last changed ${formatDate(account.security.passwordChangedAt)}` : "Set when you first signed in"}</span>}
+      action={<Button variant="outline" size="sm" onClick={() => setOpen(true)}>Change password</Button>}
+    >
+      <Dialog open={open} onOpenChange={(o) => !o && close()}>
+        <DialogContent>
+          <form className="grid gap-4" onSubmit={submit} noValidate>
+            <DialogHeader>
+              <DialogTitle>Change password</DialogTitle>
+              <DialogDescription>
+                Needs {account.security.passwordPolicyText}.
+                {account.security.passwordPolicyWhere && ` Set in ${account.security.passwordPolicyWhere}.`}
+              </DialogDescription>
+            </DialogHeader>
+            <Field label="Current password" required error={errors.current}>
+              <Input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" autoFocus />
+            </Field>
+            <div className="grid gap-1.5">
+              <Field label="New password" required error={errors.password}>
+                <Input type="password" value={next} onChange={(e) => setNext(e.target.value)} onBlur={() => next && setErrors((x) => ({ ...x, password: policyError(next) }))} autoComplete="new-password" />
+              </Field>
+              <div className="mt-2 flex h-1 gap-1" aria-label={next ? `Strength ${strength} of 4` : undefined}>
+                {[1, 2, 3, 4].map((i) => (
+                  <span key={i} className={cn("h-1 flex-1 rounded-full", next && i <= strength ? STRENGTH_TONE[strength] : "bg-muted")} />
+                ))}
+              </div>
+            </div>
+            <Field label="Confirm new password" required error={errors.confirm}>
+              <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
+            </Field>
+            <label className="flex items-center gap-2 text-xs">
+              <input type="checkbox" className="size-4 accent-primary" checked={signOutOthers} onChange={(e) => setSignOutOthers(e.target.checked)} />
+              Sign out my other devices
+            </label>
+            <FormError message={errors.form} />
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={busy} onClick={close}>Cancel</Button>
+              <Button type="submit" disabled={busy}>{busy ? "Updating…" : "Update password"}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </Row>
   )
 }
 
 // ── Two-step verification ──
 
-export function TwoStepCard({ account, onChanged }: { account: AccountOverview; onChanged: () => Promise<void> }) {
+export function TwoStepRow({ account, onChanged }: { account: AccountOverview; onChanged: () => Promise<void> }) {
   const base = useAccountBase()
   const s = account.security
   const required = s.requiredBy.length > 0
   const [off, setOff] = React.useState(false)
   return (
-    <section className={card}>
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-[15px] font-bold">Two-step verification</h2>
-        {s.mfaEnabled ? (
-          <span className={cn(pill, "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300")}>On · authenticator app</span>
-        ) : (
-          <span className={cn(pill, "bg-muted text-muted-foreground")}>Off</span>
-        )}
-      </div>
-      <p className="text-[13px] text-foreground/80">
-        {s.mfaEnabled ? "Asked when you sign in on a new device." : "Adds a code from your phone when you sign in on a new device."}{" "}
-        {required && `Required by ${s.requiredBy.map((r) => r.name).join(", ")}${s.requiredBy.some((r) => r.tenantId) ? "" : ""}.`}
-        {!s.mfaEnabled && s.deadline && <strong> Set it up by {formatDate(s.deadline)}.</strong>}
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {s.mfaEnabled ? (
+    <Row
+      label="Two-step verification"
+      value={
+        <>
+          {s.mfaEnabled ? (
+            <span className={cn(pill, "bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300")}>On · authenticator app</span>
+          ) : (
+            <span className={cn(pill, "bg-muted text-muted-foreground")}>Off</span>
+          )}
+          <p className="mt-1 text-xs text-muted-foreground">
+            {s.mfaEnabled ? "Asked when you sign in on a new device." : "Adds a code from your phone when you sign in on a new device."}{" "}
+            {required && `Required by ${s.requiredBy.map((r) => r.name).join(", ")}${s.mfaEnabled ? ", so it can't be turned off" : ""}.`}
+            {!s.mfaEnabled && s.deadline && <strong> Set it up by {formatDate(s.deadline)}.</strong>}
+          </p>
+        </>
+      }
+      action={
+        s.mfaEnabled ? (
           <>
-            <Link href={`${base.account}/two-step?change=1`} className={buttonVariants({ variant: "outline", size: "sm" })}>
-              Change app
-            </Link>
-            <Button variant="outline" size="sm" disabled={required} title={required ? `${s.requiredBy[0].name} requires it` : undefined} onClick={() => setOff(true)}>
-              Turn off
-            </Button>
+            <Link href={`${base.account}/two-step?change=1`} className={buttonVariants({ variant: "outline", size: "sm" })}>Change app</Link>
+            {!required && <Button variant="outline" size="sm" onClick={() => setOff(true)}>Turn off</Button>}
           </>
         ) : (
-          <Link href={`${base.account}/two-step`} className={buttonVariants({ size: "sm" })}>
-            Turn on
-          </Link>
-        )}
-      </div>
-      {s.mfaEnabled && required && <p className="text-xs text-muted-foreground">Turn off is disabled while one of your businesses requires two-step.</p>}
+          <Link href={`${base.account}/two-step`} className={buttonVariants({ size: "sm" })}>Turn on</Link>
+        )
+      }
+    >
       <TurnOffDialog open={off} onClose={() => setOff(false)} onDone={onChanged} />
-    </section>
+    </Row>
   )
 }
 
@@ -217,7 +240,7 @@ function TurnOffDialog({ open, onClose, onDone }: { open: boolean; onClose: () =
   )
 }
 
-export function BackupCodesCard({ account, onChanged }: { account: AccountOverview; onChanged: () => Promise<void> }) {
+export function BackupCodesRow({ account, onChanged }: { account: AccountOverview; onChanged: () => Promise<void> }) {
   const left = account.security.backupCodesLeft
   const [asking, setAsking] = React.useState(false)
   const [password, setPassword] = React.useState("")
@@ -240,18 +263,12 @@ export function BackupCodesCard({ account, onChanged }: { account: AccountOvervi
     }
   }
   return (
-    <section className={cn(card, "gap-2")}>
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-[15px] font-bold">Backup codes</h2>
-        <span className={cn("text-xs font-semibold", left <= 3 ? "text-amber-700" : "text-muted-foreground")}>{left} of 10 left</span>
-      </div>
-      <p className="text-[13px] text-foreground/80">Use one if you lose your phone. Each works once.</p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => setAsking(true)}>
-          Make new codes
-        </Button>
-        <span className="text-xs text-muted-foreground">Old codes stop working</span>
-      </div>
+    <Row
+      label="Backup codes"
+      hint="If you lose your phone"
+      value={<span className={cn(left <= 3 ? "font-semibold text-amber-700 dark:text-amber-400" : "text-muted-foreground")}>{left} of 10 left. Each works once.</span>}
+      action={<Button variant="outline" size="sm" onClick={() => setAsking(true)}>Make new codes</Button>}
+    >
       <Dialog
         open={asking}
         onOpenChange={(o) => {
@@ -285,7 +302,7 @@ export function BackupCodesCard({ account, onChanged }: { account: AccountOvervi
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </Row>
   )
 }
 
@@ -310,7 +327,7 @@ export function SessionsCard({ rows, reload }: { rows: SessionRow[] | null; relo
   }
   const others = rows?.filter((r) => !r.current).length ?? 0
   return (
-    <section className={cn(card, "gap-1.5 lg:col-span-2")}>
+    <section className={cn(card, "gap-1.5")}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-[15px] font-bold">Where you&apos;re signed in</h2>
         <Button variant="outline" size="sm" className="text-destructive" disabled={!others || busy !== null} onClick={() => act("all", () => api.post("/account/sessions/sign-out-others"), "Signed out of all other devices")}>
@@ -402,7 +419,7 @@ const OUTCOME: Record<string, { label: string; tone: string }> = {
 export function SignInsCard() {
   const { data } = useApi<{ events: { id: string; at: string; outcome: string; method: string | null; ip: string | null; device: string }[] }>("/account/sign-ins")
   return (
-    <section className={cn(card, "gap-1.5 lg:col-span-2")}>
+    <section className={cn(card, "gap-1.5")}>
       <h2 className="text-[15px] font-bold">Sign-in history · last 30 days</h2>
       {!data ? (
         <Skeleton className="h-24" />

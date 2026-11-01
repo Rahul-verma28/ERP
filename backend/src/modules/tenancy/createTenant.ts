@@ -3,6 +3,7 @@ import { db } from '../../kernel/db';
 import { AppError } from '../../kernel/errors';
 import { pepperedHash } from '../../kernel/crypto';
 import { templateByKey } from '../../contracts/templates';
+import { industryTemplateKey, storedIndustryKey } from '../../contracts/workspace';
 import { persistEntitlements } from '../subscription/entitlements';
 import { publish } from '../events/outbox';
 import { audit } from '../audit/service';
@@ -58,7 +59,7 @@ export function trialEnd(from: Date, days: number) {
 /** Must run inside withPlatform(). */
 export async function createTenant(input: CreateTenantInput) {
   const tx = db();
-  const template = templateByKey(input.industryKey);
+  const template = templateByKey(industryTemplateKey(input.industryKey) ?? '');
   if (!template) throw new AppError('VALIDATION_FAILED', 'Unknown industry.', { fields: { industryKey: 'Unknown industry' } });
   const acquisition: AcquisitionInput = input.acquisition ?? { byType: 'self', method: 'signup' };
   const source = validateAcquisition(acquisition);
@@ -102,7 +103,7 @@ export async function createTenant(input: CreateTenantInput) {
   const tenant = await tx.tenant.create({
     data: {
       name: input.businessName,
-      industryKey: template.key,
+      industryKey: storedIndustryKey(input.industryKey),
       templateVersion: template.version,
       status: onboardingType === 'trial' ? 'trialing' : 'incomplete',
       source,

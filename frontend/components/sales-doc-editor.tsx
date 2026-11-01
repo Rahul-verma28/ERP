@@ -1,5 +1,6 @@
 "use client"
 
+import { StateSelect } from "@/components/search-select"
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -89,10 +90,7 @@ export function SalesDocEditor({ kind, doc, initialContact }: { kind: "invoice" 
             <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} min={issueDate} />
           </Field>
           <Field label="Place of supply" hint={intra ? "Same state: CGST + SGST" : "Other state: IGST"} className="sm:col-span-2">
-            <NativeSelect value={posOverride} onChange={(e) => setPosOverride(e.target.value)}>
-              <option value="">{pos ? `${GST_STATES.find(([c]) => c === pos)?.[1] ?? pos} (automatic)` : "Automatic"}</option>
-              {GST_STATES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
-            </NativeSelect>
+            <StateSelect value={posOverride} onChange={setPosOverride} emptyLabel={pos ? `${GST_STATES.find(([c]) => c === pos)?.[1] ?? pos} (automatic)` : "Automatic"} />
           </Field>
           {!sellerState && kind === "invoice" && (
             <p className="rounded-2xl bg-amber-100 p-3 text-sm text-amber-950 sm:col-span-2 dark:bg-amber-950 dark:text-amber-100">

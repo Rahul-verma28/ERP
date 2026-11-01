@@ -100,7 +100,7 @@ function InviteForm({ token, p }: { token: string; p: Preview }) {
                 <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!!p.email} required />
               </Field>
               <Field label="Mobile number">
-                <Input inputMode="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} disabled={!!p.mobile || otpSent} required />
+                <Input mask="mobile" value={mobile} onChange={(e) => setMobile(e.target.value)} disabled={!!p.mobile || otpSent} required />
               </Field>
               {otpSent && (
                 <Field label="6-digit code" hint={devCode ? `Development code: ${devCode}` : "Sent by SMS"}>

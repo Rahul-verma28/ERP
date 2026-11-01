@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { brandColorError, contrastRatio, prefixError, previewNumber, withDefaults } from '../contracts/workspace';
+import { FONTS, INDUSTRIES, THEME_PRESETS, brandColorError, contrastRatio, industryByKey, industryKeysFor, industryName, industryTemplateKey, prefixError, previewNumber, storedIndustryKey, withDefaults } from '../contracts/workspace';
+import { SETTINGS } from '../contracts/settings';
 import { BusinessSignup, PREFERENCE_SCHEMAS, SetupPatch, signupToTenant } from '../modules/tenancy/workspace';
 
 // Phase 1: signup v2 answers, workspace preferences and setup-wizard input (no database).
@@ -23,8 +24,8 @@ describe('signup v2 business answers', () => {
   it('accepts a complete answer set and maps it onto the tenant', () => {
     const b = BusinessSignup.parse(VALID);
     const t = signupToTenant(b);
-    expect(t).toMatchObject({ businessName: 'Glow Studio', industryKey: 'salon', gstin: '27AAPFU0939F1ZV', billingStateCode: '27' });
-    expect(t.profile).toMatchObject({ businessType: 'partnership', pan: 'AAPFU0939F', goals: ['billing'], industry: 'salon' });
+    expect(t).toMatchObject({ businessName: 'Glow Studio', industryKey: 'beauty_wellness', gstin: '27AAPFU0939F1ZV', billingStateCode: '27' });
+    expect(t.profile).toMatchObject({ businessType: 'partnership', pan: 'AAPFU0939F', goals: ['billing'], industry: 'beauty_wellness' });
   });
 
   it('needs a GSTIN when registered, matching the state', () => {
@@ -41,8 +42,8 @@ describe('signup v2 business answers', () => {
 
   it('starts an industry without its own template on the closest one and remembers the choice', () => {
     const t = signupToTenant(BusinessSignup.parse({ ...VALID, industryKey: 'clinic' }));
-    expect(t.industryKey).toBe('services');
-    expect(t.profile).toMatchObject({ industry: 'clinic', industryRequested: 'Clinic' });
+    expect(t.industryKey).toBe('health');
+    expect(t.profile).toMatchObject({ industry: 'health', industryRequested: 'Health Care' });
     expect(fields(BusinessSignup.safeParse({ ...VALID, industryKey: 'other', industryRequested: '' }))).toContain('industryRequested');
   });
 });
@@ -87,5 +88,44 @@ describe('workspace preferences', () => {
     expect(SetupPatch.safeParse({ step: 'profile', state: 'done' }).success).toBe(true);
     expect(SetupPatch.safeParse({ step: 'payroll', state: 'done' }).success).toBe(false);
     expect(SetupPatch.safeParse({ action: 'defer' }).success).toBe(true);
+  });
+});
+
+describe('industries', () => {
+  it('lists them A to Z with Other last', () => {
+    const names = INDUSTRIES.map((i) => i.name);
+    expect(names.at(-1)).toBe('Other');
+    expect(names.slice(0, -1)).toEqual([...names.slice(0, -1)].sort((a, b) => a.localeCompare(b)));
+  });
+
+  it('keeps businesses and leads saved with the old keys working', () => {
+    expect(industryName('salon')).toBe('Beauty & Wellness');
+    expect(industryTemplateKey('salon')).toBe('salon');
+    expect(industryTemplateKey('pharmacy')).toBe('pharmacy');
+    expect(industryKeysFor('health')).toEqual(expect.arrayContaining(['health', 'pharmacy', 'clinic']));
+    expect(industryByKey('nothing')).toBeUndefined();
+  });
+
+  it('gives every industry a starter template, and a sub-type its own when it has one', () => {
+    for (const i of INDUSTRIES) expect(industryTemplateKey(i.key)).toBeTruthy();
+    expect(storedIndustryKey('health', 'Pharmacy')).toBe('pharmacy');
+    expect(storedIndustryKey('health', 'Clinic')).toBe('health');
+    expect(industryTemplateKey(storedIndustryKey('beauty_wellness'))).toBe('salon');
+  });
+});
+
+describe('colour themes', () => {
+  it('has nine themes with buttons that read well in light and dark', () => {
+    expect(THEME_PRESETS).toHaveLength(9);
+    for (const p of THEME_PRESETS) {
+      expect(brandColorError(p.primary)).toBeNull();
+      expect(contrastRatio(p.primaryDark, p.scale[0])).toBeGreaterThanOrEqual(4.5);
+    }
+  });
+
+  it('reads a stored look from before themes existed, and keeps a chosen theme', () => {
+    const schema = SETTINGS['defaults.branding'].schema;
+    expect(schema.parse({ brandColor: '#BE123C', font: 'inter', theme: 'dark', density: 'compact' }).preset).toBe('default');
+    expect(schema.parse({ brandColor: '#235347', preset: 'evergreen', font: FONTS[1].key, density: 'comfortable' })).toMatchObject({ preset: 'evergreen', font: 'roboto', theme: 'system' });
   });
 });

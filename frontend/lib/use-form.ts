@@ -89,6 +89,14 @@ export function useForm<T extends Values>(opts: UseFormOptions<T>) {
     onBlur: () => blur(key),
   })
 
+  /** Props for a common dropdown (StateSelect, IndustrySelect, SearchSelect) bound to `key`. */
+  const pick = <K extends keyof T>(key: K) => ({
+    name: String(key),
+    value: (values[key] ?? "") as string,
+    onChange: (value: string) => set(key, value as T[K]),
+    onBlur: () => blur(key),
+  })
+
   /** Start over from `next` (e.g. what the API returned after saving) or the original values. */
   const reset = React.useCallback((next?: T) => {
     const v = next ?? optsRef.current.initial
@@ -173,6 +181,7 @@ export function useForm<T extends Values>(opts: UseFormOptions<T>) {
     set,
     blur,
     field,
+    pick,
     errors,
     hasErrors: Object.keys(allErrors).length > 0,
     changed,

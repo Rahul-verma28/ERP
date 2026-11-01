@@ -1,12 +1,12 @@
 "use client"
 
+import { StateSelect } from "@/components/search-select"
 import * as React from "react"
 import { BUSINESS_TYPES, email as emailRule, length, pan as panRule, panTypeMismatch, phone as phoneRule, pincode as pincodeRule, squish, stateName, upperNoSpaces, type BusinessType } from "@contracts/validation"
 import { Input } from "@/components/ui/input"
 import { Field, NativeSelect } from "@/components/form"
 import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { GST_STATES } from "@/lib/format"
 import { useForm } from "@/lib/use-form"
 import { LogoUpload } from "@/components/logo-upload"
 import { StepFooter, StepHeader, type StepProps } from "./wizard"
@@ -82,17 +82,10 @@ export function ProfileStep({ tenant, workspace, refresh, complete, back }: Step
           <Input {...form.field("city")} autoComplete="address-level2" />
         </Field>
         <Field label="PIN code" required error={form.errors.pincode}>
-          <Input {...form.field("pincode")} inputMode="numeric" maxLength={6} autoComplete="postal-code" />
+          <Input mask="pincode" {...form.field("pincode")} autoComplete="postal-code" />
         </Field>
         <Field label="State" required error={form.errors.billingStateCode} hint={gstLocked ? "From your GSTIN — change it in Settings › Business" : undefined}>
-          <NativeSelect {...form.field("billingStateCode")} disabled={gstLocked}>
-            <option value="">Select state</option>
-            {GST_STATES.map(([code, name]) => (
-              <option key={code} value={code}>
-                {name}
-              </option>
-            ))}
-          </NativeSelect>
+          <StateSelect {...form.pick("billingStateCode")} disabled={gstLocked} />
         </Field>
         <Field label="Business type" required error={form.errors.businessType}>
           <NativeSelect {...form.field("businessType")}>
@@ -105,7 +98,7 @@ export function ProfileStep({ tenant, workspace, refresh, complete, back }: Step
           </NativeSelect>
         </Field>
         <Field label="PAN" error={form.errors.pan} hint={tenant.gstin ? "Taken from your GSTIN" : "Optional for proprietors"}>
-          <Input {...form.field("pan")} maxLength={10} className="font-mono uppercase" spellCheck={false} />
+          <Input mask="pan" {...form.field("pan")} maxLength={10} className="font-mono uppercase" spellCheck={false} />
         </Field>
         <Field label="Financial year starts in" required hint="Locked after your first invoice">
           <NativeSelect {...form.field("fyStartMonth")}>
@@ -117,7 +110,7 @@ export function ProfileStep({ tenant, workspace, refresh, complete, back }: Step
           </NativeSelect>
         </Field>
         <Field label="Phone on documents" error={form.errors.phone}>
-          <Input {...form.field("phone")} inputMode="tel" />
+          <Input mask="phone" {...form.field("phone")} />
         </Field>
         <Field label="Email on documents" error={form.errors.email}>
           <Input {...form.field("email")} type="email" inputMode="email" />

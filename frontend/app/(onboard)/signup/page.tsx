@@ -1,10 +1,11 @@
 "use client"
 
+import { IndustrySelect, StateSelect } from "@/components/search-select"
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { captureReferral, referralFields } from "@/lib/referral"
-import { ArrowLeft, Check, Loader2, Search, Sparkles } from "lucide-react"
+import { ArrowLeft, Loader2, Sparkles } from "lucide-react"
 import {
   BUSINESS_TYPES,
   cleanMobile,
@@ -23,20 +24,17 @@ import {
   stateName,
   upperNoSpaces,
 } from "@contracts/validation"
-import { BRANCH_BANDS, BRANCH_BAND_LABEL, GOALS, HEARD_FROM, INDUSTRY_GROUPS, TEAM_SIZES, TEAM_SIZE_LABEL, industryByKey, type INDUSTRIES } from "@contracts/workspace"
+import { BRANCH_BANDS, BRANCH_BAND_LABEL, GOALS, HEARD_FROM, TEAM_SIZES, TEAM_SIZE_LABEL, industryByKey, type Industry } from "@contracts/workspace"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { ErrorSummary, Field, FormError, NativeSelect } from "@/components/form"
 import { ChoiceChip, OtpInput, SignupRail, StepProgress, type RailStep } from "@/components/onboarding"
-import { IndustryIcon } from "@/components/industry-icon"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { GST_STATES } from "@/lib/format"
 import { MODULE_NAV } from "@/lib/nav"
 import { useApi } from "@/lib/use-api"
 import { useForm } from "@/lib/use-form"
-import { useAsyncCheck } from "@/lib/use-unsaved"
 import { cn } from "@/lib/utils"
 
 // Signup v2 (Phase 1 wireframes 1.1–1.6): Account → Business → Industry → Goals → Verify,
@@ -53,8 +51,7 @@ interface TemplateInfo {
 }
 interface IndustriesResponse {
   data: TemplateInfo[]
-  industries: (typeof INDUSTRIES)[number][]
-  groups: string[]
+  industries: Industry[]
 }
 
 type StepKey = "account" | "business" | "industry" | "goals" | "verify"
@@ -99,6 +96,8 @@ const STEP_LABELS: Partial<Record<keyof Values, string>> = {
   gstRegistered: "GST registration", gstin: "GSTIN", stateCode: "State", teamSize: "Team size", branches: "Locations", industryKey: "Industry",
   industryRequested: "What your business does", goals: "What you want to manage", otp: "Code",
 }
+/** Marks an email or mobile the account check found in use; AccountStep shows it with sign-in links. */
+const TAKEN = "taken"
 const SERVER_FIELD: Partial<Record<string, keyof Values>> = { termsAccepted: "terms", mobileVerificationToken: "otp" }
 
 /** Modules that are built and can be picked (others show "Soon"). */
@@ -215,11 +214,26 @@ function SignupFlow() {
 
   const templates = catalog.data?.data ?? []
   const industry = v.industryKey ? industryByKey(v.industryKey) : undefined
-  const template = templates.find((t) => t.key === industry?.template)
+  const template = templates.find((t) => t.key === (industry?.subTemplates?.[v.subIndustry] ?? industry?.template))
 
+  const [submitting, setSubmitting] = React.useState(false)
   const goTo = (key: StepKey) => setStepIndex(Math.max(0, steps.indexOf(key)))
-  const next = () => {
+  const next = async () => {
     if (!form.check(STEP_FIELDS[step])) return
+    // One check when leaving the step: is this email or mobile already an AHEAD account?
+    if (step === "account") {
+      const email = v.email.trim().toLowerCase()
+      const mobile = cleanMobile(v.mobile)
+      setSubmitting(true)
+      try {
+        const taken = await api.get<{ email: boolean; mobile: boolean }>(`/public/signup/check?email=${encodeURIComponent(email)}&mobile=${mobile}`)
+        if (taken.email || taken.mobile) return form.setServerErrors({ ...(taken.email ? { email: TAKEN } : {}), ...(taken.mobile ? { mobile: TAKEN } : {}) })
+      } catch {
+        // A failed check never blocks signup; the API checks again when the account is created
+      } finally {
+        setSubmitting(false)
+      }
+    }
     if (step === "goals" && !v.modules.length) form.set("modules", recommendModules(v.goals, template))
     if (returnToReview) {
       setReturnToReview(false)
@@ -269,7 +283,6 @@ function SignupFlow() {
     if (!first) form.setFormError(err.message)
   }
 
-  const [submitting, setSubmitting] = React.useState(false)
   const create = async (code?: string) => {
     if (submitting) return
     if (!addBusiness && (code ?? v.otp).length !== 6) return form.check(["otp"])
@@ -394,7 +407,7 @@ function SignupFlow() {
           onSubmit={(e) => {
             e.preventDefault()
             if (step === "verify") void create()
-            else next()
+            else void next()
           }}
         >
           <div className="flex items-center justify-between lg:hidden">
@@ -420,7 +433,7 @@ function SignupFlow() {
 
           {step === "account" && <AccountStep form={form} />}
           {step === "business" && <BusinessStep form={form} />}
-          {step === "industry" && <IndustryStep form={form} catalog={catalog.data ?? undefined} loading={!catalog.data && !catalog.error} template={template} />}
+          {step === "industry" && <IndustryStep form={form} loading={!catalog.data && !catalog.error} template={template} />}
           {step === "goals" && <GoalsStep form={form} template={template} />}
           {step === "verify" && (
             <VerifyStep form={form} addBusiness={addBusiness} template={template} onEdit={editFromReview} onCodeComplete={(c) => void create(c)} submitting={submitting} onChangeNumber={() => editFromReview("account")} />
@@ -489,9 +502,6 @@ function AccountStep({ form }: { form: SignupForm }) {
   const v = form.values
   const [show, setShow] = React.useState(false)
   const emailOk = !!v.email && !emailRule(v.email)
-  const mobileOk = !!v.mobile && !mobileIN(v.mobile)
-  const emailCheck = useAsyncCheck(emailOk ? v.email.trim().toLowerCase() : "", async (e) => ((await api.get<{ email: boolean }>(`/public/signup/check?email=${encodeURIComponent(e)}`)).email ? "taken" : null))
-  const mobileCheck = useAsyncCheck(mobileOk ? cleanMobile(v.mobile) : "", async (m) => ((await api.get<{ mobile: boolean }>(`/public/signup/check?mobile=${m}`)).mobile ? "taken" : null))
   const strength = passwordStrength(v.password)
   const suggestion = emailOk ? emailSuggestion(v.email) : null
   const takenNote = (what: string) => (
@@ -528,13 +538,12 @@ function AccountStep({ form }: { form: SignupForm }) {
       </div>
       <div className="grid gap-3.5">
         <Field label="Full name" required error={form.errors.name}>
-          <Input {...form.field("name")} autoComplete="name" autoFocus />
+          <Input mask="name" {...form.field("name")} autoComplete="name" autoFocus />
         </Field>
         <Field
           label="Work email"
           required
-          error={form.errors.email ?? (emailCheck.status === "error" ? (takenNote("email")) : null)}
-          checking={emailCheck.status === "checking"}
+          error={form.errors.email === TAKEN ? takenNote("email") : form.errors.email}
           hint={
             suggestion ? (
               <>
@@ -547,18 +556,17 @@ function AccountStep({ form }: { form: SignupForm }) {
             ) : undefined
           }
         >
-          <Input {...form.field("email")} type="email" inputMode="email" autoComplete="email" />
+          <Input mask="email" {...form.field("email")} type="email" autoComplete="email" />
         </Field>
         <Field
           label="Mobile"
           required
-          error={form.errors.mobile ?? (mobileCheck.status === "error" ? (takenNote("mobile number")) : null)}
-          checking={mobileCheck.status === "checking"}
+          error={form.errors.mobile === TAKEN ? takenNote("mobile number") : form.errors.mobile}
           hint="We'll send a code to verify it at the last step"
         >
           <div className="flex gap-2">
             <span className="grid h-9 w-14 shrink-0 place-items-center rounded-3xl bg-muted text-sm text-muted-foreground">+91</span>
-            <Input {...form.field("mobile")} inputMode="tel" autoComplete="tel-national" placeholder="98765 43210" />
+            <Input mask="mobile" {...form.field("mobile")} autoComplete="tel-national" placeholder="98765 43210" />
           </div>
         </Field>
         <Field
@@ -652,7 +660,7 @@ function BusinessStep({ form }: { form: SignupForm }) {
         <>
           <Field label="GSTIN" required error={form.errors.gstin} hint={gstOk ? undefined : "15 characters, e.g. 27ABCDE1234F1Z5"}>
             <div className="flex gap-2">
-              <Input {...form.field("gstin")} maxLength={15} className="font-mono uppercase" spellCheck={false} autoCapitalize="characters" data-valid={gstOk && !form.errors.gstin ? "true" : undefined} />
+              <Input mask="gstin" {...form.field("gstin")} maxLength={15} className="font-mono uppercase" spellCheck={false} autoCapitalize="characters" data-valid={gstOk && !form.errors.gstin ? "true" : undefined} />
               {/* Needs a GST Suvidha Provider API to look up the legal name and address */}
               <Button type="button" variant="outline" className="shrink-0" disabled title="Fetching details from the GST network is coming soon">
                 Fetch details
@@ -675,14 +683,7 @@ function BusinessStep({ form }: { form: SignupForm }) {
       )}
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="State" required error={form.errors.stateCode} hint={gstOk ? "Taken from your GSTIN" : undefined}>
-          <NativeSelect {...form.field("stateCode")} disabled={gstOk}>
-            <option value="">Select state</option>
-            {GST_STATES.map(([code, name]) => (
-              <option key={code} value={code}>
-                {name}
-              </option>
-            ))}
-          </NativeSelect>
+          <StateSelect {...form.pick("stateCode")} disabled={gstOk} />
         </Field>
         <Field label="Team size" required error={form.errors.teamSize}>
           <NativeSelect {...form.field("teamSize")}>
@@ -711,11 +712,8 @@ function BusinessStep({ form }: { form: SignupForm }) {
 
 const humanize = (k: string) => k.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase())
 
-function IndustryStep({ form, catalog, loading, template }: { form: SignupForm; catalog?: IndustriesResponse; loading: boolean; template?: TemplateInfo }) {
+function IndustryStep({ form, loading, template }: { form: SignupForm; loading: boolean; template?: TemplateInfo }) {
   const v = form.values
-  const [query, setQuery] = React.useState("")
-  const q = query.trim().toLowerCase()
-  const list = (catalog?.industries ?? []).filter((i) => !q || `${i.name} ${i.keywords ?? ""} ${i.sub.join(" ")}`.toLowerCase().includes(q))
   const chosen = v.industryKey ? industryByKey(v.industryKey) : undefined
   const terms = template?.terms ?? {}
 
@@ -724,41 +722,17 @@ function IndustryStep({ form, catalog, loading, template }: { form: SignupForm; 
       <StepTitle title="What kind of business is it?" description="We set up the words, fields and dashboard for your industry." />
       <div className="grid gap-6 lg:grid-cols-[1fr_17rem]">
         <div className="grid content-start gap-4">
-          <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search — salon, kirana, clinic, coaching…" className="pl-9" aria-label="Search industries" />
-          </div>
-          {loading && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading industries…</p>}
-          {INDUSTRY_GROUPS.map((g) => {
-            const items = list.filter((i) => i.group === g)
-            if (!items.length) return null
-            return (
-              <section key={g} className="grid gap-2" aria-label={g}>
-                <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{g}</h2>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3" role="radiogroup" aria-label={g}>
-                  {items.map((i) => (
-                    <ChoiceChip
-                      key={i.key}
-                      selected={v.industryKey === i.key}
-                      onClick={() => {
-                        form.set("industryKey", i.key)
-                        form.set("subIndustry", "")
-                      }}
-                      className="flex items-center gap-2.5 rounded-[10px] p-2.5"
-                    >
-                      <span className={cn("grid size-[30px] shrink-0 place-items-center rounded-lg", v.industryKey === i.key ? "bg-primary text-primary-foreground" : "bg-muted text-foreground/70")}>
-                        {v.industryKey === i.key ? <Check className="size-4" /> : <IndustryIcon industry={i.key} className="size-4" />}
-                      </span>
-                      <span className="min-w-0 flex-1 leading-tight">{i.name}</span>
-                      {!i.ready && <span className="shrink-0 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-100">Soon</span>}
-                    </ChoiceChip>
-                  ))}
-                </div>
-              </section>
-            )
-          })}
-          {!loading && !list.length && <p className="text-sm text-muted-foreground">No industry matches “{query}”. Choose <strong>Other</strong> and tell us.</p>}
-          {form.errors.industryKey && <p className="text-xs text-destructive">{form.errors.industryKey}</p>}
+          {loading && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading…</p>}
+          <Field label="Industry" required error={form.errors.industryKey} hint="Type to search, e.g. salon, kirana, clinic, coaching">
+            <IndustrySelect
+              name="industryKey"
+              value={v.industryKey}
+              onChange={(key) => {
+                form.set("industryKey", key)
+                form.set("subIndustry", "")
+              }}
+            />
+          </Field>
           {chosen && chosen.sub.length > 0 && (
             <div className="grid gap-2 rounded-3xl border border-primary/30 bg-primary/5 p-4">
               <p className="text-sm font-medium">
@@ -823,12 +797,20 @@ function GoalsStep({ form, template }: { form: SignupForm; template?: TemplateIn
   const recommended = recommendModules(v.goals, template)
   const fromGoals = GOALS.filter((g) => v.goals.includes(g.key)).flatMap((g) => g.modules as readonly string[])
   const modules = v.modules.length ? v.modules : recommended
-  const couponOk = /^[A-Z0-9_-]{2,20}$/.test(v.couponCode)
-  const coupon = useAsyncCheck(couponOk ? v.couponCode : "", async (c) => {
-    const r = await api.get<{ valid: boolean; message: string }>(`/public/coupons/${encodeURIComponent(c)}`)
-    return r.valid ? `ok:${r.message}` : r.message
-  })
-  const couponGood = coupon.status === "error" && coupon.message?.startsWith("ok:")
+  const [coupon, setCoupon] = React.useState<{ code: string; valid: boolean; message: string } | null>(null)
+  const [checking, setChecking] = React.useState(false)
+  const checked = coupon?.code === v.couponCode ? coupon : null
+  const applyCoupon = async () => {
+    setChecking(true)
+    try {
+      const r = await api.get<{ valid: boolean; message: string }>(`/public/coupons/${encodeURIComponent(v.couponCode)}`)
+      setCoupon({ code: v.couponCode, ...r })
+    } catch {
+      setCoupon({ code: v.couponCode, valid: false, message: "Couldn't check this code. It's checked again when you finish." })
+    } finally {
+      setChecking(false)
+    }
+  }
   const toggleGoal = (k: string) => {
     const next = v.goals.includes(k) ? v.goals.filter((g) => g !== k) : [...v.goals, k]
     form.set("goals", next)
@@ -868,12 +850,14 @@ function GoalsStep({ form, template }: { form: SignupForm; template?: TemplateIn
             </Field>
             <Field
               label="Referral or coupon code"
-              error={form.errors.couponCode ?? (coupon.status === "error" && !couponGood ? coupon.message : v.couponCode && !couponOk ? "Use letters and digits only" : null)}
-              success={couponGood ? coupon.message!.slice(3) : null}
-              checking={coupon.status === "checking"}
+              error={form.errors.couponCode ?? (checked && !checked.valid ? checked.message : null)}
+              success={checked?.valid ? checked.message : null}
               hint="Optional"
             >
-              <Input {...form.field("couponCode")} className="uppercase" maxLength={20} />
+              <div className="flex gap-2">
+                <Input mask="code" {...form.field("couponCode")} />
+                <Button type="button" variant="outline" className="h-10 shrink-0" disabled={v.couponCode.length < 2 || checking} onClick={() => void applyCoupon()}>{checking ? "Checking…" : "Apply"}</Button>
+              </div>
             </Field>
           </div>
         </div>

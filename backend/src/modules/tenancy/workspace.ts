@@ -11,6 +11,7 @@ import {
   TEAM_SIZES,
   brandColorError,
   industryByKey,
+  storedIndustryKey,
   prefixError,
   withDefaults,
   type ProvisioningStatus,
@@ -102,11 +103,11 @@ export function signupToTenant(b: BusinessSignup) {
   };
   return {
     businessName: b.businessName,
-    industryKey: industry.template,
+    industryKey: storedIndustryKey(b.industryKey, b.subIndustry),
     gstin: b.gstRegistered ? (b.gstin ?? undefined) : undefined,
     billingStateCode: b.stateCode,
     legalName: b.legalName ?? null,
-    profile: { ...profile, industry: b.industryKey, composition: b.composition, marketingOptIn: b.marketingOptIn },
+    profile: { ...profile, industry: industry.key, composition: b.composition, marketingOptIn: b.marketingOptIn },
   };
 }
 

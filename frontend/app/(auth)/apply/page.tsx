@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Field, FormError, NativeSelect } from "@/components/form"
+import { Field, FormError } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
-import { GST_STATES } from "@/lib/format"
+import { email as emailRule, gstin as gstinRule, gstinStateMismatch, mobileIN, personName } from "@contracts/validation"
+import { StateSelect } from "@/components/search-select"
 import { cn } from "@/lib/utils"
 
 // Website: apply to work with AHEAD (blueprint Phase G). A vendor brings businesses and earns
@@ -43,9 +44,19 @@ function Apply() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
-    setBusy(true)
-    setErrors({})
     setError(null)
+    const bad = Object.fromEntries(
+      Object.entries({
+        name: !f.name.trim() ? "Enter your name" : personName(f.name),
+        company: kind === "partner" && !f.company.trim() ? "Enter your company name" : null,
+        email: !f.email.trim() ? "Enter your email" : emailRule(f.email),
+        mobile: !f.mobile ? "Enter your mobile number" : mobileIN(f.mobile),
+        gstin: f.gstin ? gstinRule(f.gstin) ?? gstinStateMismatch(f.gstin, f.stateCode) : null,
+      }).filter(([, v]) => v)
+    ) as Record<string, string>
+    setErrors(bad)
+    if (Object.keys(bad).length) return
+    setBusy(true)
     try {
       await api.post("/public/applications", { kind, ...f, company: f.company || null, city: f.city || null, stateCode: f.stateCode || null, gstin: f.gstin || null, message: f.message || null })
       setSent(true)
@@ -94,31 +105,28 @@ function Apply() {
           </fieldset>
 
           <Field label="Your name" error={errors.name} required>
-            <Input value={f.name} onChange={set("name")} autoComplete="name" />
+            <Input mask="name" value={f.name} onChange={set("name")} autoComplete="name" />
           </Field>
           <Field label={kind === "partner" ? "Company name" : "Company name (optional)"} error={errors.company} required={kind === "partner"}>
             <Input value={f.company} onChange={set("company")} autoComplete="organization" />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Email" error={errors.email} required>
-              <Input type="email" value={f.email} onChange={set("email")} autoComplete="email" />
+              <Input mask="email" type="email" value={f.email} onChange={set("email")} autoComplete="email" />
             </Field>
             <Field label="Mobile" error={errors.mobile} required>
-              <Input inputMode="tel" value={f.mobile} onChange={set("mobile")} autoComplete="tel" placeholder="98765 43210" />
+              <Input mask="mobile" value={f.mobile} onChange={set("mobile")} autoComplete="tel" placeholder="98765 43210" />
             </Field>
             <Field label="City" error={errors.city}>
               <Input value={f.city} onChange={set("city")} autoComplete="address-level2" />
             </Field>
             <Field label="State" error={errors.stateCode}>
-              <NativeSelect value={f.stateCode} onChange={set("stateCode")}>
-                <option value="">Choose</option>
-                {GST_STATES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-              </NativeSelect>
+              <StateSelect value={f.stateCode} onChange={(v) => setF((x) => ({ ...x, stateCode: v }))} />
             </Field>
           </div>
           {kind === "partner" && (
             <Field label="GSTIN (optional)" error={errors.gstin} hint="Needed on the monthly bill if you claim GST">
-              <Input value={f.gstin} onChange={(e) => setF((x) => ({ ...x, gstin: e.target.value.toUpperCase().replace(/\s/g, "") }))} maxLength={15} className="font-mono" />
+              <Input mask="gstin" value={f.gstin} onChange={(e) => setF((x) => ({ ...x, gstin: e.target.value }))} className="font-mono" />
             </Field>
           )}
           <Field label="Anything we should know? (optional)" error={errors.message} count={[f.message.length, 1000]}>

@@ -1,5 +1,6 @@
 "use client"
 
+import { StateSelect } from "@/components/search-select"
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -18,7 +19,7 @@ import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { useForm } from "@/lib/use-form"
-import { formatDate, GST_STATES } from "@/lib/format"
+import { formatDate } from "@/lib/format"
 
 // Settings › Organization (wireframe X1): business profile, then year, time & formats.
 
@@ -231,20 +232,13 @@ function ProfileCard({ tenant, profile, onSaved }: { tenant: Tenant; profile: Pr
             </NativeSelect>
           </Field>
           <Field label="State" required error={form.errors.billingStateCode}>
-            <NativeSelect {...form.field("billingStateCode")}>
-              <option value="">Select state</option>
-              {GST_STATES.map(([code, name]) => (
-                <option key={code} value={code}>
-                  {name} ({code})
-                </option>
-              ))}
-            </NativeSelect>
+            <StateSelect {...form.pick("billingStateCode")} />
           </Field>
           <Field label="GSTIN" error={form.errors.gstin} success={gstinOk ? `Valid · ${stateName(form.values.gstin.slice(0, 2))}` : null} hint="Leave empty if not GST registered">
-            <Input {...form.field("gstin")} maxLength={15} className="font-mono uppercase" autoCapitalize="characters" spellCheck={false} />
+            <Input mask="gstin" {...form.field("gstin")} maxLength={15} className="font-mono uppercase" autoCapitalize="characters" spellCheck={false} />
           </Field>
           <Field label="PAN" error={form.errors.pan}>
-            <Input {...form.field("pan")} maxLength={10} className="font-mono uppercase" autoCapitalize="characters" spellCheck={false} />
+            <Input mask="pan" {...form.field("pan")} maxLength={10} className="font-mono uppercase" autoCapitalize="characters" spellCheck={false} />
           </Field>
           <Field label="Address line 1" error={form.errors.line1} className="sm:col-span-2">
             <Input {...form.field("line1")} autoComplete="address-line1" />
@@ -256,7 +250,7 @@ function ProfileCard({ tenant, profile, onSaved }: { tenant: Tenant; profile: Pr
             <Input {...form.field("city")} autoComplete="address-level2" />
           </Field>
           <Field label="PIN code" error={form.errors.pincode}>
-            <Input {...form.field("pincode")} inputMode="numeric" maxLength={6} autoComplete="postal-code" />
+            <Input mask="pincode" {...form.field("pincode")} autoComplete="postal-code" />
           </Field>
         </div>
       </EditableSection>

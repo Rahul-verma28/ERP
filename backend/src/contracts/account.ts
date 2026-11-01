@@ -111,6 +111,17 @@ export function strictestPassword(policies: SecurityPolicy['password'][]): Secur
   );
 }
 
+/**
+ * The rules for one person's password. Someone with a Console login follows the Console's rules
+ * alone; everyone else follows the strictest of their businesses. `where` says where to change them.
+ */
+export function passwordRulesFor(consoleRules: SecurityPolicy['password'] | null, businesses: { name: string; password: SecurityPolicy['password'] }[]) {
+  if (consoleRules) return { password: consoleRules, setBy: 'AHEAD Console', where: 'Console › Settings › Passwords' };
+  // Name the business whose rule is the strictest, for the error message
+  const strictest = businesses.reduce<{ name: string; len: number } | null>((a, x) => (x.password.minLength >= (a?.len ?? 0) ? { name: x.name, len: x.password.minLength } : a), null);
+  return { password: strictestPassword(businesses.map((x) => x.password)), setBy: strictest?.name ?? null, where: strictest ? `${strictest.name}'s Settings › Users & security` : null };
+}
+
 // A short list of the passwords seen most in breaches (plus Indian favourites). The API
 // also rejects anything containing the person's name, email or mobile.
 const COMMON = new Set([

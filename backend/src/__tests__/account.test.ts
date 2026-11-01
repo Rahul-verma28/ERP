@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { base32Encode, decryptSecret, encryptSecret, hashBackupCode, newBackupCodes, newSecret, totp, verifyTotp } from '../modules/account/totp';
 import {
   DEFAULT_NOTIFICATIONS, DEFAULT_SECURITY, cidrError, ipAllowed, notificationsWithDefaults, passwordPolicyError, renderTemplate, rolePermissionProblem,
-  securityWithDefaults, strictestPassword, templateProblems,
+  passwordRulesFor, securityWithDefaults, strictestPassword, templateProblems,
 } from '../contracts/account';
 import { policyCovers } from '../modules/account/policy';
 import { csv, xlsx, zip } from '../kernel/zip';
@@ -144,5 +144,20 @@ describe('export files', () => {
     const text = book.toString('utf8');
     expect(text).toContain('xl/worksheets/sheet1.xml');
     expect(text).toContain('<v>1770</v>');
+  });
+});
+
+describe('whose password rules apply', () => {
+  const business = { name: 'Renvix', password: { ...DEFAULT_SECURITY.password, minLength: 32, requireSymbol: true } };
+  const consoleRules = { ...DEFAULT_SECURITY.password, minLength: 12 };
+
+  it('uses only the Console rules for someone with a Console login', () => {
+    expect(passwordRulesFor(consoleRules, [business])).toMatchObject({ password: { minLength: 12, requireSymbol: false }, setBy: 'AHEAD Console', where: 'Console › Settings › Passwords' });
+  });
+
+  it('uses the strictest business for everyone else, and names it', () => {
+    const r = passwordRulesFor(null, [{ name: 'Glow', password: DEFAULT_SECURITY.password }, business]);
+    expect(r).toMatchObject({ password: { minLength: 32, requireSymbol: true }, setBy: 'Renvix', where: "Renvix's Settings › Users & security" });
+    expect(passwordRulesFor(null, [])).toMatchObject({ password: DEFAULT_SECURITY.password, setBy: null, where: null });
   });
 });

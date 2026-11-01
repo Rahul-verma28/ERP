@@ -1,5 +1,6 @@
 "use client"
 
+import { email as emailRule, mobileIN, personName } from "@contracts/validation"
 import * as React from "react"
 import { toast } from "sonner"
 import { Copy, KeyRound, Pencil, UserCheck, UserPlus, UserX, Users } from "lucide-react"
@@ -40,8 +41,16 @@ function AddDialog({ open, onOpenChange, roles, onSaved }: { open: boolean; onOp
   }
   async function save(e: React.FormEvent) {
     e.preventDefault()
+    const bad = Object.fromEntries(
+      Object.entries({
+        email: !form.email.trim() ? "Enter their email" : emailRule(form.email),
+        name: form.name && personName(form.name),
+        mobile: form.mobile && mobileIN(form.mobile),
+      }).filter(([, v]) => v)
+    ) as Record<string, string>
+    setErrors(bad)
+    if (Object.keys(bad).length) return
     setBusy(true)
-    setErrors({})
     try {
       const r = await api.post<{ newUser: boolean; loginLink: LoginLink }>("/console/members", { email: form.email, name: form.name || undefined, mobile: form.mobile || undefined, roleKey: form.roleKey || first })
       setAdded({ name: form.name || form.email, mobile: form.mobile, link: r.loginLink })
@@ -71,20 +80,20 @@ function AddDialog({ open, onOpenChange, roles, onSaved }: { open: boolean; onOp
   return (
     <Dialog open={open} onOpenChange={close}>
       <DialogContent>
-        <form onSubmit={save} className="grid gap-4">
+        <form onSubmit={save} noValidate className="grid gap-4">
           <DialogHeader>
             <DialogTitle>Add a person</DialogTitle>
             <DialogDescription>They get a login link by SMS and email and choose their own password. Someone who already has an AHEAD account is found by email.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Email" required error={errors.email} className="sm:col-span-2">
-              <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required autoFocus />
+              <Input mask="email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} autoFocus />
             </Field>
             <Field label="Name" error={errors.name}>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <Input mask="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </Field>
             <Field label="Mobile" error={errors.mobile}>
-              <Input inputMode="tel" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} placeholder="98765 43210" />
+              <Input mask="mobile" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} placeholder="98765 43210" />
             </Field>
             <Field label="Role" error={errors.roleKey} className="sm:col-span-2">
               <NativeSelect value={form.roleKey || first} onChange={(e) => setForm({ ...form, roleKey: e.target.value })}>

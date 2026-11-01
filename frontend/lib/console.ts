@@ -427,7 +427,7 @@ export interface OnboardingDetail {
   owner: { name: string; email: string; mobile: string; lastLoginAt: string | null }
   handover: { startedAt: string; steps: Partial<Record<HandoverStep, "done" | "skipped">>; imported?: { contacts?: number; items?: number }; sentAt?: string | null; acceptedAt?: string | null }
   progress: HandoverProgress
-  branding: { brandColor: string; font: string; theme: "light" | "dark" | "system"; density: "comfortable" | "compact" }
+  branding: Branding
   config: {
     fyStartMonth: number
     timezone: string
@@ -542,7 +542,7 @@ export interface RenewalRow { tenantId: string; business: string; status: Tenant
 
 
 // Console › Settings › Appearance
-export interface Branding { brandColor: string; font: string; theme: "light" | "dark" | "system"; density: "comfortable" | "compact" }
+export interface Branding { brandColor: string; preset: string; font: string; theme: "light" | "dark" | "system"; density: "comfortable" | "compact" }
 
 // ── Phase F: Analytics and System health ──
 export interface AnalyticsMonth { month: string; label: string; newBusinesses: number; firstPayments: number; receivedPaise: number | null; activeBusinesses: number; invoices: number }

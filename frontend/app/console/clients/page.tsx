@@ -1,5 +1,6 @@
 "use client"
 
+import { IndustrySelect } from "@/components/search-select"
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
@@ -99,7 +100,6 @@ function ClientsList() {
   const [industryKey, setIndustryKey] = React.useState("")
   const table = useServerTable<ClientRow>("/console/tenants", { status, planKey, onboarded, industryKey }, { sortParam })
   const catalog = useApi<Catalog>("/console/catalog")
-  const industries = useApi<{ data: { key: string; name: string }[] }>("/public/industries")
   const canAdd = canConsole("platform.tenant.create") && me?.console?.partner?.status !== "paused"
   const canExtend = canConsole("platform.grace.create")
 
@@ -222,7 +222,7 @@ function ClientsList() {
           <>
             <FilterSelect value={planKey} onChange={setPlanKey} label="Plan" options={[["", "Any plan"], ...(catalog.data?.plans.map((p) => [p.key, p.name] as [string, string]) ?? [])]} />
             {team && <FilterSelect value={onboarded} onChange={setOnboarded} label="Onboarded by" options={ONBOARDED_FILTER} />}
-            <FilterSelect value={industryKey} onChange={setIndustryKey} label="Industry" options={[["", "Any industry"], ...(industries.data?.data.map((i) => [i.key, i.name] as [string, string]) ?? [])]} />
+            <IndustrySelect value={industryKey} onChange={setIndustryKey} aria-label="Industry" emptyLabel="Any industry" className={cn("h-9 w-auto min-w-40 bg-background text-[13px]", industryKey && "border-primary/60 font-medium")} />
           </>
         }
         toolbar={

@@ -1,6 +1,7 @@
 import { prisma } from '../../kernel/db';
 import { cache } from '../../kernel/cache';
-import { securityWithDefaults, strictestPassword, type SecurityPolicy } from '../../contracts/account';
+import { passwordRulesFor, securityWithDefaults, type SecurityPolicy } from '../../contracts/account';
+import { getSetting } from '../settings/service';
 
 // Workspace security policy (Settings › Users & security) and what it means for one person
 // across every business they belong to. Reads use the owner client with explicit ids.
@@ -93,16 +94,16 @@ export function mfaRequirement(userId: string): Promise<MfaRequirement> {
 
 export const forgetMfa = (userId: string) => cache.del(`mfa:user:${userId}`);
 
-/** The strictest password and session rules across this person's businesses. */
+/** The password rules for this person, and the strictest session rules across their businesses. */
 export async function personalPolicy(userId: string) {
-  const memberships = await loadMemberships(userId);
+  const [memberships, platform] = await Promise.all([loadMemberships(userId), prisma.platformMember.findUnique({ where: { userId }, select: { status: true } })]);
   const policies = memberships.map((m) => ({ name: m.tenant.name, p: readSecurity(m.tenant.preferences) }));
-  const password = strictestPassword(policies.map((x) => x.p.password));
-  // Name the business whose rule is the strictest, for the error message
-  const strictest = policies.reduce<{ name: string; len: number } | null>((a, x) => (x.p.password.minLength >= (a?.len ?? 0) ? { name: x.name, len: x.p.password.minLength } : a), null);
+  const consoleRules = platform?.status === 'active' ? await getSetting('console.password') : null;
+  const rules = passwordRulesFor(consoleRules, policies.map((x) => ({ name: x.name, password: x.p.password })));
   return {
-    password,
-    passwordSetBy: policies.length === 1 ? policies[0].name : strictest?.name ?? null,
+    password: rules.password,
+    passwordSetBy: rules.setBy,
+    passwordSetWhere: rules.where,
     idleMinutes: Math.min(...policies.map((x) => x.p.sessions.idleMinutes), 10080),
     maxDays: Math.min(...policies.map((x) => x.p.sessions.maxDays), 30),
   };

@@ -26,37 +26,61 @@ export const GOALS = [
 export type GoalKey = (typeof GOALS)[number]['key'];
 
 /**
- * Industries offered at signup. `template` is the industry template applied today; an
- * industry without its own template yet (`ready: false`) starts on the closest one and the
- * choice is kept in the profile for the product team.
+ * Industries offered everywhere (signup, Console, leads), one broad category each. `template`
+ * is the starter setup a business gets; `subTemplates` picks a more specific one for a sub-type
+ * (a pharmacy within Health Care). `ready: false` starts on the closest template and the choice
+ * is kept in the profile for the product team. Listed A to Z, with Other last.
  */
-export const INDUSTRY_GROUPS = ['Retail & trade', 'Health & wellness', 'Food & hospitality', 'Services', 'Education', 'Manufacturing & construction', 'Other'] as const;
-export const INDUSTRIES: { key: string; name: string; group: (typeof INDUSTRY_GROUPS)[number]; template: string; ready: boolean; sub: string[]; keywords?: string }[] = [
-  { key: 'retail', name: 'Retail store', group: 'Retail & trade', template: 'retail', ready: true, sub: ['Kirana / grocery', 'Supermarket', 'Stationery', 'Gift shop', 'Hardware store', 'Furniture'], keywords: 'shop kirana grocery general store' },
-  { key: 'wholesale', name: 'Wholesale & distribution', group: 'Retail & trade', template: 'retail', ready: false, sub: ['FMCG distributor', 'Stockist', 'Trader', 'Import / export'], keywords: 'distributor trader stockist' },
-  { key: 'pharmacy', name: 'Pharmacy', group: 'Retail & trade', template: 'pharmacy', ready: true, sub: ['Retail chemist', 'Wholesale chemist', 'Ayurvedic store'], keywords: 'chemist medical medicine' },
-  { key: 'apparel', name: 'Apparel & footwear', group: 'Retail & trade', template: 'retail', ready: false, sub: ['Clothing store', 'Boutique', 'Footwear', 'Textiles'], keywords: 'clothes garments boutique shoes' },
-  { key: 'electronics', name: 'Electronics & mobiles', group: 'Retail & trade', template: 'retail', ready: false, sub: ['Mobile shop', 'Electronics store', 'Computer shop', 'Repair centre'], keywords: 'mobile phone laptop' },
-  { key: 'jewellery', name: 'Jewellery', group: 'Retail & trade', template: 'retail', ready: false, sub: ['Gold & silver', 'Imitation jewellery', 'Diamonds'], keywords: 'gold jeweller' },
-  { key: 'optical', name: 'Optical store', group: 'Retail & trade', template: 'retail', ready: false, sub: ['Spectacles', 'Contact lenses'], keywords: 'glasses spectacles' },
-  { key: 'salon', name: 'Salon & spa', group: 'Health & wellness', template: 'salon', ready: true, sub: ['Unisex salon', 'Ladies salon / parlour', "Men's barber", 'Spa', 'Bridal studio', 'Nail / lash studio'], keywords: 'parlour beauty barber' },
-  { key: 'gym', name: 'Gym & fitness', group: 'Health & wellness', template: 'gym', ready: true, sub: ['Gym', 'Yoga studio', 'Dance studio', 'CrossFit / boxing', 'Sports academy'], keywords: 'fitness yoga' },
-  { key: 'clinic', name: 'Clinic', group: 'Health & wellness', template: 'services', ready: false, sub: ['General physician', 'Dental', 'Physiotherapy', 'Skin / hair clinic', 'Veterinary'], keywords: 'doctor hospital dental' },
-  { key: 'lab', name: 'Diagnostic lab', group: 'Health & wellness', template: 'services', ready: false, sub: ['Pathology', 'Imaging'], keywords: 'pathology test' },
-  { key: 'restaurant', name: 'Restaurant & café', group: 'Food & hospitality', template: 'retail', ready: false, sub: ['Restaurant', 'Café', 'Cloud kitchen', 'Bakery', 'Sweet shop'], keywords: 'food cafe hotel kitchen' },
-  { key: 'hotel', name: 'Hotel & homestay', group: 'Food & hospitality', template: 'services', ready: false, sub: ['Hotel', 'Homestay', 'Resort', 'PG / hostel'], keywords: 'rooms lodge' },
-  { key: 'services', name: 'Service company', group: 'Services', template: 'services', ready: true, sub: ['Agency', 'IT services', 'Consulting', 'Facility services', 'Events'], keywords: 'agency consulting' },
-  { key: 'professional', name: 'CA / legal / consulting', group: 'Services', template: 'services', ready: false, sub: ['Chartered accountant', 'Law firm', 'Tax consultant'], keywords: 'ca accountant lawyer' },
-  { key: 'repairs', name: 'Repairs & field service', group: 'Services', template: 'services', ready: false, sub: ['AC / appliance service', 'Automobile garage', 'Pest control', 'AMC contractor'], keywords: 'garage service amc' },
-  { key: 'travel', name: 'Travel agency', group: 'Services', template: 'services', ready: false, sub: ['Tours', 'Ticketing', 'Visa services'], keywords: 'tour' },
-  { key: 'logistics', name: 'Logistics & transport', group: 'Services', template: 'services', ready: false, sub: ['Transporter', 'Courier', 'Packers & movers'], keywords: 'transport courier' },
-  { key: 'school', name: 'Coaching / school', group: 'Education', template: 'school', ready: true, sub: ['Coaching institute', 'School', 'Pre-school', 'Training centre', 'Music / art classes'], keywords: 'tuition classes institute' },
-  { key: 'manufacturing', name: 'Manufacturing', group: 'Manufacturing & construction', template: 'retail', ready: false, sub: ['Food processing', 'Garments', 'Engineering', 'Plastics', 'Printing'], keywords: 'factory production' },
-  { key: 'construction', name: 'Construction & real estate', group: 'Manufacturing & construction', template: 'services', ready: false, sub: ['Builder', 'Contractor', 'Interior design', 'Real estate agent'], keywords: 'builder contractor property' },
-  { key: 'ngo', name: 'NGO / trust', group: 'Other', template: 'services', ready: false, sub: ['Charitable trust', 'Society', 'Section 8 company'], keywords: 'charity donation' },
-  { key: 'other', name: 'Other', group: 'Other', template: 'services', ready: true, sub: [] },
+export interface Industry { key: string; name: string; template: string; ready: boolean; sub: string[]; keywords?: string; subTemplates?: Record<string, string> }
+export const INDUSTRIES: Industry[] = [
+  { key: 'agency', name: 'Agency & Marketing', template: 'services', ready: false, sub: ['Advertising agency', 'Digital marketing', 'Sales house', 'PR & communications'], keywords: 'advertising media buying seo social' },
+  { key: 'agriculture', name: 'Agriculture', template: 'retail', ready: false, sub: ['Farming', 'Seeds & fertiliser', 'Dairy', 'Food processing'], keywords: 'farm agri krishi dairy' },
+  { key: 'art_design', name: 'Art & Design', template: 'services', ready: false, sub: ['Graphic design', 'Interior design', 'Photography', 'Art studio'], keywords: 'studio creative interior' },
+  { key: 'automotive', name: 'Automotive', template: 'services', ready: false, sub: ['Vehicle dealer', 'Garage & service centre', 'Spare parts', 'Car wash'], keywords: 'car bike garage workshop' },
+  { key: 'beauty_wellness', name: 'Beauty & Wellness', template: 'salon', ready: true, sub: ['Salon', 'Spa', "Men's barber", 'Bridal studio', 'Nail / lash studio'], keywords: 'salon spa parlour barber makeup' },
+  { key: 'construction', name: 'Construction', template: 'services', ready: false, sub: ['Builder', 'Contractor', 'Architect', 'Building materials'], keywords: 'builder contractor civil' },
+  { key: 'consulting', name: 'Consulting', template: 'services', ready: false, sub: ['Business consulting', 'HR & recruitment', 'Training', 'Freelancer'], keywords: 'advisor consultant freelance' },
+  { key: 'consumer_goods', name: 'Consumer Goods', template: 'retail', ready: false, sub: ['FMCG', 'Personal care', 'Packaged food', 'Home products'], keywords: 'fmcg cpg packaged' },
+  { key: 'education', name: 'Education', template: 'school', ready: true, sub: ['School', 'Coaching institute', 'Pre-school', 'Training centre', 'Music / art classes'], keywords: 'school coaching tuition classes institute' },
+  { key: 'engineering', name: 'Engineering', template: 'services', ready: false, sub: ['Mechanical', 'Electrical', 'Civil', 'Fabrication'], keywords: 'fabrication workshop' },
+  { key: 'entertainment', name: 'Entertainment & Events', template: 'services', ready: false, sub: ['Event management', 'Gaming', 'Film & music', 'Venue'], keywords: 'events wedding gaming film' },
+  { key: 'financial', name: 'Financial Services', template: 'services', ready: false, sub: ['Chartered accountant', 'Tax consultant', 'Insurance', 'Loans & NBFC'], keywords: 'ca accountant tax insurance' },
+  { key: 'fitness', name: 'Fitness & Sports', template: 'gym', ready: true, sub: ['Gym', 'Yoga studio', 'Dance studio', 'Sports academy'], keywords: 'gym yoga crossfit' },
+  { key: 'food', name: 'Food Services', template: 'retail', ready: false, sub: ['Restaurant', 'Café', 'Cloud kitchen', 'Bakery', 'Sweet shop', 'Catering'], keywords: 'restaurant cafe hotel kitchen fast food' },
+  { key: 'government', name: 'Government', template: 'services', ready: false, sub: ['Department', 'Public undertaking', 'Local body'], keywords: 'public sector psu' },
+  { key: 'health', name: 'Health Care', template: 'services', ready: false, sub: ['Clinic', 'Hospital', 'Diagnostic lab', 'Pharmacy', 'Veterinary'], keywords: 'doctor dental pharmacy chemist medical lab', subTemplates: { Pharmacy: 'pharmacy' } },
+  { key: 'hospitality', name: 'Hospitality & Travel', template: 'services', ready: false, sub: ['Hotel', 'Homestay / resort', 'PG / hostel', 'Travel agency'], keywords: 'hotel rooms lodge tour ticketing' },
+  { key: 'legal', name: 'Legal', template: 'services', ready: false, sub: ['Law firm', 'Advocate', 'Company secretary'], keywords: 'lawyer advocate' },
+  { key: 'logistics', name: 'Logistics & Transport', template: 'services', ready: false, sub: ['Transporter', 'Courier', 'Warehousing', 'Packers & movers'], keywords: 'transport courier' },
+  { key: 'manufacturing', name: 'Manufacturing', template: 'retail', ready: false, sub: ['Food processing', 'Garments & textiles', 'Plastics', 'Printing', 'Machinery'], keywords: 'factory production' },
+  { key: 'mining', name: 'Mining & Energy', template: 'services', ready: false, sub: ['Mining', 'Oil & gas', 'Solar & renewables', 'Power'], keywords: 'solar energy minerals' },
+  { key: 'non_profit', name: 'Non-Profit', template: 'services', ready: false, sub: ['Charitable trust', 'Society', 'Section 8 company'], keywords: 'ngo charity donation trust' },
+  { key: 'publishing', name: 'Publishing & Media', template: 'services', ready: false, sub: ['Publisher', 'Web media', 'Writers', 'Print media'], keywords: 'writer content news magazine' },
+  { key: 'real_estate', name: 'Real Estate', template: 'services', ready: false, sub: ['Real estate agent', 'Developer', 'Property management', 'Co-working'], keywords: 'property broker rental' },
+  { key: 'retail', name: 'Retail', template: 'retail', ready: true, sub: ['Kirana / grocery', 'Apparel & footwear', 'Electronics & mobiles', 'Jewellery', 'Optical', 'E-commerce', 'Hardware', 'Furniture'], keywords: 'shop store kirana ecommerce offline' },
+  { key: 'services', name: 'Services', template: 'services', ready: true, sub: ['Repairs & AMC', 'Facility services', 'Cleaning & pest control', 'Security', 'Other services'], keywords: 'repair amc field service' },
+  { key: 'technology', name: 'Technology', template: 'services', ready: false, sub: ['Software company', 'Web design', 'Web development', 'IT services', 'SaaS'], keywords: 'it software web developer app' },
+  { key: 'telecom', name: 'Telecommunications', template: 'services', ready: false, sub: ['Internet provider', 'Telecom dealer', 'Installation'], keywords: 'isp broadband' },
+  { key: 'wholesale', name: 'Wholesale & Distribution', template: 'retail', ready: false, sub: ['FMCG distributor', 'Stockist', 'Trader', 'Import / export'], keywords: 'distributor trader stockist' },
+  { key: 'other', name: 'Other', template: 'services', ready: true, sub: [] },
 ];
-export const industryByKey = (key: string) => INDUSTRIES.find((i) => i.key === key);
+
+/** Keys used before the list above; businesses and leads saved with them keep working. */
+const OLD_INDUSTRY_KEYS: Record<string, string> = {
+  salon: 'beauty_wellness', gym: 'fitness', school: 'education', pharmacy: 'health', clinic: 'health', lab: 'health', apparel: 'retail', electronics: 'retail', jewellery: 'retail', optical: 'retail',
+  restaurant: 'food', hotel: 'hospitality', travel: 'hospitality', professional: 'financial', repairs: 'services', ngo: 'non_profit',
+};
+export const industryByKey = (key: string | null | undefined) => (key ? INDUSTRIES.find((i) => i.key === (OLD_INDUSTRY_KEYS[key] ?? key)) : undefined);
+export const industryName = (key: string | null | undefined) => industryByKey(key)?.name ?? (key ? key.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()) : '');
+/** Every stored key that means this industry, for filtering lists. */
+export const industryKeysFor = (key: string) => [key, ...Object.keys(OLD_INDUSTRY_KEYS).filter((k) => OLD_INDUSTRY_KEYS[k] === key)];
+/** The starter template a stored industry key sets up. Old keys that are also templates stay on theirs. */
+export const industryTemplateKey = (key: string) => (['salon', 'gym', 'school', 'pharmacy', 'retail', 'services'].includes(key) ? key : industryByKey(key)?.template);
+/** What to store for a choice: the industry, or the sub-type's own template when it has one. */
+export function storedIndustryKey(key: string, sub?: string | null) {
+  const industry = industryByKey(key);
+  return (sub && industry?.subTemplates?.[sub]) || industry?.key || key;
+}
 
 export const HEARD_FROM = ['Google search', 'Instagram / Facebook', 'YouTube', 'A friend or another business', 'Our accountant / CA', 'AHEAD sales team', 'Other'] as const;
 
@@ -118,11 +142,39 @@ export function brandColorError(hex: string): string | null {
   return ratio < 4.5 ? `Too light for white text (${ratio.toFixed(1)}:1, needs 4.5:1) — pick a darker shade` : null;
 }
 
+/**
+ * Colour themes for the whole product. `scale` runs darkest to lightest and sets the page, cards,
+ * text and accents in both modes; `primary` carries white text in light mode, `primaryDark` sits
+ * on the dark page in dark mode. The light and dark switch itself belongs to each person.
+ */
+export interface ThemePreset { key: string; name: string; scale: [string, string, string, string, string, string]; primary: string; primaryDark: string }
+export const THEME_PRESETS: ThemePreset[] = [
+  { key: 'default', name: 'AHEAD Blue', scale: ['#0F1115', '#171A20', '#1D3FA8', '#2450D8', '#C9D5F7', '#EEF2FD'], primary: '#2450D8', primaryDark: '#5B82F0' },
+  { key: 'midnight', name: 'Midnight', scale: ['#06141B', '#11212D', '#253745', '#4A5C6A', '#9BA8AB', '#CCD0CF'], primary: '#253745', primaryDark: '#9BA8AB' },
+  { key: 'evergreen', name: 'Evergreen', scale: ['#051F20', '#0B2B26', '#163832', '#235347', '#8EB69B', '#DAF1DE'], primary: '#235347', primaryDark: '#8EB69B' },
+  { key: 'mauve', name: 'Mauve', scale: ['#3E3239', '#6B5560', '#9E8189', '#C7A9A3', '#E8D2C4', '#F7EFE7'], primary: '#6B5560', primaryDark: '#C7A9A3' },
+  { key: 'ocean', name: 'Ocean', scale: ['#062A3A', '#0B3F57', '#0E7490', '#38A3C4', '#A5D8E6', '#E3F4F8'], primary: '#0E7490', primaryDark: '#38A3C4' },
+  { key: 'sunset', name: 'Sunset', scale: ['#2B120C', '#4A2013', '#C2410C', '#E8804A', '#F7C9A9', '#FCEEE3'], primary: '#C2410C', primaryDark: '#E8804A' },
+  { key: 'royal', name: 'Royal', scale: ['#1C0F33', '#2F1A55', '#6D28D9', '#9A6BE8', '#CDB8F3', '#F1EAFD'], primary: '#6D28D9', primaryDark: '#9A6BE8' },
+  { key: 'ruby', name: 'Ruby', scale: ['#2B0813', '#4A1024', '#BE123C', '#E25A7B', '#F5B8C6', '#FDECEF'], primary: '#BE123C', primaryDark: '#E25A7B' },
+  { key: 'graphite', name: 'Graphite', scale: ['#111318', '#1F2329', '#3F4651', '#6B7280', '#B8BDC6', '#ECEEF1'], primary: '#3F4651', primaryDark: '#B8BDC6' },
+];
+export const themePreset = (key: string | null | undefined) => THEME_PRESETS.find((p) => p.key === key) ?? THEME_PRESETS[0];
+
+// Free for commercial use (SIL Open Font or Apache licence, served by Google Fonts)
 export const FONTS = [
   { key: 'inter', label: 'Inter', family: 'Inter' },
+  { key: 'roboto', label: 'Roboto', family: 'Roboto' },
+  { key: 'open_sans', label: 'Open Sans', family: 'Open Sans' },
+  { key: 'lato', label: 'Lato', family: 'Lato' },
+  { key: 'poppins', label: 'Poppins', family: 'Poppins' },
+  { key: 'dm_sans', label: 'DM Sans', family: 'DM Sans' },
   { key: 'manrope', label: 'Manrope', family: 'Manrope' },
   { key: 'plex', label: 'IBM Plex Sans', family: 'IBM Plex Sans' },
   { key: 'source', label: 'Source Sans 3', family: 'Source Sans 3' },
+  { key: 'public_sans', label: 'Public Sans', family: 'Public Sans' },
+  { key: 'work_sans', label: 'Work Sans', family: 'Work Sans' },
+  { key: 'nunito_sans', label: 'Nunito Sans', family: 'Nunito Sans' },
 ] as const;
 export type FontKey = (typeof FONTS)[number]['key'];
 
@@ -158,6 +210,9 @@ export interface WorkspacePreferences {
   };
   branding: {
     brandColor: string;
+    /** THEME_PRESETS key */
+    preset: string;
+    /** Not used for the page any more: light, dark or system is each person's own choice */
     theme: 'light' | 'dark' | 'system';
     font: FontKey;
     density: 'comfortable' | 'compact';
@@ -168,7 +223,7 @@ export const DEFAULT_PREFERENCES: WorkspacePreferences = {
   documents: { invoicePrefix: 'INV/{FY}/', quotationPrefix: 'QT/{FY}/', receiptPrefix: 'RCT/{FY}/', template: 'classic', paper: 'a4', terms: '', quotationTerms: '', showHsnSummary: true, showSignatory: true },
   payments: { bankHolder: '', bankAccount: '', ifsc: '', upiId: '', showUpiQr: false },
   taxes: { composition: false, compositionRateBp: null, pricesIncludeTax: true, defaultGstRateBp: 1800, hsnDigits: 4, reverseCharge: false },
-  branding: { brandColor: '#2450D8', theme: 'system', font: 'inter', density: 'comfortable' },
+  branding: { brandColor: '#2450D8', preset: 'default', theme: 'system', font: 'inter', density: 'comfortable' },
 };
 
 /** Fill missing keys from defaults (old rows, new settings added later). */

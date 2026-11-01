@@ -1,5 +1,6 @@
 "use client"
 
+import { SearchSelect } from "@/components/search-select"
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -135,10 +136,7 @@ export function DataTable<T extends { id: string }>({
         {!noSearch && (
         <div className="flex h-9 min-w-0 flex-1 basis-72 items-center rounded-lg border bg-background focus-within:border-primary focus-within:ring-3 focus-within:ring-primary/20 sm:max-w-md">
           {searchFields?.length ? (
-            <select value={table.searchField} onChange={(e) => table.setSearchField(e.target.value)} aria-label="Search in" className="h-full shrink-0 rounded-l-lg border-r bg-transparent pr-1 pl-2.5 text-[13px] font-medium outline-none">
-              <option value="all">All columns</option>
-              {searchFields.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-            </select>
+            <SearchSelect value={table.searchField} onChange={table.setSearchField} aria-label="Search in" options={[{ value: "all", label: "All columns" }, ...searchFields.map((f) => ({ value: f.key, label: f.label }))]} className="h-full w-auto shrink-0 rounded-none rounded-l-lg border-0 border-r bg-transparent pr-2 pl-2.5 text-[13px] font-medium focus-visible:ring-0 data-popup-open:ring-0" />
           ) : (
             <Search className="ml-3 size-4 shrink-0 text-muted-foreground" aria-hidden />
           )}
@@ -280,12 +278,10 @@ function Pager<T>({ table }: { table: TableState<T> }) {
   const icon = "grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3 text-[13px]">
-      <label className="flex items-center gap-2 text-muted-foreground">
+      <div className="flex items-center gap-2 text-muted-foreground">
         Rows per page
-        <select value={table.pageSize} onChange={(e) => table.setPageSize(Number(e.target.value))} className="h-8 rounded-md border bg-background px-2 text-foreground">
-          {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
-        </select>
-      </label>
+        <SearchSelect value={String(table.pageSize)} onChange={(v) => table.setPageSize(Number(v))} aria-label="Rows per page" options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))} className="h-8 w-auto gap-1.5 rounded-md bg-background px-2 text-[13px]" />
+      </div>
       <div className="flex flex-wrap items-center gap-1">
         <span className="mr-2 text-muted-foreground tabular-nums">{from}–{to} of {table.total.toLocaleString("en-IN")}</span>
         <button type="button" className={icon} onClick={() => go(1)} disabled={table.page <= 1} aria-label="First page"><ChevronsLeft className="size-4" /></button>
@@ -330,11 +326,7 @@ export function IdCell({ id, href }: { id: string; href?: string }) {
 
 /** Small "filter" select styled like the toolbar. */
 export function FilterSelect({ value, onChange, label, options, className }: { value: string; onChange: (v: string) => void; label: string; options: [string, string][]; className?: string }) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} aria-label={label} className={cn("h-9 rounded-lg border bg-background px-2.5 text-[13px]", value ? "border-primary/60 font-medium text-foreground" : "text-muted-foreground", className)}>
-      {options.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-    </select>
-  )
+  return <SearchSelect value={value} onChange={onChange} options={options.map(([k, l]) => ({ value: k, label: l }))} aria-label={label} className={cn("h-9 w-auto min-w-36 bg-background text-[13px]", value ? "border-primary/60 font-medium" : "[&>span]:text-muted-foreground", className)} />
 }
 
 /** "● 11 Active" style counts for the toolbar summary. */

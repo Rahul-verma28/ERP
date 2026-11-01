@@ -6,10 +6,12 @@ import { cn } from "@/lib/utils"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { SearchSelect, type SelectOption } from "@/components/search-select"
 
 /**
  * Label + control + one line under it, with ids wired for accessibility. The line shows,
- * in order: the error, a live check in progress, a success note, or the hint.
+ * in order: the error, a live check in progress, a success note, or the hint. Its space is
+ * always kept, so a message appearing never moves the fields around it.
  */
 export function Field({
   label,
@@ -39,7 +41,7 @@ export function Field({
   const line = error ? "error" : checking ? "checking" : success ? "success" : hint ? "hint" : null
   const describedBy = line ? `${id}-${line}` : undefined
   return (
-    <div className={cn("grid gap-1.5", className)}>
+    <div className={cn("-mb-1.5 grid content-start gap-1.5", className)}>
       <Label htmlFor={id}>
         {label}
         {required && (
@@ -56,8 +58,7 @@ export function Field({
         // Green border once a value passed its checks (wireframe 0.3)
         ...(line === "success" ? { "data-valid": "true" } : {}),
       })}
-      {(line || count) && (
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex min-h-4 items-start justify-between gap-2 text-xs leading-4">
         {line === "error" && (
           <p id={`${id}-error`} className="text-xs text-destructive">
             {error}
@@ -84,13 +85,48 @@ export function Field({
           </p>
         )}
       </div>
-      )}
     </div>
   )
 }
 
-/** Native select styled like the shadcn input (reliable on mobile and with keyboards). */
-export function NativeSelect({ className, ...props }: React.ComponentProps<"select">) {
+function optionsOf(children: React.ReactNode): SelectOption[] {
+  return React.Children.toArray(children).flatMap((c): SelectOption[] => {
+    if (!React.isValidElement(c)) return []
+    const props = c.props as { children?: React.ReactNode; value?: string | number; disabled?: boolean }
+    if (c.type === React.Fragment) return optionsOf(props.children)
+    if (c.type !== "option") return []
+    const label = React.Children.toArray(props.children).join("")
+    return [{ value: String(props.value ?? label), label, disabled: props.disabled }]
+  })
+}
+
+/**
+ * The common dropdown written the way a <select> is: <option> children and an onChange that
+ * reads e.target.value. Long lists get a search box. Picking several (multiple) stays native.
+ */
+export function NativeSelect({ className, children, ...props }: React.ComponentProps<"select">) {
+  if (!props.multiple) {
+    const { value, defaultValue, onChange, onBlur, disabled, name, id } = props
+    const options = optionsOf(children)
+    const current = String(value ?? defaultValue ?? options[0]?.value ?? "")
+    return (
+      <SearchSelect
+        value={current}
+        options={options}
+        placeholder={options.find((o) => !o.value)?.label}
+        disabled={disabled}
+        name={name}
+        id={id}
+        className={className}
+        aria-label={props["aria-label"]}
+        aria-invalid={props["aria-invalid"] === true || props["aria-invalid"] === "true" || undefined}
+        aria-describedby={props["aria-describedby"]}
+        aria-required={props["aria-required"] === true || undefined}
+        onChange={(v) => onChange?.({ target: { value: v, name: name ?? "" }, currentTarget: { value: v, name: name ?? "" } } as unknown as React.ChangeEvent<HTMLSelectElement>)}
+        onBlur={onBlur ? () => onBlur({ target: { value: current, name: name ?? "" } } as unknown as React.FocusEvent<HTMLSelectElement>) : undefined}
+      />
+    )
+  }
   return (
     <select
       className={cn(
@@ -98,7 +134,9 @@ export function NativeSelect({ className, ...props }: React.ComponentProps<"sele
         className
       )}
       {...props}
-    />
+    >
+      {children}
+    </select>
   )
 }
 

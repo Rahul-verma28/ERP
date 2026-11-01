@@ -22,6 +22,8 @@ import { useAuth } from "@/lib/auth"
 import { DASHBOARD_NAV, MODULE_NAV } from "@/lib/nav"
 import { ReadOnlyBanner } from "@/components/page-states"
 import { CommandPalette } from "@/components/command-palette"
+import { SidePanel } from "@/components/side-panel"
+import { ThemeSwitch } from "@/components/workspace-branding"
 import type { ModuleKey } from "@/lib/types"
 import { formatDateTime, initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -172,37 +174,52 @@ function Notifications() {
       document.removeEventListener("visibilitychange", refresh)
     }
   }, [reload])
+  const [panel, setPanel] = React.useState(false)
   const open = async (n: NotificationList["data"][number]) => {
+    setPanel(false)
     if (!n.readAt) await api.post("/notifications/read", { id: n.id }).then(reload).catch(() => undefined)
     if (n.link) router.push(n.link)
   }
   return (
-    <DropdownMenu onOpenChange={(open) => open && void reload()}>
-      <DropdownMenuTrigger className={buttonVariants({ variant: "ghost", size: "icon", className: "relative" })} aria-label={data?.unread ? `${data.unread} unread notifications` : "Notifications"}>
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setPanel(true)
+          void reload()
+        }}
+        className={buttonVariants({ variant: "ghost", size: "icon", className: "relative" })}
+        aria-label={data?.unread ? `${data.unread} unread notifications` : "Notifications"}
+      >
         <Bell className="size-4" />
         {!!data?.unread && <span className="absolute top-1 right-1 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] leading-4 font-semibold text-white tabular-nums">{data.unread > 9 ? "9+" : data.unread}</span>}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-80">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel className="flex items-center justify-between">
-            Notifications
-            {!!data?.unread && (
-              <button className="text-xs font-normal text-muted-foreground hover:text-foreground" onClick={() => api.post("/notifications/read").then(reload)}>
-                Mark all read
-              </button>
-            )}
-          </DropdownMenuLabel>
-          {!data?.data.length && <p className="px-2 py-6 text-center text-sm text-muted-foreground">You&apos;re all caught up.</p>}
-          {data?.data.map((n) => (
-            <DropdownMenuItem key={n.id} onClick={() => void open(n)} className="flex-col items-start gap-0.5">
-              <span className={cn("text-sm", !n.readAt && "font-medium")}>{n.title}</span>
-              {n.body && <span className="text-xs text-muted-foreground">{n.body}</span>}
-              <span className="text-[11px] text-muted-foreground">{formatDateTime(n.createdAt)}</span>
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </button>
+      <SidePanel
+        open={panel}
+        onOpenChange={setPanel}
+        title="Notifications"
+        action={!!data?.unread && <Button variant="ghost" size="sm" onClick={() => api.post("/notifications/read").then(reload)}>Mark all read</Button>}
+      >
+        {!data?.data.length ? (
+          <p className="px-5 py-12 text-center text-muted-foreground">You&apos;re all caught up.</p>
+        ) : (
+          <ul className="divide-y">
+            {data.data.map((n) => (
+              <li key={n.id}>
+                <button type="button" onClick={() => void open(n)} className="grid w-full gap-0.5 px-5 py-3.5 text-left transition-colors hover:bg-muted/60">
+                  <span className={cn("flex items-center gap-2 text-[13.5px]", !n.readAt && "font-semibold")}>
+                    {!n.readAt && <span className="size-2 shrink-0 rounded-full bg-primary" aria-label="Unread" />}
+                    {n.title}
+                  </span>
+                  {n.body && <span className="text-xs text-muted-foreground">{n.body}</span>}
+                  <span className="text-[11px] text-muted-foreground">{formatDateTime(n.createdAt)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </SidePanel>
+    </>
   )
 }
 
@@ -364,6 +381,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Button>
             <CommandPalette />
             <div className="flex-1" />
+            <ThemeSwitch />
             <Notifications />
             <UserMenu />
           </header>

@@ -125,6 +125,8 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
     memberships: memberships.map((m) => ({ tenantId: m.tenantId, name: m.tenant.name, status: m.tenant.status, logoUrl: m.tenant.logoUrl, roleName: m.role.name })),
     /** Present only for AHEAD team members; drives the workspace switcher */
     console: consoleInfo,
+    /** Console › Settings › Appearance: the look of the Console and the partner portal */
+    consoleBranding: consoleInfo ? await getSetting('defaults.branding') : null,
     /** Platform-wide banner set from the Console */
     announcement,
   };

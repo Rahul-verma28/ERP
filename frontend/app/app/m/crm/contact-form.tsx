@@ -1,5 +1,6 @@
 "use client"
 
+import { StateSelect } from "@/components/search-select"
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -13,9 +14,7 @@ import { CustomFieldsForm, useCustomFields } from "@/components/custom-fields"
 import { UserSelect } from "@/components/pickers"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { GST_STATES } from "@/lib/format"
-import { useForm } from "@/lib/use-form"
-import { useAsyncCheck } from "@/lib/use-unsaved"
+import { Cancelled, useForm } from "@/lib/use-form"
 
 export interface Contact {
   id: string
@@ -46,6 +45,7 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
   const fields = useCustomFields(kind === "lead" ? "lead" : "contact")
   const [customErrors, setCustomErrors] = React.useState<Record<string, string>>({})
   const [allowDuplicate, setAllowDuplicate] = React.useState(false)
+  const [duplicate, setDuplicate] = React.useState<Duplicate>(null)
   const [discardOpen, setDiscardOpen] = React.useState(false)
   const label = kind === "lead" ? term("entity.lead.singular", "Lead") : term("entity.contact.singular", "Customer")
 
@@ -80,6 +80,7 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
     },
     onSubmit: async (v) => {
       setCustomErrors({})
+      setDuplicate(null)
       const body = {
         name: v.name,
         companyName: v.companyName || null,
@@ -100,6 +101,11 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
         toast.success(contact ? "Saved" : `${label} added`)
         onSaved(saved)
       } catch (err) {
+        if (err instanceof ApiError && err.code === "CONFLICT" && err.details?.duplicateId) {
+          // Shown beside the fields, with a way to open it or add this one anyway
+          setDuplicate({ id: String(err.details.duplicateId), name: err.message.split(" already has")[0], type: err.details.duplicateType === "lead" ? "lead" : "customer" })
+          throw new Cancelled()
+        }
         if (err instanceof ApiError) setCustomErrors(Object.fromEntries(Object.entries(err.fields).filter(([k]) => k.startsWith("custom."))))
         throw err
       }
@@ -107,19 +113,6 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
   })
   const v = form.values
 
-  // Live duplicate check on phone/email once they are valid
-  const dupKey = [!phoneRule(v.phone) ? v.phone.trim() : "", !emailRule(v.email) ? v.email.trim() : ""].join("|")
-  const dup = useAsyncCheck(
-    dupKey === "|" ? "" : dupKey,
-    async () => {
-      const params = new URLSearchParams({ kind, ...(contact ? { excludeId: contact.id } : {}) })
-      if (!phoneRule(v.phone)) params.set("phone", v.phone.trim())
-      if (!emailRule(v.email)) params.set("email", v.email.trim())
-      const r = await api.get<{ duplicate: Duplicate }>(`/contacts/duplicates?${params}`)
-      return r.duplicate ? JSON.stringify(r.duplicate) : null
-    }
-  )
-  const duplicate: Duplicate = dup.status === "error" && dup.message ? JSON.parse(dup.message) : null
   const suggestion = !form.errors.email && v.email ? emailSuggestion(v.email) : null
   const gstinOk = v.gstin && !gstinRule(v.gstin) && !gstinStateMismatch(v.gstin, v.stateCode)
 
@@ -130,7 +123,7 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{contact ? `Edit ${label.toLowerCase()}` : `New ${label.toLowerCase()}`}</DialogTitle>
-          <DialogDescription>Fields marked * are required. Phone and email are checked for duplicates as you type.</DialogDescription>
+          <DialogDescription>Fields marked * are required. Phone and email are checked for duplicates when you save.</DialogDescription>
         </DialogHeader>
         <form {...form.formProps} onSubmit={form.submit} className="grid gap-4">
           <ErrorSummary fields={form.summary} show={form.submitted} />
@@ -138,8 +131,8 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
             <Field label="Name" required error={form.errors.name} className="sm:col-span-2">
               <Input {...form.field("name")} autoFocus autoComplete="off" />
             </Field>
-            <Field label="Phone" error={form.errors.phone} checking={dup.status === "checking" && !!v.phone && !phoneRule(v.phone)} hint="10-digit mobile, or +country code">
-              <Input {...form.field("phone")} inputMode="tel" autoComplete="off" />
+            <Field label="Phone" error={form.errors.phone} hint="10-digit mobile, or +country code">
+              <Input mask="phone" {...form.field("phone")} autoComplete="off" />
             </Field>
             <Field
               label="Email"
@@ -156,7 +149,7 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
                 ) : undefined
               }
             >
-              <Input {...form.field("email")} type="email" inputMode="email" autoComplete="off" />
+              <Input mask="email" {...form.field("email")} type="email" autoComplete="off" />
             </Field>
             {duplicate && (
               <div role="status" className="rounded-2xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950 sm:col-span-2 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
@@ -175,7 +168,7 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
               <Input {...form.field("companyName")} />
             </Field>
             <Field label="GSTIN" error={form.errors.gstin} success={gstinOk ? `Valid · ${stateName(v.gstin.slice(0, 2))}` : null} hint="For B2B invoices">
-              <Input {...form.field("gstin")} maxLength={15} className="font-mono uppercase" spellCheck={false} />
+              <Input mask="gstin" {...form.field("gstin")} maxLength={15} className="font-mono uppercase" spellCheck={false} />
             </Field>
             {kind === "lead" && (
               <>
@@ -199,14 +192,7 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
               </>
             )}
             <Field label="State (place of supply)" error={form.errors.stateCode}>
-              <NativeSelect {...form.field("stateCode")}>
-                <option value="">{v.gstin.length >= 2 ? "From GSTIN" : "Same as business"}</option>
-                {GST_STATES.map(([c, n]) => (
-                  <option key={c} value={c}>
-                    {n}
-                  </option>
-                ))}
-              </NativeSelect>
+              <StateSelect {...form.pick("stateCode")} />
             </Field>
             <Field label="Owner">
               <UserSelect value={v.ownerId} onChange={(o) => form.set("ownerId", o)} emptyLabel="Me" />
@@ -218,7 +204,7 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
               <Input {...form.field("city")} />
             </Field>
             <Field label="PIN code" error={form.errors.pincode}>
-              <Input {...form.field("pincode")} inputMode="numeric" maxLength={6} />
+              <Input mask="pincode" {...form.field("pincode")} />
             </Field>
           </div>
           <CustomFieldsForm fields={fields} value={v.custom} onChange={(c) => form.set("custom", c)} errors={customErrors} />

@@ -3,7 +3,8 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Bell, CalendarClock, CircleDollarSign, Inbox, KeyRound, Percent, Rocket, type LucideIcon } from "lucide-react"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Button } from "@/components/ui/button"
+import { SidePanel } from "@/components/side-panel"
 import { useApi } from "@/lib/use-api"
 import { useAuth } from "@/lib/auth"
 import { atBase, useConsoleBase } from "@/lib/console-base"
@@ -34,6 +35,7 @@ export function NotificationsBell() {
   const canApps = canConsole("platform.partner.create") && me?.console?.audience === "team"
   const apps = useApi<{ counts: { new: number } }>(canApps ? "/console/applications?status=new" : null)
   const storeKey = `console:seen:${me?.user.id ?? "me"}`
+  const [open, setOpen] = React.useState(false)
   const [seen, setSeen] = React.useState<Set<string>>(new Set())
   const [loaded, setLoaded] = React.useState(false)
   if (!loaded && typeof window !== "undefined" && me) {
@@ -74,43 +76,56 @@ export function NotificationsBell() {
     }
   }
 
+  const change = (next: boolean) => {
+    setOpen(next)
+    if (next) refresh()
+    else markSeen()
+  }
+  const go = (href: string) => {
+    change(false)
+    router.push(href)
+  }
+
   return (
-    <DropdownMenu onOpenChange={(open) => (open ? refresh() : markSeen())}>
-      <DropdownMenuTrigger className="relative grid size-9 place-items-center rounded-lg hover:bg-muted" aria-label={unseen ? `${unseen} new notifications` : "Notifications"}>
+    <>
+      <button type="button" onClick={() => change(true)} className="relative grid size-9 place-items-center rounded-lg hover:bg-muted" aria-label={unseen ? `${unseen} new notifications` : "Notifications"}>
         <Bell className="size-[18px]" />
         {unseen > 0 && <span className="absolute top-1 right-1 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] leading-4 font-semibold text-white tabular-nums">{unseen}</span>}
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-96 max-w-[92vw]">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel className="flex items-center justify-between text-foreground">
-            Needs attention
-            {items.length > 0 && <span className="text-xs font-normal text-muted-foreground">{items.length} item{items.length === 1 ? "" : "s"}</span>}
-          </DropdownMenuLabel>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        {!items.length ? (
-          <p className="px-2 py-6 text-center text-sm text-muted-foreground">You&apos;re all caught up.</p>
-        ) : (
-          <div className="max-h-96 overflow-y-auto">
-            {items.map((t) => {
-              const Icon = ICON[t.kind] ?? Bell
-              const fresh = !seen.has(t.key)
-              return (
-                <DropdownMenuItem key={t.key} onClick={() => router.push(atBase(base, t.href))} className="items-start gap-3 py-2.5">
-                  <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-accent text-accent-foreground"><Icon className="size-3.5" /></span>
-                  <span className="grid min-w-0 flex-1 gap-0.5">
-                    <span className={cn("truncate text-[13px]", fresh ? "font-semibold" : "font-medium")}>{t.title}</span>
-                    <span className="text-xs text-muted-foreground">{t.detail}</span>
-                  </span>
-                  {fresh && <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" aria-label="New" />}
-                </DropdownMenuItem>
-              )
-            })}
+      </button>
+      <SidePanel open={open} onOpenChange={change} eyebrow="Notifications" title={`Needs attention${items.length ? ` · ${items.length}` : ""}`}>
+        <div className="flex h-full flex-col">
+          {!items.length ? (
+            <div className="grid flex-1 place-items-center p-8 text-center text-muted-foreground">
+              <div className="grid justify-items-center gap-2">
+                <span className="grid size-11 place-items-center rounded-full bg-muted"><Bell className="size-5" /></span>
+                You&apos;re all caught up.
+              </div>
+            </div>
+          ) : (
+            <ul className="flex-1 divide-y">
+              {items.map((t) => {
+                const Icon = ICON[t.kind] ?? Bell
+                const fresh = !seen.has(t.key)
+                return (
+                  <li key={t.key}>
+                    <button type="button" onClick={() => go(atBase(base, t.href))} className="flex w-full items-start gap-3 px-5 py-3.5 text-left transition-colors hover:bg-muted/60">
+                      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-accent text-accent-foreground"><Icon className="size-4" /></span>
+                      <span className="grid min-w-0 flex-1 gap-0.5">
+                        <span className={cn("text-[13.5px]", fresh ? "font-semibold" : "font-medium")}>{t.title}</span>
+                        <span className="text-xs text-muted-foreground">{t.detail}</span>
+                      </span>
+                      {fresh && <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" aria-label="New" />}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          <div className="border-t p-3">
+            <Button type="button" variant="ghost" className="w-full" onClick={() => go(base)}>Open Overview</Button>
           </div>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => router.push(base)} className="justify-center text-[13px] text-muted-foreground">Open Overview</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </div>
+      </SidePanel>
+    </>
   )
 }

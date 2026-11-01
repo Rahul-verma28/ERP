@@ -4,6 +4,7 @@ import { db } from '../../kernel/db';
 import { cache } from '../../kernel/cache';
 import { AppError, notFound } from '../../kernel/errors';
 import { DEFAULT_TERMS, templateByKey } from '../../contracts/templates';
+import { industryTemplateKey } from '../../contracts/workspace';
 import { consumer, publish } from '../events/outbox';
 import { audit } from '../audit/service';
 
@@ -17,7 +18,7 @@ export async function applyTemplate(tenantId: string) {
   const tx = db();
   const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } });
   if (tenant.configAppliedAt) return;
-  const template = templateByKey(tenant.industryKey);
+  const template = templateByKey(industryTemplateKey(tenant.industryKey) ?? '');
   if (!template) throw new Error(`Template ${tenant.industryKey} not found`);
 
   const terms = { ...DEFAULT_TERMS, ...template.terms };

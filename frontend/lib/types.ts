@@ -51,6 +51,8 @@ export interface Me {
   workspace: Workspace
   /** null unless the user is on the AHEAD team */
   console: ConsoleAccess | null
+  /** Console › Settings › Appearance, for Console and partner portal people */
+  consoleBranding: WorkspacePreferences["branding"] | null
   /** Platform-wide banner set from the Console */
   announcement: { text: string; tone: "info" | "warning" } | null
   user: { id: string; name: string; email: string; mobile: string; emailVerified: boolean; mobileVerified: boolean; preferences: PersonalPreferences }

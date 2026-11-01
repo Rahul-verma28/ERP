@@ -54,7 +54,7 @@ function EditPartner({ partner, onClose, onSaved }: { partner: PartnerDetail; on
               <Input value={form.contactName} onChange={set("contactName")} required />
             </Field>
             <Field label="Mobile" error={errors.mobile}>
-              <Input value={form.mobile} onChange={set("mobile")} inputMode="tel" required />
+              <Input mask="mobile" value={form.mobile} onChange={set("mobile")} required />
             </Field>
             <Field label="Email" error={errors.email}>
               <Input type="email" value={form.email} onChange={set("email")} required />

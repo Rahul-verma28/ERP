@@ -22,7 +22,7 @@ import * as messages from './messages';
 import * as data from './data';
 import { adminResetMfa } from '../account/service';
 import { zReason } from '../../kernel/zodRules';
-import { INDUSTRIES, INDUSTRY_GROUPS } from '../../contracts/workspace';
+import { INDUSTRIES, industryTemplateKey } from '../../contracts/workspace';
 import { zEmail, zMobileIN } from '../../kernel/zodRules';
 import { acceptHandover, handoverForOwner } from '../console/onboarding';
 
@@ -41,7 +41,6 @@ router.get('/public/industries', publicRoute, publicLimiter, (_req, res) => {
       terms: { ...DEFAULT_TERMS, ...t.terms }, fields: fieldLabels(t), dashboard: t.dashboard, starterItems: t.catalogSeed.length,
     })),
     industries: INDUSTRIES,
-    groups: INDUSTRY_GROUPS,
   });
 });
 
@@ -183,7 +182,7 @@ router.delete('/tenant/sample-data', requirePermission('tenant.settings.edit'), 
 // Loading screen right after signup: real progress of the tenant.created consumers
 router.get('/tenant/provisioning', tx(async (req, res) => {
   const t = await tenancy.getTenant(req.ctx!.tenantId);
-  const template = templateByKey(t.industryKey);
+  const template = templateByKey(industryTemplateKey(t.industryKey) ?? '');
   const n = template?.catalogSeed.length ?? 0;
   res.json(await workspace.provisioningStatus(req.ctx!.tenantId, {
     template: `Applying the ${template?.name ?? 'business'} setup`,

@@ -166,7 +166,7 @@ export default function LoginPage() {
           <TabsContent value="otp">
             <form onSubmit={onOtp} className="grid gap-4 pt-4">
               <Field label="Mobile number">
-                <Input inputMode="tel" autoComplete="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} disabled={otpSent} required />
+                <Input mask="mobile" autoComplete="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} disabled={otpSent} required />
               </Field>
               {otpSent && (
                 <Field label="6-digit code" hint={devCode ? `Development code: ${devCode}` : "Sent by SMS"}>

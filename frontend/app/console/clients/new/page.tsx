@@ -6,6 +6,8 @@ import { AlertTriangle, Check, CheckCircle2, ChevronDown } from "lucide-react"
 import Link from "next/link"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { email as emailRule, gstin as gstinRule, gstinStateMismatch, length, mobileIN, personName } from "@contracts/validation"
+import { industryByKey, storedIndustryKey } from "@contracts/workspace"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { Failed, Loading, Page, Panel, money } from "@/components/console/kit"
 import { WizardRail, type OnboardingStepKey, type RailState } from "@/components/console/wizard-rail"
@@ -14,7 +16,8 @@ import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { useDebounced } from "@/lib/use-list"
-import { formatPaise, GST_STATES } from "@/lib/format"
+import { formatPaise } from "@/lib/format"
+import { IndustrySelect, StateSelect } from "@/components/search-select"
 import type { Catalog, Quote } from "@/lib/console"
 import { cn } from "@/lib/utils"
 import { useConsoleBase } from "@/lib/console-base"
@@ -33,6 +36,7 @@ interface Created {
 interface Form {
   name: string
   industryKey: string
+  subIndustry: string
   stateCode: string
   gstin: string
   ownerName: string
@@ -46,7 +50,7 @@ interface Form {
   couponCode: string
 }
 
-const EMPTY: Form = { name: "", industryKey: "", stateCode: "", gstin: "", ownerName: "", ownerEmail: "", ownerMobile: "", start: "paid", planKey: "", cycle: "yearly", extraUsers: "0", discountPercent: "0", couponCode: "" }
+const EMPTY: Form = { name: "", industryKey: "", subIndustry: "", stateCode: "", gstin: "", ownerName: "", ownerEmail: "", ownerMobile: "", start: "paid", planKey: "", cycle: "yearly", extraUsers: "0", discountPercent: "0", couponCode: "" }
 
 // Server field errors → the step that has the field
 const FIELD_STEP: Record<string, number> = { name: 0, industryKey: 0, stateCode: 0, gstin: 0, address: 0, ownerName: 1, email: 1, mobile: 1, planKey: 2, cycle: 2, extraUsers: 2, discountPercent: 2, couponCode: 2 }
@@ -66,7 +70,6 @@ export default function NewClientPage() {
   const { me } = useAuth()
   const partner = me?.console?.partner ?? null
   const catalog = useApi<Catalog>("/console/catalog")
-  const industries = useApi<{ data: { key: string; name: string }[] }>("/public/industries")
   const [form, setForm] = React.useState<Form>(EMPTY)
   const [step, setStep] = React.useState(0)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
@@ -108,21 +111,27 @@ export default function NewClientPage() {
   function check(s: number) {
     const e: Record<string, string> = {}
     if (s === 0) {
-      if (form.name.trim().length < 2) e.name = "Enter the business name"
+      const name = !form.name.trim() ? "Enter the business name" : length(2, 100, "Business name")(form.name)
+      const gstin = form.gstin ? gstinRule(form.gstin) ?? gstinStateMismatch(form.gstin, form.stateCode) : null
+      if (name) e.name = name
       if (!form.industryKey) e.industryKey = "Choose the industry"
       if (!form.stateCode) e.stateCode = "Choose the state"
-      if (form.gstin && !/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(form.gstin)) e.gstin = "A GSTIN has 15 characters, like 27ABCDE1234F1Z5"
+      if (gstin) e.gstin = gstin
     }
     if (s === 1) {
-      if (form.ownerName.trim().length < 2) e.ownerName = "Enter the owner's name"
-      if (!/^\S+@\S+\.\S+$/.test(form.ownerEmail)) e.email = "Enter a valid email"
-      if (!/^[6-9]\d{9}$/.test(form.ownerMobile.replace(/\D/g, "").slice(-10))) e.mobile = "Enter a 10-digit mobile number"
+      const name = !form.ownerName.trim() ? "Enter the owner's name" : personName(form.ownerName)
+      const email = !form.ownerEmail.trim() ? "Enter the owner's email" : emailRule(form.ownerEmail)
+      const mobile = !form.ownerMobile ? "Enter the owner's mobile number" : mobileIN(form.ownerMobile)
+      if (name) e.ownerName = name
+      if (email) e.email = email
+      if (mobile) e.mobile = mobile
     }
     setErrors(e)
     return !Object.keys(e).length
   }
 
   const next = () => check(step) && setStep((s) => s + 1)
+  const subs = industryByKey(form.industryKey)?.sub ?? []
   const order: OnboardingStepKey[] = ["business", "owner", "plan"]
   const railStates: Partial<Record<OnboardingStepKey, RailState>> = Object.fromEntries(order.map((k, i) => [k, i < step ? "done" : i === step ? "current" : "todo"]))
 
@@ -131,7 +140,7 @@ export default function NewClientPage() {
     if (!check(0) || !check(1)) return
     setBusy(true)
     setErrors({})
-    const business = { name: form.name, industryKey: form.industryKey, gstin: form.gstin || null, stateCode: form.stateCode }
+    const business = { name: form.name, industryKey: storedIndustryKey(form.industryKey, form.subIndustry), gstin: form.gstin || null, stateCode: form.stateCode }
     const owner = { name: form.ownerName, email: form.ownerEmail, mobile: form.ownerMobile }
     try {
       const r = partner
@@ -202,27 +211,21 @@ export default function NewClientPage() {
                 <Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Glow Studio" autoFocus />
               </Field>
               <Field label="Industry" required error={errors.industryKey}>
-                <NativeSelect value={form.industryKey} onChange={(e) => set("industryKey", e.target.value)}>
-                  <option value="">Choose…</option>
-                  {industries.data?.data.map((i) => (
-                    <option key={i.key} value={i.key}>
-                      {i.name}
-                    </option>
-                  ))}
-                </NativeSelect>
+                <IndustrySelect value={form.industryKey} onChange={(v) => (set("industryKey", v), set("subIndustry", ""))} />
               </Field>
               <Field label="State" required hint="Used for GST on the invoice" error={errors.stateCode}>
-                <NativeSelect value={form.stateCode} onChange={(e) => set("stateCode", e.target.value)}>
-                  <option value="">Choose…</option>
-                  {GST_STATES.map(([code, name]) => (
-                    <option key={code} value={code}>
-                      {name}
-                    </option>
-                  ))}
-                </NativeSelect>
+                <StateSelect value={form.stateCode} onChange={(v) => set("stateCode", v)} />
               </Field>
+              {subs.length > 0 && (
+                <Field label="Type of business" hint="Optional. Sets up the right starting fields" className="sm:col-span-2">
+                  <NativeSelect value={form.subIndustry} onChange={(e) => set("subIndustry", e.target.value)}>
+                    <option value="">Choose…</option>
+                    {subs.map((x) => <option key={x} value={x}>{x}</option>)}
+                  </NativeSelect>
+                </Field>
+              )}
               <Field label="GSTIN" hint="Optional" error={errors.gstin} className="sm:col-span-2">
-                <Input value={form.gstin} onChange={(e) => set("gstin", e.target.value.toUpperCase().replace(/\s/g, ""))} maxLength={15} placeholder="27ABCDE1234F1Z5" />
+                <Input mask="gstin" value={form.gstin} onChange={(e) => set("gstin", e.target.value)} placeholder="27ABCDE1234F1Z5" />
               </Field>
             </div>
           )}
@@ -230,13 +233,13 @@ export default function NewClientPage() {
           {step === 1 && (
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Owner's name" required error={errors.ownerName} className="sm:col-span-2">
-                <Input value={form.ownerName} onChange={(e) => set("ownerName", e.target.value)} autoFocus />
+                <Input mask="name" value={form.ownerName} onChange={(e) => set("ownerName", e.target.value)} autoFocus />
               </Field>
               <Field label="Email" required error={errors.email}>
-                <Input type="email" value={form.ownerEmail} onChange={(e) => (set("ownerEmail", e.target.value), setErrors((x) => ({ ...x, email: "" })))} />
+                <Input mask="email" type="email" value={form.ownerEmail} onChange={(e) => (set("ownerEmail", e.target.value), setErrors((x) => ({ ...x, email: "" })))} />
               </Field>
               <Field label="Mobile" required error={errors.mobile}>
-                <Input inputMode="tel" value={form.ownerMobile} onChange={(e) => (set("ownerMobile", e.target.value), setErrors((x) => ({ ...x, mobile: "" })))} placeholder="98765 43210" />
+                <Input mask="mobile" value={form.ownerMobile} onChange={(e) => (set("ownerMobile", e.target.value), setErrors((x) => ({ ...x, mobile: "" })))} placeholder="98765 43210" />
               </Field>
             </div>
           )}
@@ -314,7 +317,7 @@ export default function NewClientPage() {
                         <Input type="number" min={0} max={100} value={form.discountPercent} disabled={!!form.couponCode} onChange={(e) => set("discountPercent", e.target.value)} />
                       </Field>
                       <Field label="Coupon" hint={Number(form.discountPercent) > 0 ? "Not with a discount" : undefined} error={errors.couponCode}>
-                        <Input value={form.couponCode} disabled={Number(form.discountPercent) > 0} onChange={(e) => set("couponCode", e.target.value.toUpperCase().replace(/\s/g, ""))} />
+                        <Input mask="code" value={form.couponCode} disabled={Number(form.discountPercent) > 0} onChange={(e) => set("couponCode", e.target.value)} />
                       </Field>
                     </div>
                   )}

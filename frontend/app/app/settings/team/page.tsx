@@ -233,7 +233,7 @@ export default function TeamPage() {
                   <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
                 </Field>
                 <Field label="Mobile" error={errors.mobile}>
-                  <Input inputMode="tel" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
+                  <Input mask="mobile" value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} />
                 </Field>
               </div>
               <Field label="Role" error={errors.roleId} hint="Module roles appear when their module is in your plan">

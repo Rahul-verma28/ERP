@@ -3,12 +3,15 @@
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { Building2, Megaphone, Palette, Percent, RefreshCw, Timer, type LucideIcon } from "lucide-react"
+import { Building2, KeyRound, Megaphone, Palette, Percent, RefreshCw, Timer, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
 import { DiscardChangesDialog, NativeSelect } from "@/components/form"
 import { Failed, Loading, Page, ago } from "@/components/console/kit"
-import { BrandFields, BrandPreview } from "@/components/console/brand-editor"
+import { BrandFields, type BrandValue } from "@/components/console/brand-editor"
+import { useBrandingPreview } from "@/components/workspace-branding"
+import { StateSelect } from "@/components/search-select"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
@@ -24,11 +27,13 @@ import { cn } from "@/lib/utils"
 type Values = Record<string, unknown>
 type Billing = { legalName: string; gstin: string; stateCode: string; address: string; sac: string; gstRateBp: number }
 type Announcement = { text: string; tone: "info" | "warning"; until: string | null } | null
-type SectionKey = "company" | "appearance" | "trial" | "renewals" | "discounts" | "announcement"
+type PasswordRules = { minLength: number; requireNumber: boolean; requireSymbol: boolean; blockCommon: boolean; expiryDays: number; reuseBlock: number }
+type SectionKey = "company" | "appearance" | "passwords" | "trial" | "renewals" | "discounts" | "announcement"
 
 const SECTIONS: { key: SectionKey; label: string; icon: LucideIcon; title: string; intro: string; keys: string[] }[] = [
   { key: "company", label: "Company & invoices", icon: Building2, title: "Company & invoices", intro: "AHEAD's own details, printed as the seller on every GST invoice AHEAD sends to a business. Payment links and invoices stay blocked until these are complete.", keys: ["ahead.billing"] },
-  { key: "appearance", label: "Appearance", icon: Palette, title: "Appearance", intro: "The theme every new business starts with. Businesses that already exist keep their look, and an owner can still change theirs in the ERP under Settings › Branding.", keys: ["defaults.branding"] },
+  { key: "appearance", label: "Appearance", icon: Palette, title: "Appearance", intro: "The look of the Console and the partner portal, and what every new business starts with. Businesses that already exist keep their own, set in the ERP under Settings › Branding. Light, dark or system is each person's own switch in the top bar.", keys: ["defaults.branding"] },
+  { key: "passwords", label: "Passwords", icon: KeyRound, title: "Passwords", intro: "Rules for everyone who signs in to the Console or the partner portal. They apply the next time someone sets or changes a password. A business's own rules don't apply to these people.", keys: ["console.password"] },
   { key: "trial", label: "Free trial", icon: Timer, title: "Free trial", intro: "What someone who signs up on the website gets before paying: how long, which plan, and how much they can use.", keys: ["trial.days", "trial.plan_key", "trial.limits"] },
   { key: "renewals", label: "Renewals", icon: RefreshCw, title: "Renewals & unpaid orders", intro: "How long a business keeps working after a renewal is missed, and how long an order made by your team can stay unpaid.", keys: ["grace.days_monthly", "grace.days_yearly", "onboarding.unpaid_cancel_days"] },
   { key: "discounts", label: "Discounts", icon: Percent, title: "Discounts", intro: "How much your team can take off a price on their own. Anything higher waits for an Admin's approval.", keys: ["sales.discount_limits", "referral.welcome_discount_percent"] },
@@ -61,7 +66,7 @@ export default function SettingsPage() {
 function Settings() {
   const router = useRouter()
   const params = useSearchParams()
-  const { canConsole } = useAuth()
+  const { canConsole, reload: reloadMe } = useAuth()
   const canEdit = canConsole("platform.setting.edit")
   const settings = useApi<{ data: SettingRow[] }>("/console/settings")
   const catalog = useApi<Catalog>(canConsole("platform.plan.view") ? "/console/catalog" : null)
@@ -74,6 +79,9 @@ function Settings() {
 
   // Start the form again from the stored values whenever the server sends them
   const rows = settings.data?.data ?? null
+  // The Console shows a colour theme as soon as it is picked; Discard or leaving puts it back
+  const onAppearance = params.get("section") === "appearance"
+  useBrandingPreview(onAppearance ? ((draft["defaults.branding"] as Branding | undefined) ?? null) : null)
   if (rows && rows !== seen) {
     setSeen(rows)
     setDraft(Object.fromEntries(rows.map((r) => [r.key, r.value])))
@@ -113,8 +121,8 @@ function Settings() {
     }
   }
   // One at a time, so the first problem stops the rest
-  const save = () => run(async () => { for (const k of dirtyKeys) await api.put(`/console/settings/${k}`, { value: draft[k] }) }, "Saved. Everyone sees it within a minute.")
-  const useDefaults = () => run(async () => { for (const k of overridden) await api.delete(`/console/settings/${k}`) }, "Back to AHEAD's defaults")
+  const save = () => run(async () => { for (const k of dirtyKeys) await api.put(`/console/settings/${k}`, { value: draft[k] }); await reloadMe() }, "Saved. Everyone sees it within a minute.")
+  const useDefaults = () => run(async () => { for (const k of overridden) await api.delete(`/console/settings/${k}`); await reloadMe() }, "Back to AHEAD's defaults")
 
   const billing = draft["ahead.billing"] as Billing
 
@@ -162,20 +170,17 @@ function Settings() {
                   <Input id="b-name" value={billing.legalName} onChange={(e) => set("ahead.billing", { ...billing, legalName: e.target.value })} />
                 </Item>
                 <Item id="b-gstin" label="GSTIN" hint="15 characters; its first two digits must match the state">
-                  <Input id="b-gstin" value={billing.gstin} maxLength={15} className="font-mono uppercase" onChange={(e) => set("ahead.billing", { ...billing, gstin: e.target.value.toUpperCase().replace(/\s/g, "") })} />
+                  <Input mask="gstin" id="b-gstin" value={billing.gstin} className="font-mono" onChange={(e) => set("ahead.billing", { ...billing, gstin: e.target.value })} />
                 </Item>
                 <Item id="b-state" label="State" hint="Decides CGST + SGST or IGST on each invoice">
-                  <NativeSelect id="b-state" value={billing.stateCode} onChange={(e) => set("ahead.billing", { ...billing, stateCode: e.target.value })}>
-                    <option value="">Choose a state</option>
-                    {GST_STATES.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-                  </NativeSelect>
+                  <StateSelect id="b-state" value={billing.stateCode} onChange={(v) => set("ahead.billing", { ...billing, stateCode: v })} />
                 </Item>
                 <Item id="b-address" label="Address">
                   <Input id="b-address" value={billing.address} onChange={(e) => set("ahead.billing", { ...billing, address: e.target.value })} />
                 </Item>
                 <Item id="b-sac" label="SAC code and GST rate" hint="For software subscriptions: 998314 at 18%">
                   <div className="flex gap-2">
-                    <Input id="b-sac" value={billing.sac} maxLength={8} className="w-32" onChange={(e) => set("ahead.billing", { ...billing, sac: e.target.value.replace(/\D/g, "") })} aria-label="SAC code" />
+                    <Input mask="digits" id="b-sac" value={billing.sac} maxLength={6} className="w-32" onChange={(e) => set("ahead.billing", { ...billing, sac: e.target.value })} aria-label="SAC code" />
                     <div className="relative w-28">
                       <Input type="number" min={0} max={28} value={String(billing.gstRateBp / 100)} onChange={(e) => set("ahead.billing", { ...billing, gstRateBp: Math.round(num(e.target.value) * 100) })} aria-label="GST rate in percent" className="pr-7" />
                       <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm text-muted-foreground">%</span>
@@ -196,14 +201,12 @@ function Settings() {
             )}
 
             {section.key === "appearance" && (
-              <div className="grid gap-6 py-5 @3xl:grid-cols-[1fr_20rem]">
-                <BrandFields idPrefix="theme" value={draft["defaults.branding"] as Branding} onChange={(b) => set("defaults.branding", b)} />
-                <div className="grid content-start gap-2">
-                  <div className="text-xs font-medium text-muted-foreground">Preview of a new business</div>
-                  <BrandPreview value={draft["defaults.branding"] as Branding} name="New business" />
-                </div>
+              <div className="py-5">
+                <BrandFields value={draft["defaults.branding"] as Branding & BrandValue} onChange={(b) => set("defaults.branding", b)} />
               </div>
             )}
+
+            {section.key === "passwords" && <PasswordFields value={draft["console.password"] as PasswordRules} disabled={!canEdit || busy} onChange={(v) => set("console.password", v)} />}
 
             {section.key === "trial" && (
               <>
@@ -315,6 +318,42 @@ function Unit({ id, unit, value, onChange, min, max }: { id: string; unit: strin
       <Input id={id} type="number" min={min} max={max} value={String(value ?? 0)} onChange={(e) => onChange(num(e.target.value))} className="pr-12" />
       <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm text-muted-foreground">{unit}</span>
     </div>
+  )
+}
+
+function PasswordFields({ value, disabled, onChange }: { value: PasswordRules; disabled: boolean; onChange: (v: PasswordRules) => void }) {
+  const toggles = [
+    ["requireNumber", "Must include a number", undefined],
+    ["requireSymbol", "Must include a symbol", "For example ! @ # $"],
+    ["blockCommon", "Block common passwords", "Such as password123 or india@123"],
+  ] as const
+  return (
+    <>
+      <Item id="p-length" label="Minimum length" hint="A longer minimum is safer, but harder to type">
+        <NativeSelect id="p-length" value={String(value.minLength)} onChange={(e) => onChange({ ...value, minLength: Number(e.target.value) })} className="max-w-xs">
+          {[8, 10, 12, 14, 16, 20, 24, 32].map((n) => <option key={n} value={n}>{n} characters</option>)}
+        </NativeSelect>
+      </Item>
+      {toggles.map(([key, label, hint]) => (
+        <Item key={key} label={label} hint={hint}>
+          <Switch aria-label={label} checked={value[key]} disabled={disabled} onCheckedChange={(c) => onChange({ ...value, [key]: c })} />
+        </Item>
+      ))}
+      <Item id="p-expiry" label="Passwords expire after" hint="People are asked for a new one at their next sign-in">
+        <NativeSelect id="p-expiry" value={String(value.expiryDays)} onChange={(e) => onChange({ ...value, expiryDays: Number(e.target.value) })} className="max-w-xs">
+          <option value="0">Never</option>
+          <option value="90">90 days</option>
+          <option value="180">180 days</option>
+        </NativeSelect>
+      </Item>
+      <Item id="p-reuse" label="Can't reuse" hint="Earlier passwords that can't be chosen again">
+        <NativeSelect id="p-reuse" value={String(value.reuseBlock)} onChange={(e) => onChange({ ...value, reuseBlock: Number(e.target.value) })} className="max-w-xs">
+          <option value="0">No check</option>
+          <option value="3">Last 3</option>
+          <option value="5">Last 5</option>
+        </NativeSelect>
+      </Item>
+    </>
   )
 }
 

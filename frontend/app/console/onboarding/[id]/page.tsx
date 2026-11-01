@@ -5,11 +5,12 @@ import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { Check, CircleDashed } from "lucide-react"
-import { BRAND_COLORS, DOC_TEMPLATES, FONTS, prefixError, previewNumber } from "@contracts/workspace"
+import { DOC_TEMPLATES, prefixError, previewNumber } from "@contracts/workspace"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { Failed, Loading, Page, Panel } from "@/components/console/kit"
+import { BrandFields } from "@/components/console/brand-editor"
 import { ImportMapper } from "@/components/console/import-mapper"
 import { LoginLinkBox, type LoginLink } from "@/components/console/login-link"
 import { WizardRail, type OnboardingStepKey, type RailState } from "@/components/console/wizard-rail"
@@ -18,7 +19,6 @@ import { useApi } from "@/lib/use-api"
 import { useConsoleBase } from "@/lib/console-base"
 import { formatDate } from "@/lib/format"
 import type { HandoverStep, OnboardingDetail } from "@/lib/console"
-import { cn } from "@/lib/utils"
 
 // Onboarding wizard, steps 4–7 (blueprint S3): branding, configuration, data import, then
 // review & hand over. Each step saves on the business, so anyone can come back and finish it.
@@ -123,7 +123,6 @@ function BrandingStep({ data, onSaved, onSkip }: { data: OnboardingDetail; onSav
   const [b, setB] = React.useState(data.branding)
   const [saving, setSaving] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  const family = FONTS.find((f) => f.key === b.font)?.family ?? "Inter"
   async function save(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
@@ -140,56 +139,7 @@ function BrandingStep({ data, onSaved, onSkip }: { data: OnboardingDetail; onSav
   return (
     <form onSubmit={save}>
       <Panel title={<StepTitle n={4} title="Branding" />} description="The colour and font the business sees in its ERP. The owner can change this later in Settings › Branding.">
-        <div className="grid gap-6 xl:grid-cols-[1fr_20rem]">
-          <div className="grid content-start gap-5">
-            <Field label="Brand colour">
-              <div className="flex flex-wrap items-center gap-2">
-                {BRAND_COLORS.map((c) => (
-                  <button key={c.hex} type="button" title={c.name} aria-label={c.name} aria-pressed={b.brandColor.toLowerCase() === c.hex.toLowerCase()} onClick={() => setB((x) => ({ ...x, brandColor: c.hex }))} className={cn("size-8 rounded-full ring-offset-2 ring-offset-card", b.brandColor.toLowerCase() === c.hex.toLowerCase() && "ring-2 ring-foreground")} style={{ background: c.hex }} />
-                ))}
-                <input id="ob-color" type="color" value={b.brandColor} onChange={(e) => setB((x) => ({ ...x, brandColor: e.target.value }))} className="h-8 w-10 cursor-pointer rounded-md border bg-card p-0.5" aria-label="Custom colour" />
-                <code className="text-xs text-muted-foreground">{b.brandColor.toUpperCase()}</code>
-              </div>
-            </Field>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Font">
-                <NativeSelect value={b.font} onChange={(e) => setB((x) => ({ ...x, font: e.target.value }))}>
-                  {FONTS.map((f) => (
-                    <option key={f.key} value={f.key}>{f.label}</option>
-                  ))}
-                </NativeSelect>
-              </Field>
-              <Field label="Appearance">
-                <NativeSelect value={b.theme} onChange={(e) => setB((x) => ({ ...x, theme: e.target.value as OnboardingDetail["branding"]["theme"] }))}>
-                  <option value="system">Follow the device</option>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </NativeSelect>
-              </Field>
-              <Field label="Density">
-                <NativeSelect value={b.density} onChange={(e) => setB((x) => ({ ...x, density: e.target.value as OnboardingDetail["branding"]["density"] }))}>
-                  <option value="comfortable">Comfortable</option>
-                  <option value="compact">Compact</option>
-                </NativeSelect>
-              </Field>
-            </div>
-          </div>
-          <div className="overflow-hidden rounded-xl border bg-background" style={{ fontFamily: family }} aria-label="Preview">
-            <div className="flex items-center gap-2 border-b bg-card px-3 py-2.5 text-sm font-semibold">
-              <span className="size-6 rounded-md" style={{ background: b.brandColor }} /> {data.name}
-            </div>
-            <div className={cn("grid gap-2", b.density === "compact" ? "p-2" : "p-4")}>
-              <div className="rounded-lg border bg-card p-3">
-                <div className="text-[11px] tracking-wide text-muted-foreground uppercase">Today</div>
-                <div className="text-lg font-semibold tabular-nums">₹48,250</div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <span className="rounded-lg px-3 py-1.5 text-xs font-semibold text-white" style={{ background: b.brandColor }}>New invoice</span>
-                <span className="rounded-lg border px-3 py-1.5 text-xs font-semibold" style={{ borderColor: b.brandColor, color: b.brandColor }}>Add customer</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <BrandFields value={b} onChange={setB} />
         <FormError message={error} />
         <Footer onSkip={onSkip} saving={saving} />
       </Panel>

@@ -16,6 +16,7 @@ export interface AccountOverview {
     passwordPolicy: SecurityPolicy["password"]
     passwordPolicyText: string
     passwordPolicySetBy: string | null
+    passwordPolicyWhere: string | null
   }
   businesses: { tenantId: string; name: string; status: string; logoUrl: string | null; roleKey: string; roleName: string; isOwner: boolean; joinedAt: string | null }[]
   currentFamilyId: string | null

@@ -11,6 +11,7 @@ import { ConsolePalette } from "@/components/console/console-palette"
 import { useNav, type NavItem } from "@/components/console/console-nav"
 import { NotificationsBell } from "@/components/console/notifications-bell"
 import { HelpPanel } from "@/components/console/help-panel"
+import { ThemeSwitch, WorkspaceBranding } from "@/components/workspace-branding"
 import { useAuth } from "@/lib/auth"
 import { initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -141,10 +142,14 @@ function SidebarBody({ onNavigate }: { onNavigate?: () => void }) {
 
 export function ConsoleShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false)
-  // The partner portal is a separate place with its own colour (globals.css [data-portal="partner"])
-  const portal = useConsoleBase() === "/partner" ? "partner" : "console"
+  const { me } = useAuth()
+  // The partner portal is a separate place with its own colour (globals.css [data-portal="partner"]),
+  // until Settings › Appearance picks a colour theme for the whole Console
+  const preset = me?.consoleBranding?.preset ?? "default"
+  const portal = useConsoleBase() === "/partner" && preset === "default" ? "partner" : "console"
   return (
     <div className="flex min-h-svh bg-background" data-portal={portal}>
+      <WorkspaceBranding />
       <aside className={cn("sticky top-0 hidden h-svh w-64 shrink-0 border-r lg:block print:hidden", portal === "partner" ? "bg-accent/50" : "bg-card")}>
         <SidebarBody />
       </aside>
@@ -168,6 +173,7 @@ export function ConsoleShell({ children }: { children: React.ReactNode }) {
           </Button>
           <ConsolePalette />
           <div className="flex-1" />
+          <ThemeSwitch />
           <HelpPanel />
           <NotificationsBell />
           <AccountMenu />

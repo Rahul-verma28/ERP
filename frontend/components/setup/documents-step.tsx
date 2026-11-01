@@ -129,10 +129,10 @@ export function DocumentsStep({ tenant, workspace, refresh, complete, back }: St
                 <Input {...form.field("bankAccountConfirm")} inputMode="numeric" autoComplete="off" onPaste={(e) => e.preventDefault()} />
               </Field>
               <Field label="IFSC" error={form.errors.ifsc} hint="11 characters, e.g. HDFC0001234">
-                <Input {...form.field("ifsc")} maxLength={11} className="font-mono uppercase" />
+                <Input mask="ifsc" {...form.field("ifsc")} maxLength={11} className="font-mono uppercase" />
               </Field>
               <Field label="UPI ID" error={form.errors.upiId} hint="name@bank">
-                <Input {...form.field("upiId")} autoComplete="off" />
+                <Input mask="noSpaces" {...form.field("upiId")} autoComplete="off" />
               </Field>
             </div>
             <label className="flex items-center gap-3 text-sm">
