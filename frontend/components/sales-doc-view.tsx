@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 // Printable GST tax invoice / quotation (BIL-01, HW-02). Used in-app, for printing and on share links.
 
 export interface ViewDoc {
-  kind: "invoice" | "quotation"
+  kind: "invoice" | "quotation" | "credit_note" | "sales_order"
   number: string | null
   status: string
   issueDate: string
@@ -21,8 +21,13 @@ export interface ViewDoc {
   cgstPaise: number
   sgstPaise: number
   igstPaise: number
+  roundOffPaise?: number
   totalPaise: number
   paidPaise: number
+  /** Invoice: the part of paidPaise that came from credit notes */
+  creditedPaise?: number
+  /** Credit note: the invoice it is against */
+  sourceNumber?: string | null
   notes: string | null
   terms: string | null
   lines: DocLine[]
@@ -34,8 +39,9 @@ const addr = (a?: Record<string, string> | null) => (a ? [a.line1, a.line2, a.ci
 export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc; fallbackSeller?: Seller; className?: string }) {
   const seller = doc.seller ?? fallbackSeller
   const intra = doc.igstPaise === 0
-  const title = doc.kind === "quotation" ? "Quotation" : doc.status === "draft" ? "Draft invoice" : doc.buyer.gstin ? "Tax Invoice" : "Tax Invoice (B2C)"
+  const title = doc.kind === "sales_order" ? "Sales Order" : doc.kind === "credit_note" ? "Credit Note" : doc.kind === "quotation" ? "Quotation" : doc.status === "draft" ? "Draft invoice" : doc.buyer.gstin ? "Tax Invoice" : "Tax Invoice (B2C)"
   const balance = doc.totalPaise - doc.paidPaise
+  const credited = doc.creditedPaise ?? 0
   const hsnSummary = Object.values(
     doc.lines.reduce<Record<string, { hsn: string; rate: number; taxable: number; tax: number }>>((acc, l) => {
       const key = `${l.hsnSac ?? "—"}-${l.gstRateBp}`
@@ -64,7 +70,8 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
           <p className="text-xl font-semibold tracking-tight uppercase">{title}</p>
           <p className="mt-1 font-mono">{doc.number ?? "—"}</p>
           <p className="text-neutral-600">Date: {formatDate(doc.issueDate)}</p>
-          {doc.dueDate && <p className="text-neutral-600">{doc.kind === "invoice" ? "Due" : "Valid until"}: {formatDate(doc.dueDate)}</p>}
+          {doc.sourceNumber && <p className="text-neutral-600">Against invoice: <span className="font-mono">{doc.sourceNumber}</span></p>}
+          {doc.dueDate && <p className="text-neutral-600">{doc.kind === "invoice" ? "Due" : doc.kind === "sales_order" ? "Deliver by" : "Valid until"}: {formatDate(doc.dueDate)}</p>}
           {doc.status === "cancelled" && <p className="mt-1 font-semibold text-red-600">CANCELLED</p>}
         </div>
       </header>
@@ -118,7 +125,7 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
 
       <section className="grid gap-6 pt-5 sm:grid-cols-2">
         <div className="grid content-start gap-3">
-          {doc.kind === "invoice" && hsnSummary.length > 0 && seller?.showHsnSummary !== false && (
+          {doc.kind !== "quotation" && hsnSummary.length > 0 && seller?.showHsnSummary !== false && (
             <table className="w-full text-xs">
               <thead><tr className="text-neutral-500"><th className="text-left font-medium">HSN/SAC</th><th className="text-right font-medium">Rate</th><th className="text-right font-medium">Taxable</th><th className="text-right font-medium">Tax</th></tr></thead>
               <tbody>{hsnSummary.map((h) => <tr key={`${h.hsn}-${h.rate}`}><td className="font-mono">{h.hsn}</td><td className="text-right">{h.rate / 100}%</td><td className="text-right tabular-nums">{formatPaise(h.taxable)}</td><td className="text-right tabular-nums">{formatPaise(h.tax)}</td></tr>)}</tbody>
@@ -136,10 +143,12 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
           ) : (
             <div className="flex justify-between"><dt className="text-neutral-500">IGST</dt><dd className="tabular-nums">{formatPaise(doc.igstPaise)}</dd></div>
           )}
+          {!!doc.roundOffPaise && <div className="flex justify-between"><dt className="text-neutral-500">Round off</dt><dd className="tabular-nums">{formatPaise(doc.roundOffPaise)}</dd></div>}
           <div className="flex justify-between border-t border-neutral-300 pt-2 text-base font-semibold"><dt>Total</dt><dd className="tabular-nums">{formatPaise(doc.totalPaise)}</dd></div>
           {doc.kind === "invoice" && doc.paidPaise > 0 && (
             <>
-              <div className="flex justify-between text-neutral-500"><dt>Paid</dt><dd className="tabular-nums">{formatPaise(doc.paidPaise)}</dd></div>
+              {doc.paidPaise > credited && <div className="flex justify-between text-neutral-500"><dt>Paid</dt><dd className="tabular-nums">{formatPaise(doc.paidPaise - credited)}</dd></div>}
+              {credited > 0 && <div className="flex justify-between text-neutral-500"><dt>Credit notes</dt><dd className="tabular-nums">{formatPaise(credited)}</dd></div>}
               <div className="flex justify-between font-medium"><dt>Balance due</dt><dd className="tabular-nums">{formatPaise(balance)}</dd></div>
             </>
           )}
@@ -167,7 +176,7 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
           {doc.terms && <div><p className="font-medium text-neutral-900">Terms</p><p className="whitespace-pre-wrap">{doc.terms}</p></div>}
         </footer>
       )}
-      {doc.kind === "invoice" && seller && seller.showSignatory !== false && (
+      {doc.kind !== "quotation" && seller && seller.showSignatory !== false && (
         <div className="mt-8 ml-auto w-56 text-center text-xs text-neutral-600">
           <p>For {seller.legalName || seller.name}</p>
           <div className="mt-10 border-t border-neutral-400 pt-1">Authorised signatory</div>

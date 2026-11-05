@@ -49,6 +49,7 @@ export function TaxesStep({ tenant, workspace, refresh, complete, back }: StepPr
       defaultGstRateBp: String(t.defaultGstRateBp),
       hsnDigits: t.hsnDigits,
       reverseCharge: t.reverseCharge,
+      roundOff: !!t.roundOff,
     },
     rules: { compositionRateBp: (v, all) => (all.composition && !v ? "Choose your composition rate" : null) },
     onSubmit: async (v) => {
@@ -59,6 +60,7 @@ export function TaxesStep({ tenant, workspace, refresh, complete, back }: StepPr
         defaultGstRateBp: Number(v.defaultGstRateBp),
         hsnDigits: v.hsnDigits,
         reverseCharge: v.reverseCharge,
+        roundOff: v.roundOff,
       })
       await refresh()
       await complete("done")
@@ -101,6 +103,9 @@ export function TaxesStep({ tenant, workspace, refresh, complete, back }: StepPr
                 Exclude GST
               </ChoiceChip>
             </div>
+          </Row>
+          <Row title="Round bills to the whole rupee" description="Default for new bills. ₹117.60 becomes ₹118. You can change it on each bill.">
+            <Toggle checked={v.roundOff} onChange={(c) => form.set("roundOff", c)} label="Round off" />
           </Row>
           <Row title="Default GST rate for new items" description="Each item can still have its own rate.">
             <NativeSelect {...form.field("defaultGstRateBp")} className="w-28" aria-label="Default GST rate">

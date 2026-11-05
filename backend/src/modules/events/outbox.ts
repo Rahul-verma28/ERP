@@ -15,7 +15,9 @@ export type EventType =
   | 'subscription.changed'
   | 'trial.reminder_due'
   | 'invoice.issued'
-  | 'payment.received';
+  | 'payment.received'
+  | 'credit_note.issued'
+  | 'credit_note.cancelled';
 
 export interface EventEnvelope<P = Record<string, unknown>> {
   id: string;

@@ -11,6 +11,9 @@ import { publicLimiter } from '../../middleware/rateLimit';
 import { audit } from '../audit/service';
 import { todayIST } from '../../kernel/gst';
 import * as billing from './service';
+import * as creditNotes from './creditNotes';
+import * as ledger from './ledger';
+import * as orders from './orders';
 import { sendOverdueReminders } from '../tenancy/messages';
 
 // Quotations (sales module) and GST invoices + receipts (billing module).
@@ -30,6 +33,8 @@ const DocList = ListQuery.extend({
   to: DateStr.optional(),
   unpaid: z.enum(['true', 'false']).optional(),
   overdue: z.enum(['true', 'false']).optional(),
+  /** Credit notes of one invoice */
+  sourceId: z.string().uuid().optional(),
   /** Include the number of matching rows ("Showing 1–25 of 64") */
   withTotal: z.enum(['1']).optional(),
 });
@@ -39,10 +44,10 @@ const overdueWhere = (): Prisma.SalesDocumentWhereInput => ({ ...OPEN, dueDate: 
 
 const SUMMARY_SELECT = {
   id: true, kind: true, status: true, number: true, contactId: true, buyer: true, issueDate: true, dueDate: true,
-  totalPaise: true, paidPaise: true, createdAt: true, createdBy: true, branchId: true,
+  totalPaise: true, paidPaise: true, createdAt: true, createdBy: true, branchId: true, noteType: true, sourceId: true, sourceNumber: true,
 } satisfies Prisma.SalesDocumentSelect;
 
-function registerDocRoutes(kind: SalesDocKind, base: string, module: 'sales.quotation' | 'billing.invoice') {
+function registerReadRoutes(kind: SalesDocKind, base: string, module: 'sales.quotation' | 'billing.invoice' | 'billing.credit_note' | 'sales.order') {
   router.get(base, requirePermission(`${module}.view`), validate(DocList, 'query'), tx(async (req, res) => {
     const q = req.query as unknown as z.infer<typeof DocList>;
     const where: Prisma.SalesDocumentWhereInput = {
@@ -53,6 +58,7 @@ function registerDocRoutes(kind: SalesDocKind, base: string, module: 'sales.quot
         q.unpaid === 'true' ? OPEN : {},
         q.overdue === 'true' ? overdueWhere() : {},
         q.contactId ? { contactId: q.contactId } : {},
+        q.sourceId ? { sourceId: q.sourceId } : {},
         q.from || q.to ? { issueDate: { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } } : {},
         q.q
           ? {
@@ -92,6 +98,10 @@ function registerDocRoutes(kind: SalesDocKind, base: string, module: 'sales.quot
   router.get(`${base}/:id`, requirePermission(`${module}.view`), validate(IdParam, 'params'), tx(async (req, res) => {
     res.json(await billing.getDocument(req.ctx!, String(req.params.id), kind));
   }));
+}
+
+function registerDocRoutes(kind: 'invoice' | 'quotation' | 'sales_order', base: string, module: 'sales.quotation' | 'billing.invoice' | 'sales.order') {
+  registerReadRoutes(kind, base, module);
 
   router.post(base, requirePermission(`${module}.create`), validate(billing.DocInput.extend({ issue: z.boolean().default(false) })), tx(async (req, res) => {
     const { issue, ...input } = req.body as billing.DocInput & { issue: boolean };
@@ -107,7 +117,9 @@ function registerDocRoutes(kind: SalesDocKind, base: string, module: 'sales.quot
   router.delete(`${base}/:id`, requirePermission(`${module}.edit`), validate(IdParam, 'params'), tx(async (req, res) => {
     const doc = await billing.getDocument(req.ctx!, String(req.params.id), kind);
     if (doc.status !== 'draft') throw new AppError('CONFLICT', 'Only drafts can be deleted.');
+    await db().salesDocumentLine.deleteMany({ where: { documentId: doc.id } });
     await db().salesDocument.delete({ where: { id: doc.id } });
+    if (doc.sourceType === 'sales_order' && doc.sourceId) await billing.refreshOrderStatus(doc.sourceId);
     await audit({ action: `${module}.delete_draft`, entity: kind, entityId: doc.id, before: { number: doc.number } });
     res.status(204).end();
   }));
@@ -115,6 +127,8 @@ function registerDocRoutes(kind: SalesDocKind, base: string, module: 'sales.quot
 
 registerDocRoutes('quotation', '/quotations', 'sales.quotation');
 registerDocRoutes('invoice', '/invoices', 'billing.invoice');
+registerDocRoutes('sales_order', '/sales-orders', 'sales.order');
+registerReadRoutes('credit_note', '/credit-notes', 'billing.credit_note');
 
 // ── Quotation lifecycle ──
 router.post(
@@ -137,7 +151,32 @@ router.post('/quotations/:id/convert', requirePermission('billing.invoice.create
   res.status(201).json(await billing.convertQuotation(req.ctx!, String(req.params.id)));
 }));
 
+router.post('/quotations/:id/convert-order', requirePermission('sales.order.create'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.status(201).json(await billing.convertQuotation(req.ctx!, String(req.params.id), 'sales_order'));
+}));
+
+// ── Sales orders ──
+router.get('/sales-orders/:id/open-lines', requirePermission('sales.order.view'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json(await orders.orderLines(req.ctx!, String(req.params.id)));
+}));
+router.post('/sales-orders/:id/invoice', requirePermission('billing.invoice.create'), validate(IdParam, 'params'), validate(orders.OrderInvoiceInput), tx(async (req, res) => {
+  res.status(201).json(await orders.invoiceFromOrder(req.ctx!, String(req.params.id), req.body));
+}));
+router.post('/sales-orders/:id/cancel', requirePermission('sales.order.edit'), validate(IdParam, 'params'), validate(z.object({ reason: z.string().trim().min(3).max(300) })), tx(async (req, res) => {
+  res.json(await orders.cancelOrder(req.ctx!, String(req.params.id), req.body.reason));
+}));
+
 // ── Invoice lifecycle ──
+router.post(
+  '/invoices/cash-bill',
+  requirePermission('billing.payment.create'),
+  requirePermission('billing.invoice.create'),
+  validate(billing.DocInput.extend({ receive: z.object({ method: billing.PaymentInput.shape.method, reference: z.string().trim().max(100).optional().nullable() }) })),
+  tx(async (req, res) => {
+    const { receive, ...input } = req.body as billing.DocInput & { receive: { method: 'cash'; reference?: string | null } };
+    res.status(201).json(await billing.createCashBill(req.ctx!, input, receive));
+  }),
+);
 router.post('/invoices/:id/issue', requirePermission('billing.invoice.create'), validate(IdParam, 'params'), tx(async (req, res) => {
   res.json(await billing.issueInvoice(req.ctx!, String(req.params.id)));
 }));
@@ -160,6 +199,53 @@ router.post('/invoices/remind', requirePermission('billing.invoice.edit'), valid
 }));
 router.post('/invoices/:id/payments', requirePermission('billing.payment.create'), validate(IdParam, 'params'), validate(billing.PaymentInput), tx(async (req, res) => {
   res.status(201).json(await billing.recordPayment(req.ctx!, String(req.params.id), req.body));
+}));
+// ── Customer ledger and opening balance ──
+router.get('/customers/:id/ledger', requirePermission('billing.dues.view'), validate(IdParam, 'params'), validate(z.object({ from: DateStr.optional(), to: DateStr.optional() }), 'query'), tx(async (req, res) => {
+  const q = req.query as { from?: string; to?: string };
+  res.json(await ledger.customerLedger(req.ctx!, String(req.params.id), q));
+}));
+router.put('/customers/:id/opening-balance', requirePermission('billing.invoice.approve'), validate(IdParam, 'params'), validate(ledger.OpeningBalanceInput), tx(async (req, res) => {
+  res.json(await ledger.setOpeningBalance(req.ctx!, String(req.params.id), req.body));
+}));
+router.delete('/customers/:id/opening-balance', requirePermission('billing.invoice.approve'), validate(IdParam, 'params'), tx(async (req, res) => {
+  await ledger.removeOpeningBalance(req.ctx!, String(req.params.id));
+  res.status(204).end();
+}));
+router.post('/opening-balances/:id/payments', requirePermission('billing.payment.create'), validate(IdParam, 'params'), validate(billing.PaymentInput), tx(async (req, res) => {
+  res.status(201).json(await billing.recordPayment(req.ctx!, String(req.params.id), req.body, 'opening_balance'));
+}));
+
+// ── Credit notes and sales returns ──
+router.get('/invoices/:id/credit-note-lines', requirePermission('billing.credit_note.create'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json((await creditNotes.creditableLines(req.ctx!, String(req.params.id))).map(({ line, quantityLeft, taxableLeftPaise }) => ({ ...line, quantityLeft, taxableLeftPaise })));
+}));
+router.post('/invoices/:id/credit-notes', requirePermission('billing.credit_note.create'), validate(IdParam, 'params'), validate(creditNotes.CreditNoteInput), tx(async (req, res) => {
+  res.status(201).json(await creditNotes.createCreditNote(req.ctx!, String(req.params.id), req.body));
+}));
+router.post('/credit-notes/:id/cancel', requirePermission('billing.credit_note.approve'), validate(IdParam, 'params'), validate(z.object({ reason: z.string().trim().min(3).max(300) })), tx(async (req, res) => {
+  res.json(await creditNotes.cancelCreditNote(req.ctx!, String(req.params.id), req.body.reason));
+}));
+router.post('/credit-notes/:id/refund', requirePermission('billing.refund.create'), validate(IdParam, 'params'), validate(billing.PaymentInput), tx(async (req, res) => {
+  res.status(201).json(await creditNotes.refundCreditNote(req.ctx!, String(req.params.id), req.body));
+}));
+
+router.post('/payments/:id/reverse', requirePermission('billing.payment.approve'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json({ invoice: await billing.reversePayment(req.ctx!, String(req.params.id)) });
+}));
+
+// ── Advances ──
+router.get('/advances', requirePermission('billing.payment.view'), validate(z.object({ contactId: z.string().uuid() }), 'query'), tx(async (req, res) => {
+  res.json(await billing.listAdvances(req.ctx!, String(req.query.contactId)));
+}));
+router.post('/advances', requirePermission('billing.payment.create'), validate(billing.AdvanceInput), tx(async (req, res) => {
+  res.status(201).json(await billing.recordAdvance(req.ctx!, req.body));
+}));
+router.post('/invoices/:id/advances', requirePermission('billing.payment.create'), validate(IdParam, 'params'), validate(billing.UseAdvanceInput), tx(async (req, res) => {
+  res.status(201).json(await billing.useAdvance(req.ctx!, String(req.params.id), req.body));
+}));
+router.post('/advance-adjustments/:id/reverse', requirePermission('billing.payment.approve'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json(await billing.removeAdvanceUse(req.ctx!, String(req.params.id)));
 }));
 
 router.get(

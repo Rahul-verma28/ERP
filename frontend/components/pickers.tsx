@@ -181,7 +181,7 @@ export function ContactPicker({ value, onChange, id, allowCreate = true }: { val
   )
 }
 
-export function ItemPicker({ onPick, id }: { onPick: (i: ItemOption) => void; id?: string }) {
+export function ItemPicker({ onPick, id, allowCreate = false, defaultGstRateBp = 1800 }: { onPick: (i: ItemOption) => void; id?: string; allowCreate?: boolean; defaultGstRateBp?: number }) {
   return (
     <Combobox<ItemOption>
       id={id}
@@ -191,6 +191,24 @@ export function ItemPicker({ onPick, id }: { onPick: (i: ItemOption) => void; id
       value={null}
       onChange={(v) => v && onPick(v)}
       render={(i) => ({ title: i.name, subtitle: `${formatPaise(i.pricePaise)} · GST ${i.gstRateBp / 100}%${i.hsnSac ? ` · ${i.hsnSac}` : ""}` })}
+      footer={
+        allowCreate
+          ? (query, close) =>
+              query.trim().length >= 2 && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  className="mt-1 w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-primary hover:bg-muted"
+                  onClick={async () => {
+                    onPick(await api.post<ItemOption>("/items", { name: query.trim(), type: "product", unit: "pcs", pricePaise: 0, gstRateBp: defaultGstRateBp }))
+                    close()
+                  }}
+                >
+                  + Add &ldquo;{query.trim()}&rdquo; as a new item
+                </button>
+              )
+          : undefined
+      }
     />
   )
 }

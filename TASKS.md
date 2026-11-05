@@ -353,6 +353,17 @@ Today: 6 templates (salon, retail, pharmacy, gym, coaching/school, service compa
 - [ ] GSTIN lookup API (GSP, paid) — signup auto-fill
 - [ ] Google OAuth client — Google sign-in
 
+## Pack 1 — first complete modules to sell (approved 2026-11-05)
+The client allows selling with a few complete modules, so this replaces the budget's phase order: Sales & Billing, then Inventory, then Purchase, for shops, traders and distributors. Spec: "Sales & Billing (Hinglish)" tab of the Module Specification doc.
+### Sales & Billing
+- [x] Payment reverse (opposite entry; `billing.payment.approve`, not for Cashier) and advance payments (take, use on an invoice, remove) — built 2026-11-05
+- [x] Credit note and sales return: goods returned or amount reduced, GST from the invoice line, own number series, print, cancel; extra credit goes on another invoice or is refunded; sales and GST on the dashboard net it off — built 2026-11-05 (top customers still gross until Sales reports)
+- [x] Customer ledger and opening balance: Ledger tab on the customer page, running balance, age bands, period, Excel, statement print, WhatsApp text; opening balance takes payments and counts in dues, not in sales or GST — built 2026-11-05
+- [x] Quick cash bill: walk-in customer, GST-inclusive rate, round-off, add customer or item from the invoice, issue and take payment in one step — code and tests done 2026-11-05, checked in the browser
+- [x] Sales reports: by day, month, customer, item; collection by method; credit notes netted, also in Top customers — code and tests done 2026-11-05, checked in the browser
+- [x] GST working sheet for the CA: B2B, B2C, credit notes, HSN, totals, Excel — code and tests done 2026-11-05, checked in the browser; layout needs the CA's check
+- [x] Sales order: from a quotation or direct, invoiced in parts, Open / Part invoiced / Completed / Cancelled — code and tests done 2026-11-05, checked in the browser
+
 ## Phase 2 — Operations (weeks 5–8)
 Exit gate: stock and accounts update from sales and purchases.
 Can run in parallel once Platform v2 Step 2 is merged. From the Maglo reference, add: reporting manager + teams, permission matrix UI, Contact vs Lead (re-enquiry count), configurable pipeline stages, round-robin assignment, follow-up screen, quotation statuses + proforma, one shared list-page component.

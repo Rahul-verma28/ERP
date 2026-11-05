@@ -10,6 +10,8 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { AdvancesCard } from "@/components/advances"
+import { CustomerLedger } from "@/components/customer-ledger"
 import { ConfirmDialog, Spinner, StatusBadge } from "@/components/common"
 import { NativeSelect } from "@/components/form"
 import { api, errorMessage } from "@/lib/api"
@@ -23,7 +25,7 @@ import { ContactDialog, type Contact } from "../contact-form"
 interface Detail extends Contact {
   owner: { id: string; name: string } | null
   activities: { id: string; type: "note" | "call" | "meeting" | "follow_up"; title: string | null; body: string | null; dueAt: string | null; completedAt: string | null; createdAt: string; createdByName: string | null; assigneeName: string | null }[]
-  documents: { id: string; kind: "invoice" | "quotation"; number: string | null; status: string; issueDate: string; totalPaise: number; paidPaise: number }[]
+  documents: { id: string; kind: "invoice" | "quotation" | "credit_note" | "sales_order"; number: string | null; status: string; issueDate: string; totalPaise: number; paidPaise: number }[]
   appointments: { id: string; title: string; startAt: string; status: string }[]
 }
 
@@ -83,11 +85,13 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
   const fields = useCustomFields(c?.type === "lead" ? "lead" : "contact")
   const [editing, setEditing] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [tab, setTab] = React.useState<"overview" | "ledger">("overview")
 
   if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
   if (!c) return <div className="grid place-items-center py-24"><Spinner /></div>
   const isLead = c.type === "lead"
   const permBase = isLead ? "crm.lead" : "crm.contact"
+  const showLedger = !isLead && can("billing.dues.view")
 
   async function convert() {
     try {
@@ -133,6 +137,14 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
+      {showLedger && (
+        <div className="mb-5 flex gap-5 border-b" role="tablist">
+          {(["overview", "ledger"] as const).map((t) => (
+            <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={cn("-mb-px border-b-2 border-transparent px-1 py-2 text-sm font-semibold capitalize text-muted-foreground hover:text-foreground", tab === t && "border-primary text-foreground")}>{t}</button>
+          ))}
+        </div>
+      )}
+      {showLedger && tab === "ledger" ? <CustomerLedger contactId={c.id} /> : (
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="grid content-start gap-6 lg:col-span-2">
           <Card>
@@ -180,7 +192,7 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
                   <ul className="divide-y">
                     {c.documents.map((d) => (
                       <li key={d.id}>
-                        <Link href={`/app/m/${d.kind === "invoice" ? "billing" : "sales"}/${d.id}`} className="flex items-center gap-3 py-2 text-sm hover:underline">
+                        <Link href={d.kind === "credit_note" ? `/app/m/billing/credit-notes/${d.id}` : d.kind === "sales_order" ? `/app/m/sales/orders/${d.id}` : `/app/m/${d.kind === "invoice" ? "billing" : "sales"}/${d.id}`} className="flex items-center gap-3 py-2 text-sm hover:underline">
                           <span className="w-28 font-mono text-xs">{d.number ?? "Draft"}</span>
                           <span className="text-muted-foreground">{formatDate(d.issueDate)}</span>
                           <StatusBadge status={d.status} />
@@ -232,6 +244,7 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
               {c.notes && <p className="mt-4 rounded-2xl bg-muted p-3 text-sm whitespace-pre-wrap">{c.notes}</p>}
             </CardContent>
           </Card>
+          {!isLead && can("billing.payment.view") && <AdvancesCard contactId={c.id} />}
           {c.appointments.length > 0 && (
             <Card>
               <CardHeader><CardTitle>{term("entity.appointment.plural", "Appointments")}</CardTitle></CardHeader>
@@ -249,6 +262,7 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
           )}
         </div>
       </div>
+      )}
 
       {editing && <ContactDialog kind={c.type} contact={c} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); void reload() }} />}
       <ConfirmDialog

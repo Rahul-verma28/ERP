@@ -93,6 +93,7 @@ export const ROLES: RoleDef[] = [
     key: 'cashier', name: 'Billing Staff / Cashier', layer: 'tenant', roleType: 'counter', requiredModules: ['billing'],
     description: 'Create invoices and receipts, record payments; no deletes or refunds',
     grants: [['billing.invoice.view', 'branch'], ['billing.invoice.create', 'branch'], ['billing.payment.*', 'branch'], ['billing.pos.*', 'branch'], ['crm.contact.view', 'all'], ['crm.contact.create', 'all'], ['catalog.item.view', 'all']],
+    deny: ['billing.payment.approve'],
   },
   {
     key: 'finance_manager', name: 'Finance Manager / Accountant', layer: 'tenant', roleType: 'user', requiredModules: ['finance'],
@@ -104,7 +105,7 @@ export const ROLES: RoleDef[] = [
   {
     key: 'ar_manager', name: 'Accounts Receivable Manager', layer: 'tenant', roleType: 'user', requiredModules: ['finance'],
     description: 'Customer dues, collections, credit notes, receipts',
-    grants: [['finance.receivable.*', 'all'], ['billing.invoice.view', 'all'], ['billing.payment.*', 'all'], ['billing.credit_note.*', 'all'], ['billing.dues.*', 'all'], ['crm.contact.view', 'all'], ['reports.report.view', 'all']],
+    grants: [['finance.receivable.*', 'all'], ['billing.invoice.view', 'all'], ['billing.payment.*', 'all'], ['billing.credit_note.*', 'all'], ['billing.refund.*', 'all'], ['billing.dues.*', 'all'], ['crm.contact.view', 'all'], ['reports.report.view', 'all']],
   },
   {
     key: 'ap_manager', name: 'Accounts Payable Manager', layer: 'tenant', roleType: 'user', requiredModules: ['finance'],

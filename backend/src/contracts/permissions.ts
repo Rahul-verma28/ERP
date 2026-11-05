@@ -65,7 +65,8 @@ export const PERMISSION_CATALOG: Record<PermissionModule, ResourceDef[]> = {
   ],
   billing: [
     { resource: 'invoice', label: 'Invoices', actions: ['view', 'create', 'edit', 'approve', 'export'] },
-    { resource: 'payment', label: 'Receipts & payments', actions: ['view', 'create'] },
+    // approve = reverse a wrong receipt
+    { resource: 'payment', label: 'Receipts & payments', actions: ['view', 'create', 'approve'] },
     { resource: 'credit_note', label: 'Credit & debit notes', actions: ['view', 'create', 'approve'], tier: 'full' },
     { resource: 'dues', label: 'Outstanding dues', actions: ['view', 'export'], tier: 'full' },
     { resource: 'pos', label: 'POS counter', actions: ['view', 'create'], tier: 'full' },

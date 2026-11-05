@@ -1,0 +1,178 @@
+import { z } from 'zod';
+import { db } from '../../kernel/db';
+import { AppError } from '../../kernel/errors';
+import type { TenantCtx } from '../../kernel/context';
+import { randomToken } from '../../kernel/crypto';
+import { dateOnly, divRound, todayIST } from '../../kernel/gst';
+import { allocateNumber } from '../../kernel/sequences';
+import { DateStr, Paise } from '../../kernel/query';
+import { audit } from '../audit/service';
+import { publish } from '../events/outbox';
+import { getDocument, PaymentInput, setCreditUsed, setPaid } from './service';
+
+// Credit notes (issued invoices are never edited): goods came back, or the value is reduced.
+// GST follows the invoice line. GST rules here must be validated by the client's CA.
+
+const CreditableStatus = ['issued', 'partially_paid', 'paid'];
+const milli = (q: unknown) => BigInt(Math.round(Number(q) * 1000));
+
+export const CreditNoteInput = z.object({
+  type: z.enum(['return', 'amount']),
+  issueDate: DateStr.optional(),
+  notes: z.string().trim().max(2000).optional().nullable(),
+  lines: z.array(z.object({
+    sourceLineId: z.string().uuid(),
+    /** Goods returned */
+    quantity: z.number().positive('Quantity must be more than 0').max(1e7).optional(),
+    /** Value reduced, before GST */
+    taxablePaise: Paise.optional(),
+  })).min(1, 'Choose at least one line').max(200),
+});
+export type CreditNoteInput = z.infer<typeof CreditNoteInput>;
+
+/** Each invoice line with what is still open after earlier credit notes that were not cancelled. */
+export async function creditableLines(ctx: TenantCtx, invoiceId: string) {
+  const doc = await getDocument(ctx, invoiceId, 'invoice');
+  const earlier = await db().salesDocumentLine.findMany({
+    where: { sourceLineId: { in: doc.lines.map((l) => l.id) }, document: { kind: 'credit_note', status: { not: 'cancelled' } } },
+    include: { document: { select: { noteType: true } } },
+  });
+  return doc.lines.map((line) => {
+    const left = { quantityMilli: milli(line.quantity), taxablePaise: line.taxablePaise, cgstPaise: line.cgstPaise, sgstPaise: line.sgstPaise, igstPaise: line.igstPaise };
+    for (const e of earlier) {
+      if (e.sourceLineId !== line.id) continue;
+      if (e.document.noteType === 'return') left.quantityMilli -= milli(e.quantity);
+      left.taxablePaise -= e.taxablePaise;
+      left.cgstPaise -= e.cgstPaise;
+      left.sgstPaise -= e.sgstPaise;
+      left.igstPaise -= e.igstPaise;
+    }
+    return { line, left, quantityLeft: Number(left.quantityMilli) / 1000, taxableLeftPaise: left.taxablePaise };
+  });
+}
+
+const min = (a: bigint, b: bigint) => (a < b ? a : b);
+
+export async function createCreditNote(ctx: TenantCtx, invoiceId: string, input: CreditNoteInput) {
+  const doc = await getDocument(ctx, invoiceId, 'invoice');
+  if (!CreditableStatus.includes(doc.status)) throw new AppError('CONFLICT', 'A credit note can only be made on an issued invoice.');
+  const issueDate = input.issueDate ?? todayIST();
+  if (dateOnly(issueDate) < doc.issueDate) throw new AppError('VALIDATION_FAILED', 'The credit note date cannot be before the invoice date.', { fields: { issueDate: 'Before the invoice date' } });
+  const open = new Map((await creditableLines(ctx, invoiceId)).map((o) => [o.line.id, o]));
+  const seen = new Set<string>();
+  const intra = doc.igstPaise === 0n;
+
+  const lines = input.lines.map((want, i) => {
+    const o = open.get(want.sourceLineId);
+    const field = `lines.${i}.${input.type === 'return' ? 'quantity' : 'taxablePaise'}`;
+    const refuse = (message: string) => new AppError('VALIDATION_FAILED', message, { fields: { [field]: message } });
+    if (!o || seen.has(want.sourceLineId)) throw refuse('Choose a line from this invoice');
+    seen.add(want.sourceLineId);
+    const { line, left } = o;
+
+    let taxable: bigint;
+    let quantity: string;
+    let unitPrice: bigint;
+    let discount = 0n;
+    let unit = line.unit;
+    if (input.type === 'return') {
+      if (!want.quantity) throw refuse('Enter the quantity returned');
+      const q = milli(want.quantity);
+      if (q > left.quantityMilli) throw refuse(`Only ${Number(left.quantityMilli) / 1000} ${line.unit} can be returned on this line`);
+      // Returning all that is left clears the line exactly, so rounding never leaves paise behind
+      taxable = q === left.quantityMilli ? left.taxablePaise : min(divRound(line.taxablePaise * q, milli(line.quantity)), left.taxablePaise);
+      quantity = (Number(q) / 1000).toFixed(3);
+      unitPrice = line.unitPricePaise;
+      const gross = divRound(unitPrice * q, 1000n);
+      discount = gross > taxable ? gross - taxable : 0n;
+    } else {
+      if (!want.taxablePaise) throw refuse('Enter the amount to reduce');
+      taxable = BigInt(want.taxablePaise);
+      if (taxable > left.taxablePaise) throw refuse(`Only ₹${(Number(left.taxablePaise) / 100).toFixed(2)} is left on this line`);
+      quantity = '1.000';
+      unitPrice = taxable;
+      unit = 'adj';
+    }
+    if (taxable <= 0n) throw refuse('Nothing is left to credit on this line');
+
+    const rate = BigInt(line.gstRateBp);
+    const clearing = taxable === left.taxablePaise;
+    const half = divRound(taxable * rate, 20_000n);
+    const cgst = !intra ? 0n : clearing ? left.cgstPaise : min(half, left.cgstPaise);
+    const sgst = !intra ? 0n : clearing ? left.sgstPaise : min(half, left.sgstPaise);
+    const igst = intra ? 0n : clearing ? left.igstPaise : min(divRound(taxable * rate, 10_000n), left.igstPaise);
+    return {
+      tenantId: ctx.tenantId, sourceLineId: line.id, itemId: line.itemId, description: line.description, hsnSac: line.hsnSac, unit, quantity, unitPricePaise: unitPrice, discountPaise: discount,
+      taxablePaise: taxable, gstRateBp: line.gstRateBp, cgstPaise: cgst, sgstPaise: sgst, igstPaise: igst, totalPaise: taxable + cgst + sgst + igst, position: i,
+    };
+  });
+
+  const sum = (pick: (l: (typeof lines)[number]) => bigint) => lines.reduce((s, l) => s + pick(l), 0n);
+  const totals = {
+    subtotalPaise: sum((l) => l.taxablePaise + l.discountPaise), discountPaise: sum((l) => l.discountPaise), taxablePaise: sum((l) => l.taxablePaise),
+    cgstPaise: sum((l) => l.cgstPaise), sgstPaise: sum((l) => l.sgstPaise), igstPaise: sum((l) => l.igstPaise), totalPaise: sum((l) => l.totalPaise),
+  };
+
+  // The note that clears the whole invoice takes its round-off back too, so nothing stays owed
+  const cleared = [...open.values()].every((o) => o.left.taxablePaise - (lines.find((l) => l.sourceLineId === o.line.id)?.taxablePaise ?? 0n) === 0n);
+  const roundOffPaise = cleared ? doc.roundOffPaise : 0n;
+  totals.totalPaise += roundOffPaise;
+
+  const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
+  const { number, fy } = await allocateNumber(ctx.tenantId, 'credit_note', tenant.fyStartMonth, dateOnly(issueDate));
+  // What the invoice still owes is cleared first; anything more stays with the customer
+  const due = doc.totalPaise - doc.paidPaise;
+  const applied = min(totals.totalPaise, due > 0n ? due : 0n);
+  const note = await db().salesDocument.create({
+    data: {
+      tenantId: ctx.tenantId, kind: 'credit_note', status: 'issued', number, fy, noteType: input.type, sourceType: 'invoice', sourceId: doc.id, sourceNumber: doc.number,
+      branchId: doc.branchId, contactId: doc.contactId, buyer: doc.buyer as object, seller: doc.seller as object, placeOfSupply: doc.placeOfSupply,
+      issueDate: dateOnly(issueDate), ...totals, roundOffPaise, paidPaise: applied, notes: input.notes ?? null, shareToken: randomToken(18), createdBy: ctx.userId, issuedAt: new Date(),
+      lines: { create: lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) },
+    },
+  });
+  if (applied > 0n) await db().advanceAdjustment.create({ data: { tenantId: ctx.tenantId, creditNoteId: note.id, documentId: doc.id, amountPaise: applied, createdBy: ctx.userId } });
+  await setPaid(doc, doc.paidPaise + applied, doc.creditedPaise + applied);
+  await audit({ action: 'billing.credit_note.issue', entity: 'credit_note', entityId: note.id, after: { number, invoice: doc.number, type: input.type, totalPaise: totals.totalPaise } });
+  await publish('credit_note.issued', { documentId: note.id, invoiceId: doc.id, type: input.type });
+  return getDocument(ctx, note.id, 'credit_note');
+}
+
+/** Cancel a credit note that has not gone anywhere else; the invoice owes again what it cleared. */
+export async function cancelCreditNote(ctx: TenantCtx, id: string, reason: string) {
+  const note = await getDocument(ctx, id, 'credit_note');
+  if (note.status === 'cancelled') throw new AppError('CONFLICT', 'This credit note is already cancelled.');
+  const uses = await db().advanceAdjustment.findMany({ where: { creditNoteId: id }, include: { reversal: { select: { id: true } } } });
+  const live = uses.filter((u) => !u.reversesId && !u.reversal);
+  if (live.some((u) => u.documentId !== note.sourceId)) throw new AppError('CONFLICT', 'This credit note is used on another invoice. Remove it from that invoice first.');
+  if (note.payments.reduce((s, p) => s + p.amountPaise, 0n) !== 0n) throw new AppError('CONFLICT', 'This credit note has a refund. Reverse the refund first.');
+  const invoice = await getDocument(ctx, note.sourceId!, 'invoice');
+  let back = 0n;
+  for (const use of live) {
+    await db().advanceAdjustment.create({ data: { tenantId: ctx.tenantId, creditNoteId: id, documentId: invoice.id, amountPaise: -use.amountPaise, reversesId: use.id, createdBy: ctx.userId } });
+    back += use.amountPaise;
+  }
+  await setPaid(invoice, invoice.paidPaise - back, invoice.creditedPaise - back);
+  const { count } = await db().salesDocument.updateMany({ where: { id, version: note.version }, data: { status: 'cancelled', paidPaise: 0n, cancelledAt: new Date(), cancelReason: reason, version: { increment: 1 } } });
+  if (!count) throw new AppError('VERSION_CONFLICT', 'This credit note was changed by someone else. Reload and try again.');
+  await audit({ action: 'billing.credit_note.cancel', entity: 'credit_note', entityId: id, before: { status: note.status }, after: { reason } });
+  await publish('credit_note.cancelled', { documentId: id, invoiceId: invoice.id, type: note.noteType });
+  return getDocument(ctx, id, 'credit_note');
+}
+
+/** Give money back from what is left on a credit note. It counts as money going out on the day. */
+export async function refundCreditNote(ctx: TenantCtx, id: string, input: z.infer<typeof PaymentInput>) {
+  const note = await getDocument(ctx, id, 'credit_note');
+  if (note.status !== 'issued') throw new AppError('CONFLICT', 'This credit note is cancelled.');
+  const left = note.totalPaise - note.paidPaise;
+  const amount = BigInt(input.amountPaise);
+  if (amount > left) throw new AppError('VALIDATION_FAILED', `Only ₹${(Number(left) / 100).toFixed(2)} is left on this credit note.`, { fields: { amountPaise: 'More than the credit left' } });
+  const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
+  const { number } = await allocateNumber(ctx.tenantId, 'receipt', tenant.fyStartMonth);
+  const payment = await db().payment.create({
+    data: { ...input, paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: -amount, tenantId: ctx.tenantId, documentId: id, contactId: note.contactId, number, createdBy: ctx.userId },
+  });
+  await setCreditUsed(note, note.paidPaise + amount);
+  await audit({ action: 'billing.refund.create', entity: 'payment', entityId: payment.id, after: { creditNote: note.number, amountPaise: input.amountPaise, method: input.method } });
+  return getDocument(ctx, id, 'credit_note');
+}

@@ -81,7 +81,9 @@ const change = (now: number, prev: number | null) => (prev === null ? null : { p
 // ── Shared queries ──
 
 const LIVE_INVOICE = { kind: 'invoice' as const, status: { in: ['issued' as const, 'partially_paid' as const, 'paid' as const] } };
-const OPEN_INVOICE = { kind: 'invoice' as const, status: { in: ['issued' as const, 'partially_paid' as const] } };
+const LIVE_CREDIT_NOTE = { kind: 'credit_note' as const, status: 'issued' as const };
+// Opening balances are owed too; they have no due date, so overdue lists never pick them up
+const OPEN_INVOICE = { kind: { in: ['invoice' as const, 'opening_balance' as const] }, status: { in: ['issued' as const, 'partially_paid' as const] } };
 
 function docWhere(c: TenantCtx, branchId: string | null): Prisma.SalesDocumentWhereInput {
   return { AND: [scopeWhere(c, { owner: ['createdBy'], branch: 'branchId' }), branchId ? { branchId } : {}] };
@@ -98,7 +100,9 @@ function apptWhere(c: TenantCtx, branchId: string | null): Prisma.AppointmentWhe
 
 async function invoiced(c: TenantCtx, b: string | null, r: Range) {
   const a = await db().salesDocument.aggregate({ where: { AND: [docWhere(c, b), LIVE_INVOICE, { issueDate: dateIn(r) }] }, _sum: { totalPaise: true, taxablePaise: true, cgstPaise: true, sgstPaise: true, igstPaise: true }, _count: true });
-  return { total: n(a._sum.totalPaise), taxable: n(a._sum.taxablePaise), cgst: n(a._sum.cgstPaise), sgst: n(a._sum.sgstPaise), igst: n(a._sum.igstPaise), count: a._count };
+  // Credit notes take sales and GST back on the day they are issued
+  const cn = await db().salesDocument.aggregate({ where: { AND: [docWhere(c, b), LIVE_CREDIT_NOTE, { issueDate: dateIn(r) }] }, _sum: { totalPaise: true, taxablePaise: true, cgstPaise: true, sgstPaise: true, igstPaise: true } });
+  return { total: n(a._sum.totalPaise) - n(cn._sum.totalPaise), taxable: n(a._sum.taxablePaise) - n(cn._sum.taxablePaise), cgst: n(a._sum.cgstPaise) - n(cn._sum.cgstPaise), sgst: n(a._sum.sgstPaise) - n(cn._sum.sgstPaise), igst: n(a._sum.igstPaise) - n(cn._sum.igstPaise), count: a._count };
 }
 async function collected(c: TenantCtx, b: string | null, r: Range) {
   const a = await db().payment.aggregate({ where: { AND: [payWhere(c, b), { paidOn: dateIn(r) }] }, _sum: { amountPaise: true }, _count: true });
@@ -125,12 +129,13 @@ async function outstanding(c: TenantCtx, b: string | null) {
 
 async function trend(c: TenantCtx, b: string | null, r: Range, canPay: TenantCtx | null) {
   const buckets = bucketsFor(r);
-  const [inv, pay] = await Promise.all([
+  const [inv, credit, pay] = await Promise.all([
     db().salesDocument.groupBy({ by: ['issueDate'], where: { AND: [docWhere(c, b), LIVE_INVOICE, { issueDate: dateIn(r) }] }, _sum: { totalPaise: true } }),
+    db().salesDocument.groupBy({ by: ['issueDate'], where: { AND: [docWhere(c, b), LIVE_CREDIT_NOTE, { issueDate: dateIn(r) }] }, _sum: { totalPaise: true } }),
     canPay ? db().payment.groupBy({ by: ['paidOn'], where: { AND: [payWhere(canPay, b), { paidOn: dateIn(r) }] }, _sum: { amountPaise: true } }) : Promise.resolve([]),
   ]);
   const into = (rows: { d: string; v: number }[]) => buckets.map((k) => rows.filter((x) => x.d >= k.from && x.d <= k.to).reduce((s, x) => s + x.v, 0));
-  const invoicedB = into(inv.map((x) => ({ d: x.issueDate.toISOString().slice(0, 10), v: n(x._sum.totalPaise) })));
+  const invoicedB = into([...inv.map((x) => ({ d: x.issueDate.toISOString().slice(0, 10), v: n(x._sum.totalPaise) })), ...credit.map((x) => ({ d: x.issueDate.toISOString().slice(0, 10), v: -n(x._sum.totalPaise) }))]);
   const collectedB = into((pay as { paidOn: Date; _sum: { amountPaise: bigint | null } }[]).map((x) => ({ d: x.paidOn.toISOString().slice(0, 10), v: n(x._sum.amountPaise) })));
   return { buckets: buckets.map((k, i) => ({ label: k.label, from: k.from, to: k.to, invoiced: invoicedB[i], collected: collectedB[i] })), hasCollected: !!canPay };
 }
@@ -232,7 +237,7 @@ export async function overview(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
     const contact = s('crm.contact.view');
     const [invs, pays, contacts, appts, exps, tsk] = await Promise.all([
       inv ? own(() => db().salesDocument.findMany({ where: { AND: [docWhere(inv, b), { kind: 'invoice', issuedAt: { gte: since } }] }, orderBy: { issuedAt: 'desc' }, take, select: { id: true, number: true, totalPaise: true, issuedAt: true, createdBy: true } })) : [],
-      pay ? own(() => db().payment.findMany({ where: { AND: [payWhere(pay, b), { createdAt: { gte: since } }] }, orderBy: { createdAt: 'desc' }, take, select: { id: true, amountPaise: true, method: true, createdAt: true, createdBy: true, documentId: true, document: { select: { number: true } } } })) : [],
+      pay ? own(() => db().payment.findMany({ where: { AND: [payWhere(pay, b), { createdAt: { gte: since } }] }, orderBy: { createdAt: 'desc' }, take, select: { id: true, amountPaise: true, method: true, createdAt: true, createdBy: true, documentId: true, contactId: true, reversesId: true, document: { select: { number: true, kind: true } } } })) : [],
       contact ? own(() => db().contact.findMany({ where: { AND: [scopeWhere(contact, { owner: ['ownerId', 'createdBy'], branch: 'branchId' }), { createdAt: { gte: since }, isSample: false }] }, orderBy: { createdAt: 'desc' }, take, select: { id: true, name: true, type: true, leadSource: true, createdAt: true, createdBy: true } })) : [],
       appt ? own(() => db().appointment.findMany({ where: { AND: [apptWhere(appt, b), { createdAt: { gte: since } }] }, orderBy: { createdAt: 'desc' }, take, select: { id: true, title: true, createdAt: true, createdBy: true } })) : [],
       exp ? own(() => db().expense.findMany({ where: { AND: [expWhere(exp, b), { createdAt: { gte: since } }] }, orderBy: { createdAt: 'desc' }, take, select: { id: true, amountPaise: true, category: true, createdAt: true, createdBy: true } })) : [],
@@ -241,7 +246,11 @@ export async function overview(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
     type Row = { id: string; at: Date; by: string | null; what: string; href: string };
     const rows: Row[] = [
       ...invs.map((x) => ({ id: `i${x.id}`, at: x.issuedAt!, by: x.createdBy, what: `issued ${x.number} · ${rupees(x.totalPaise)}`, href: `/app/m/billing/${x.id}` })),
-      ...pays.map((x) => ({ id: `p${x.id}`, at: x.createdAt, by: x.createdBy, what: `recorded ${rupees(x.amountPaise)} ${x.method === 'upi' ? 'UPI' : x.method} on ${x.document.number ?? 'an invoice'}`, href: `/app/m/billing/${x.documentId}` })),
+      ...pays.map((x) => {
+        const where = x.document ? `on ${x.document.number ?? 'an invoice'}` : 'as an advance';
+        const what = x.reversesId ? `reversed ${rupees(x.amountPaise < 0n ? -x.amountPaise : x.amountPaise)} ${where}` : x.amountPaise < 0n ? `refunded ${rupees(-x.amountPaise)} ${where}` : `recorded ${rupees(x.amountPaise)} ${x.method === 'upi' ? 'UPI' : x.method} ${where}`;
+        return { id: `p${x.id}`, at: x.createdAt, by: x.createdBy, what, href: !x.documentId ? `/app/m/crm/${x.contactId}` : x.document?.kind === 'credit_note' ? `/app/m/billing/credit-notes/${x.documentId}` : `/app/m/billing/${x.documentId}` };
+      }),
       ...contacts.map((x) => ({ id: `c${x.id}`, at: x.createdAt, by: x.createdBy, what: `added ${x.type === 'lead' ? 'lead' : 'customer'} ${x.name}${x.leadSource ? ` (${x.leadSource})` : ''}`, href: `/app/m/crm/${x.id}` })),
       ...appts.map((x) => ({ id: `a${x.id}`, at: x.createdAt, by: x.createdBy, what: `booked ${x.title}`, href: '/app/m/bookings' })),
       ...exps.map((x) => ({ id: `e${x.id}`, at: x.createdAt, by: x.createdBy, what: `added expense ${rupees(x.amountPaise)} · ${x.category}`, href: '/app/m/finance' })),
@@ -435,7 +444,10 @@ export async function crm(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
       const rows = await db().salesDocument.groupBy({ by: ['contactId'], where: { AND: [docWhere(inv, b), LIVE_INVOICE, { issueDate: dateIn(r), contactId: { not: null } }] }, _sum: { totalPaise: true }, _count: true, orderBy: { _sum: { totalPaise: 'desc' } }, take: 5 });
       const contacts = await db().contact.findMany({ where: { id: { in: rows.map((x) => x.contactId!) } }, select: { id: true, name: true } });
       const cn = new Map(contacts.map((x) => [x.id, x.name]));
-      return { rows: rows.map((x) => ({ id: x.contactId, name: cn.get(x.contactId!) ?? 'Customer', amount: n(x._sum.totalPaise), invoices: x._count })) };
+      // Credit notes take the customer's sales back
+      const credits = await db().salesDocument.groupBy({ by: ['contactId'], where: { AND: [docWhere(inv, b), LIVE_CREDIT_NOTE, { issueDate: dateIn(r), contactId: { in: rows.map((x) => x.contactId!) } }] }, _sum: { totalPaise: true } });
+      const credit = new Map(credits.map((x) => [x.contactId, n(x._sum.totalPaise)]));
+      return { rows: rows.map((x) => ({ id: x.contactId, name: cn.get(x.contactId!) ?? 'Customer', amount: n(x._sum.totalPaise) - (credit.get(x.contactId) ?? 0), invoices: x._count })).sort((a, c) => c.amount - a.amount) };
     });
   }
   return settle(out);

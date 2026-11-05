@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils"
 // Settings › Documents (wireframe X2): number series, template, print options, terms.
 
 interface Series {
-  docType: "invoice" | "quotation" | "receipt"
+  docType: "invoice" | "quotation" | "receipt" | "credit_note" | "sales_order"
   label: string
   prefix: string
   nextNo: number
@@ -37,7 +37,7 @@ interface Series {
   minNext: number
 }
 
-const PREFIX_KEY = { invoice: "invoicePrefix", quotation: "quotationPrefix", receipt: "receiptPrefix" } as const
+const PREFIX_KEY = { invoice: "invoicePrefix", quotation: "quotationPrefix", receipt: "receiptPrefix", credit_note: "creditNotePrefix", sales_order: "salesOrderPrefix" } as const
 
 export default function DocumentsSettingsPage() {
   const { can } = useAuth()
@@ -118,9 +118,9 @@ function SeriesCard({ fy, rows, onSaved }: { fy: string; rows: Series[]; onSaved
               )
             )}
             <tr>
-              <td className="px-2.5 py-[9px] text-muted-foreground/80">Credit note · Purchase order</td>
+              <td className="px-2.5 py-[9px] text-muted-foreground/80">Purchase order</td>
               <td colSpan={4} className="px-2.5 py-[9px] text-xs text-muted-foreground/80">
-                Arrive with Sales returns and Purchasing
+                Arrives with Purchasing
               </td>
             </tr>
           </tbody>

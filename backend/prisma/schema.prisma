@@ -1132,6 +1132,9 @@ enum ActivityType {
 enum SalesDocKind {
   quotation
   invoice
+  credit_note
+  opening_balance
+  sales_order
 
   @@map("sales_doc_kind")
 }
@@ -1146,6 +1149,9 @@ enum SalesDocStatus {
   partially_paid
   paid
   cancelled
+  open
+  part_invoiced
+  completed
 
   @@map("sales_doc_status")
 }
@@ -1321,11 +1327,20 @@ model SalesDocument {
   cgstPaise     BigInt         @default(0) @map("cgst_paise")
   sgstPaise     BigInt         @default(0) @map("sgst_paise")
   igstPaise     BigInt         @default(0) @map("igst_paise")
+  /// Added to make the total a whole rupee; part of totalPaise
+  roundOffPaise BigInt         @default(0) @map("round_off_paise")
   totalPaise    BigInt         @default(0) @map("total_paise")
+  /// Invoice: settled so far, including advances and credit notes. Credit note: value already used or refunded.
   paidPaise     BigInt         @default(0) @map("paid_paise")
+  /// Invoice: the part of paidPaise that came from credit notes
+  creditedPaise BigInt         @default(0) @map("credited_paise")
+  /// Credit note: return (goods came back) or amount (value reduced only). Opening balance: opening
+  noteType      String?        @map("note_type")
+  /// Credit note: the invoice number, frozen for printing
+  sourceNumber  String?        @map("source_number")
   notes         String?
   terms         String?
-  sourceType    String?        @map("source_type") // quotation | appointment
+  sourceType    String?        @map("source_type") // quotation | appointment | invoice | sales_order
   sourceId      String?        @map("source_id") @db.Uuid
   shareToken    String?        @unique @map("share_token")
   custom        Json           @default("{}")
@@ -1337,12 +1352,15 @@ model SalesDocument {
   updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz
   version       Int            @default(1)
 
-  lines    SalesDocumentLine[]
-  payments Payment[]
+  lines       SalesDocumentLine[]
+  payments    Payment[]
+  adjustments AdvanceAdjustment[] @relation("AdjustedInvoice")
+  creditUses  AdvanceAdjustment[] @relation("AdjustmentCredit")
 
   @@unique([tenantId, kind, number])
   @@index([tenantId, kind, status, issueDate])
   @@index([tenantId, contactId])
+  @@index([tenantId, sourceId])
   @@map("sales_documents")
 }
 
@@ -1364,32 +1382,63 @@ model SalesDocumentLine {
   igstPaise      BigInt  @default(0) @map("igst_paise")
   totalPaise     BigInt  @map("total_paise")
   position       Int     @default(0)
+  sourceLineId   String? @map("source_line_id") @db.Uuid // credit note: the invoice line it credits; invoice: the order line it bills
 
   document SalesDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, documentId])
+  @@index([tenantId, sourceLineId])
   @@map("sales_document_lines")
 }
 
 model Payment {
   id          String        @id @default(uuid(7)) @db.Uuid
   tenantId    String        @map("tenant_id") @db.Uuid
-  documentId  String        @map("document_id") @db.Uuid
+  documentId  String?       @map("document_id") @db.Uuid // empty = advance, not yet tied to an invoice
   contactId   String?       @map("contact_id") @db.Uuid
   number      String
-  amountPaise BigInt        @map("amount_paise")
+  amountPaise BigInt        @map("amount_paise") // negative on a reversal
   method      PaymentMethod
   reference   String?
   paidOn      DateTime      @map("paid_on") @db.Date
   notes       String?
+  reversesId  String?       @unique @map("reverses_id") @db.Uuid
   createdBy   String?       @map("created_by") @db.Uuid
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
 
-  document SalesDocument @relation(fields: [documentId], references: [id])
+  document    SalesDocument?      @relation(fields: [documentId], references: [id])
+  reverses    Payment?            @relation("PaymentReversal", fields: [reversesId], references: [id])
+  reversal    Payment?            @relation("PaymentReversal")
+  adjustments AdvanceAdjustment[]
 
   @@index([tenantId, documentId])
   @@index([tenantId, paidOn])
+  @@index([tenantId, contactId])
   @@map("payments_received")
+}
+
+/// How much of an advance or credit note went against which invoice. Append-only: removing one adds a negative row.
+model AdvanceAdjustment {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  paymentId    String?  @map("payment_id") @db.Uuid
+  creditNoteId String?  @map("credit_note_id") @db.Uuid
+  documentId   String   @map("document_id") @db.Uuid
+  amountPaise  BigInt   @map("amount_paise")
+  reversesId   String?  @unique @map("reverses_id") @db.Uuid
+  createdBy    String?  @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  payment    Payment?           @relation(fields: [paymentId], references: [id])
+  creditNote SalesDocument?     @relation("AdjustmentCredit", fields: [creditNoteId], references: [id])
+  document   SalesDocument      @relation("AdjustedInvoice", fields: [documentId], references: [id])
+  reverses AdvanceAdjustment? @relation("AdjustmentReversal", fields: [reversesId], references: [id])
+  reversal AdvanceAdjustment? @relation("AdjustmentReversal")
+
+  @@index([tenantId, paymentId])
+  @@index([tenantId, documentId])
+  @@index([tenantId, creditNoteId])
+  @@map("advance_adjustments")
 }
 
 // ── Expenses (FIN-01) ──

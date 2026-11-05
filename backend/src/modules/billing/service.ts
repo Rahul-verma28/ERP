@@ -4,9 +4,9 @@ import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
 import { randomToken } from '../../kernel/crypto';
-import { GST_RATES_BP, computeDocument, dateOnly, todayIST } from '../../kernel/gst';
+import { GST_RATES_BP, computeDocument, dateOnly, divRound, todayIST } from '../../kernel/gst';
 import { allocateNumber } from '../../kernel/sequences';
-import { DateStr, Paise, consumeMonthly, inScope, markOnboarding } from '../../kernel/query';
+import { DateStr, Paise, consumeMonthly, inScope, markOnboarding, scopeWhere } from '../../kernel/query';
 import { getEntitlements } from '../subscription/entitlements';
 import { validateCustom } from '../config/service';
 import { audit } from '../audit/service';
@@ -28,6 +28,8 @@ export const LineInput = z.object({
   unitPricePaise: Paise,
   discountPaise: Paise.default(0),
   gstRateBp: z.number().int().refine((v) => (GST_RATES_BP as readonly number[]).includes(v), 'Choose a valid GST rate'),
+  /** Invoice made from an order: the order line it bills */
+  sourceLineId: z.string().uuid().optional().nullable(),
 }).superRefine((l, c) => {
   if (l.discountPaise > Math.round(l.quantity * l.unitPricePaise)) c.addIssue({ code: z.ZodIssueCode.custom, path: ['discountPaise'], message: "Discount can't be more than the line amount" });
 });
@@ -54,6 +56,10 @@ export const DocInput = z.object({
   terms: z.string().max(2000).optional().nullable(),
   lines: z.array(LineInput).min(1, 'Add at least one line').max(200),
   custom: z.record(z.unknown()).optional(),
+  /** The rates and discounts typed include GST; the tax is taken out of them */
+  pricesIncludeGst: z.boolean().optional(),
+  /** Round the total to the whole rupee */
+  roundOff: z.boolean().optional(),
 });
 export type DocInput = z.infer<typeof DocInput>;
 
@@ -104,10 +110,13 @@ async function resolveLines(lines: DocInput['lines']) {
 async function prepare(ctx: TenantCtx, input: DocInput, existing?: SalesDocument) {
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId } });
   const { contactId, buyer } = await resolveBuyer(input);
-  const lines = await resolveLines(input.lines);
+  const resolved = await resolveLines(input.lines);
+  const exclusive = (paise: number, rateBp: number) => Number(divRound(BigInt(paise) * 10_000n, BigInt(10_000 + rateBp)));
+  const lines = input.pricesIncludeGst ? resolved.map((l) => ({ ...l, unitPricePaise: exclusive(l.unitPricePaise, l.gstRateBp), discountPaise: exclusive(l.discountPaise, l.gstRateBp) })) : resolved;
   const placeOfSupply = buyer.stateCode ?? tenant.billingStateCode ?? null;
   const intraState = !tenant.billingStateCode || !placeOfSupply || placeOfSupply === tenant.billingStateCode;
   const { lines: computed, totals } = computeDocument(lines, intraState);
+  const roundOffPaise = input.roundOff ? divRound(totals.totalPaise, 100n) * 100n - totals.totalPaise : 0n;
   const custom = await validateCustom(ctx.tenantId, 'invoice', input.custom, (existing?.custom as Record<string, unknown>) ?? {});
   if (input.branchId && !(await db().branch.findUnique({ where: { id: input.branchId } }))) {
     throw new AppError('VALIDATION_FAILED', 'Unknown branch.', { fields: { branchId: 'Unknown branch' } });
@@ -125,11 +134,13 @@ async function prepare(ctx: TenantCtx, input: DocInput, existing?: SalesDocument
       terms: input.terms ?? null,
       custom: custom as Prisma.InputJsonValue,
       ...totals,
+      roundOffPaise,
+      totalPaise: totals.totalPaise + roundOffPaise,
     },
     lines: computed.map((l, position) => ({
       tenantId: ctx.tenantId, itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit,
       quantity: (Number(l.quantityMilli) / 1000).toFixed(3), unitPricePaise: BigInt(l.unitPricePaise), discountPaise: BigInt(l.discountPaise ?? 0),
-      taxablePaise: l.taxablePaise, gstRateBp: l.gstRateBp, cgstPaise: l.cgstPaise, sgstPaise: l.sgstPaise, igstPaise: l.igstPaise, totalPaise: l.totalPaise, position,
+      taxablePaise: l.taxablePaise, gstRateBp: l.gstRateBp, cgstPaise: l.cgstPaise, sgstPaise: l.sgstPaise, igstPaise: l.igstPaise, totalPaise: l.totalPaise, position, sourceLineId: l.sourceLineId ?? null,
     })),
   };
 }
@@ -137,24 +148,28 @@ async function prepare(ctx: TenantCtx, input: DocInput, existing?: SalesDocument
 export async function getDocument(ctx: TenantCtx, id: string, kind: SalesDocKind) {
   const doc = await db().salesDocument.findUnique({
     where: { id },
-    include: { lines: { orderBy: { position: 'asc' } }, payments: { orderBy: { createdAt: 'asc' } } },
+    include: {
+      lines: { orderBy: { position: 'asc' } },
+      payments: { orderBy: { createdAt: 'asc' } },
+      adjustments: { orderBy: { createdAt: 'asc' }, include: { payment: { select: { number: true } }, creditNote: { select: { number: true, sourceId: true } } } },
+    },
   });
-  if (!doc || doc.kind !== kind || !inScope(ctx, doc, SCOPE_FIELDS)) throw notFound(kind === 'invoice' ? 'Invoice' : 'Quotation');
+  if (!doc || doc.kind !== kind || !inScope(ctx, doc, SCOPE_FIELDS)) throw notFound({ invoice: 'Invoice', quotation: 'Quotation', credit_note: 'Credit note', opening_balance: 'Opening balance', sales_order: 'Sales order' }[kind]);
   return doc;
 }
 
-export async function createDocument(ctx: TenantCtx, kind: SalesDocKind, input: DocInput, opts: { issue?: boolean; sourceType?: string; sourceId?: string } = {}) {
+export async function createDocument(ctx: TenantCtx, kind: 'invoice' | 'quotation' | 'sales_order', input: DocInput, opts: { issue?: boolean; sourceType?: string; sourceId?: string } = {}) {
   const { tenant, doc, lines } = await prepare(ctx, input);
   // Default terms from Settings › Documents when the document has none
   if (!doc.terms) {
     const d = withDefaults(tenant.preferences).documents;
-    doc.terms = (kind === 'quotation' ? d.quotationTerms : d.terms) || null;
+    doc.terms = (kind === 'invoice' ? d.terms : d.quotationTerms) || null;
   }
-  // Quotations are numbered when created; invoices only when issued (never burn numbers on drafts)
-  const numbered = kind === 'quotation' ? await allocateNumber(ctx.tenantId, 'quotation', tenant.fyStartMonth) : null;
+  // Quotations and orders are numbered when created; invoices only when issued (never burn numbers on drafts)
+  const numbered = kind === 'invoice' ? null : await allocateNumber(ctx.tenantId, kind, tenant.fyStartMonth);
   const created = await db().salesDocument.create({
     data: {
-      ...doc, tenantId: ctx.tenantId, kind, status: 'draft', number: numbered?.number, fy: numbered?.fy,
+      ...doc, tenantId: ctx.tenantId, kind, status: kind === 'sales_order' ? 'open' : 'draft', number: numbered?.number, fy: numbered?.fy, shareToken: kind === 'sales_order' ? randomToken(18) : undefined,
       createdBy: ctx.userId, sourceType: opts.sourceType, sourceId: opts.sourceId,
       lines: { create: lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) },
     },
@@ -165,9 +180,12 @@ export async function createDocument(ctx: TenantCtx, kind: SalesDocKind, input: 
 
 export async function updateDocument(ctx: TenantCtx, id: string, kind: SalesDocKind, input: DocInput, version: number) {
   const existing = await getDocument(ctx, id, kind);
-  const editable = kind === 'invoice' ? existing.status === 'draft' : ['draft', 'sent'].includes(existing.status);
+  const editable = kind === 'invoice' ? existing.status === 'draft' : kind === 'sales_order' ? existing.status === 'open' : ['draft', 'sent'].includes(existing.status);
   // BIL-04: issued invoices are immutable; corrections go through credit/debit notes
-  if (!editable) throw new AppError('CONFLICT', kind === 'invoice' ? 'Issued invoices cannot be edited. Cancel it or issue a credit note.' : 'This quotation can no longer be edited.');
+  if (!editable) throw new AppError('CONFLICT', kind === 'invoice' ? 'Issued invoices cannot be edited. Cancel it or issue a credit note.' : kind === 'sales_order' ? 'This order can no longer be edited.' : 'This quotation can no longer be edited.');
+  if (kind === 'sales_order' && (await db().salesDocument.count({ where: { kind: 'invoice', sourceId: id, status: { not: 'cancelled' } } }))) {
+    throw new AppError('CONFLICT', 'This order has invoices, so it can no longer be edited.');
+  }
   if (existing.version !== version) throw new AppError('VERSION_CONFLICT', 'This document was changed by someone else. Reload and try again.');
   const { doc, lines } = await prepare(ctx, input, existing);
   await db().salesDocumentLine.deleteMany({ where: { documentId: id } });
@@ -175,6 +193,7 @@ export async function updateDocument(ctx: TenantCtx, id: string, kind: SalesDocK
     where: { id },
     data: { ...doc, version: { increment: 1 }, lines: { create: lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) } },
   });
+  if (existing.sourceType === 'sales_order' && existing.sourceId) await refreshOrderStatus(existing.sourceId);
   return getDocument(ctx, id, kind);
 }
 
@@ -195,7 +214,8 @@ export async function issueInvoice(ctx: TenantCtx, id: string) {
     dueDate: doc.dueDate?.toISOString().slice(0, 10) ?? null,
     notes: doc.notes,
     terms: doc.terms,
-    lines: doc.lines.map((l) => ({ itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: Number(l.unitPricePaise), discountPaise: Number(l.discountPaise), gstRateBp: l.gstRateBp })),
+    roundOff: doc.roundOffPaise !== 0n,
+    lines: doc.lines.map((l) => ({ itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: Number(l.unitPricePaise), discountPaise: Number(l.discountPaise), gstRateBp: l.gstRateBp, sourceLineId: l.sourceLineId })),
   };
   const { doc: fresh, lines } = await prepare(ctx, input, doc);
 
@@ -237,6 +257,7 @@ export async function cancelInvoice(ctx: TenantCtx, id: string, reason: string) 
   if (doc.status === 'cancelled') throw new AppError('CONFLICT', 'This invoice is already cancelled.');
   if (doc.paidPaise > 0n) throw new AppError('CONFLICT', 'This invoice has payments recorded. Issue a credit note instead (paid plans).');
   await db().salesDocument.update({ where: { id }, data: { status: 'cancelled', cancelledAt: new Date(), cancelReason: reason, version: { increment: 1 } } });
+  if (doc.sourceType === 'sales_order' && doc.sourceId) await refreshOrderStatus(doc.sourceId);
   await audit({ action: 'billing.invoice.cancel', entity: 'invoice', entityId: id, before: { status: doc.status }, after: { reason } });
   return getDocument(ctx, id, 'invoice');
 }
@@ -250,8 +271,8 @@ export const PaymentInput = z.object({
 });
 
 /** BIL-03: record a receipt against an issued invoice; status moves to partially paid / paid. */
-export async function recordPayment(ctx: TenantCtx, id: string, input: z.infer<typeof PaymentInput>) {
-  const doc = await getDocument(ctx, id, 'invoice');
+export async function recordPayment(ctx: TenantCtx, id: string, input: z.infer<typeof PaymentInput>, kind: 'invoice' | 'opening_balance' = 'invoice') {
+  const doc = await getDocument(ctx, id, kind);
   if (!['issued', 'partially_paid'].includes(doc.status)) throw new AppError('CONFLICT', 'Payments can only be recorded on issued, unpaid invoices.');
   const balance = doc.totalPaise - doc.paidPaise;
   if (BigInt(input.amountPaise) > balance) {
@@ -262,21 +283,178 @@ export async function recordPayment(ctx: TenantCtx, id: string, input: z.infer<t
   const payment = await db().payment.create({
     data: { ...input, paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: BigInt(input.amountPaise), tenantId: ctx.tenantId, documentId: id, contactId: doc.contactId, number, createdBy: ctx.userId },
   });
-  const paid = doc.paidPaise + BigInt(input.amountPaise);
-  await db().salesDocument.update({ where: { id }, data: { paidPaise: paid, status: paid >= doc.totalPaise ? 'paid' : 'partially_paid', version: { increment: 1 } } });
+  await setPaid(doc, doc.paidPaise + BigInt(input.amountPaise));
   await audit({ action: 'billing.payment.record', entity: 'payment', entityId: payment.id, after: { invoice: doc.number, amountPaise: input.amountPaise, method: input.method } });
-  await publish('payment.received', { documentId: id, paymentId: payment.id, amountPaise: input.amountPaise });
-  return getDocument(ctx, id, 'invoice');
+  // That message talks about an invoice, and an opening balance has none
+  if (kind === 'invoice') await publish('payment.received', { documentId: id, paymentId: payment.id, amountPaise: input.amountPaise });
+  return getDocument(ctx, id, kind);
 }
 
-/** Copy a quotation into a new draft invoice and mark the quotation converted (SAL-01). */
-export async function convertQuotation(ctx: TenantCtx, id: string) {
+/** Set an order's status from how much of it is on invoices that are not cancelled. */
+export async function refreshOrderStatus(orderId: string) {
+  const order = await db().salesDocument.findUnique({ where: { id: orderId }, include: { lines: true } });
+  if (!order || order.kind !== 'sales_order' || order.status === 'cancelled') return;
+  const invoiced = await db().salesDocumentLine.findMany({
+    where: { sourceLineId: { in: order.lines.map((l) => l.id) }, document: { kind: 'invoice', status: { not: 'cancelled' } } },
+    select: { sourceLineId: true, quantity: true },
+  });
+  const done = (lineId: string) => invoiced.filter((i) => i.sourceLineId === lineId).reduce((s, i) => s + Number(i.quantity), 0);
+  const status = !invoiced.length ? 'open' : order.lines.every((l) => done(l.id) >= Number(l.quantity)) ? 'completed' : 'part_invoiced';
+  if (status !== order.status) await db().salesDocument.update({ where: { id: orderId }, data: { status, version: { increment: 1 } } });
+}
+
+/** Issue a walk-in or counter bill and take the whole amount in one step. */
+export async function createCashBill(ctx: TenantCtx, input: DocInput, receive: { method: z.infer<typeof PaymentInput>['method']; reference?: string | null }) {
+  const invoice = await createDocument(ctx, 'invoice', input, { issue: true });
+  if (invoice.totalPaise <= 0n) return invoice;
+  return recordPayment(ctx, invoice.id, { amountPaise: Number(invoice.totalPaise), method: receive.method, reference: receive.reference ?? null });
+}
+
+/** Save the invoice's paid amount and status. Two people changing it at once: the second is refused. */
+export async function setPaid(doc: SalesDocument, paid: bigint, credited = doc.creditedPaise) {
+  const status = paid <= 0n ? 'issued' : paid >= doc.totalPaise ? 'paid' : 'partially_paid';
+  const { count } = await db().salesDocument.updateMany({ where: { id: doc.id, version: doc.version }, data: { paidPaise: paid, creditedPaise: credited, status, version: { increment: 1 } } });
+  if (!count) throw new AppError('VERSION_CONFLICT', 'This invoice was changed by someone else. Reload and try again.');
+}
+
+/** Save how much of a credit note is used or refunded. Its status stays as it is. */
+export async function setCreditUsed(note: SalesDocument, used: bigint) {
+  const { count } = await db().salesDocument.updateMany({ where: { id: note.id, version: note.version }, data: { paidPaise: used, version: { increment: 1 } } });
+  if (!count) throw new AppError('VERSION_CONFLICT', 'This credit note was changed by someone else. Reload and try again.');
+}
+
+/**
+ * Undo a wrong receipt with an opposite entry; receipts are never edited or deleted. The new row
+ * keeps the original's owner so that person's own totals net out; the audit log records who did it.
+ * Returns the invoice or credit note it was on, or null when the receipt was an advance.
+ */
+export async function reversePayment(ctx: TenantCtx, id: string) {
+  const payment = await db().payment.findUnique({ where: { id }, include: { reversal: { select: { id: true } }, adjustments: { select: { amountPaise: true } } } });
+  if (!payment || !inScope(ctx, payment, { owner: ['createdBy'] })) throw notFound('Payment');
+  if (payment.reversesId) throw new AppError('CONFLICT', 'This entry is itself a reversal.');
+  if (payment.reversal) throw new AppError('CONFLICT', 'This payment is already reversed.');
+  // A refund sits on its credit note: undoing it gives the credit back
+  const owner = payment.documentId ? await db().salesDocument.findUnique({ where: { id: payment.documentId }, select: { kind: true } }) : null;
+  const note = owner?.kind === 'credit_note' ? await getDocument(ctx, payment.documentId!, 'credit_note') : null;
+  const doc = owner?.kind === 'invoice' || owner?.kind === 'opening_balance' ? await getDocument(ctx, payment.documentId!, owner.kind) : null;
+  if (!doc && !note && payment.adjustments.reduce((sum, a) => sum + a.amountPaise, 0n) > 0n) {
+    throw new AppError('CONFLICT', 'This advance is used on an invoice. Remove it from the invoice first.');
+  }
+  const reversal = await db().payment.create({
+    data: {
+      tenantId: ctx.tenantId, documentId: payment.documentId, contactId: payment.contactId, number: `${payment.number}-R`, amountPaise: -payment.amountPaise,
+      method: payment.method, reference: payment.reference, paidOn: dateOnly(todayIST()), notes: `Reversal of ${payment.number}`, reversesId: payment.id, createdBy: payment.createdBy,
+    },
+  });
+  if (doc) await setPaid(doc, doc.paidPaise - payment.amountPaise);
+  if (note) await setCreditUsed(note, note.paidPaise + payment.amountPaise);
+  await audit({ action: 'billing.payment.reverse', entity: 'payment', entityId: payment.id, after: { reversal: reversal.number, invoice: doc?.number ?? note?.number ?? null, amountPaise: payment.amountPaise } });
+  if (note) return getDocument(ctx, note.id, 'credit_note');
+  return doc ? getDocument(ctx, doc.id, owner!.kind) : null;
+}
+
+// ── Advances: money from a customer before there is an invoice ──
+
+export const AdvanceInput = PaymentInput.extend({ contactId: z.string().uuid() });
+
+// No payment.received event here: that message talks about an invoice, and an advance has none.
+export async function recordAdvance(ctx: TenantCtx, input: z.infer<typeof AdvanceInput>) {
+  const contact = await db().contact.findUnique({ where: { id: input.contactId }, select: { id: true } });
+  if (!contact) throw new AppError('VALIDATION_FAILED', 'Unknown customer.', { fields: { contactId: 'Unknown customer' } });
+  const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
+  const { number } = await allocateNumber(ctx.tenantId, 'receipt', tenant.fyStartMonth);
+  const payment = await db().payment.create({
+    data: { ...input, paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: BigInt(input.amountPaise), tenantId: ctx.tenantId, number, createdBy: ctx.userId },
+  });
+  await audit({ action: 'billing.advance.record', entity: 'payment', entityId: payment.id, after: { contactId: input.contactId, amountPaise: input.amountPaise, method: input.method } });
+  return payment;
+}
+
+/** A customer's advances, newest first, each with what is left of it, plus the total left. */
+export async function listAdvances(ctx: TenantCtx, contactId: string) {
+  const rows = await db().payment.findMany({
+    where: { AND: [{ contactId, documentId: null, reversesId: null }, scopeWhere(ctx, { owner: ['createdBy'] })] },
+    include: { reversal: { select: { id: true } }, adjustments: { select: { amountPaise: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+  const advances = rows.map(({ reversal, adjustments, ...p }) => {
+    const usedPaise = adjustments.reduce((sum, a) => sum + a.amountPaise, 0n);
+    return { ...p, reversed: !!reversal, usedPaise, balancePaise: reversal ? 0n : p.amountPaise - usedPaise };
+  });
+  const notes = await db().salesDocument.findMany({
+    where: { AND: [{ kind: 'credit_note', status: 'issued', contactId }, scopeWhere(ctx, SCOPE_FIELDS)] },
+    select: { id: true, number: true, issueDate: true, totalPaise: true, paidPaise: true },
+    orderBy: { issueDate: 'desc' },
+  });
+  const credits = notes.filter((c) => c.totalPaise > c.paidPaise).map((c) => ({ id: c.id, number: c.number, issueDate: c.issueDate, balancePaise: c.totalPaise - c.paidPaise }));
+  return {
+    data: advances,
+    credits,
+    balancePaise: advances.reduce((sum, a) => sum + a.balancePaise, 0n),
+    creditPaise: credits.reduce((sum, c) => sum + c.balancePaise, 0n),
+  };
+}
+
+export const UseAdvanceInput = z.object({ paymentId: z.string().uuid().optional(), creditNoteId: z.string().uuid().optional(), amountPaise: z.number().int().positive() })
+  .refine((v) => !!v.paymentId !== !!v.creditNoteId, { message: 'Choose an advance or a credit note', path: ['paymentId'] });
+
+/** Put part or all of an advance against an invoice of the same customer. */
+export async function useAdvance(ctx: TenantCtx, invoiceId: string, input: z.infer<typeof UseAdvanceInput>) {
+  const doc = await getDocument(ctx, invoiceId, 'invoice');
+  if (!['issued', 'partially_paid'].includes(doc.status)) throw new AppError('CONFLICT', 'An advance can only be used on issued, unpaid invoices.');
+  if (input.creditNoteId) return useCredit(ctx, doc, input.creditNoteId, BigInt(input.amountPaise));
+  const advance = await db().payment.findUnique({ where: { id: input.paymentId! }, include: { reversal: { select: { id: true } }, adjustments: { select: { amountPaise: true } } } });
+  const usable = advance && !advance.documentId && !advance.reversesId && !advance.reversal && advance.contactId === doc.contactId && inScope(ctx, advance, { owner: ['createdBy'] });
+  if (!advance || !usable) throw new AppError('VALIDATION_FAILED', "Choose an advance from this invoice's customer.", { fields: { paymentId: 'Not available' } });
+  const left = advance.amountPaise - advance.adjustments.reduce((sum, a) => sum + a.amountPaise, 0n);
+  const amount = BigInt(input.amountPaise);
+  if (amount > left) throw new AppError('VALIDATION_FAILED', `Only ₹${(Number(left) / 100).toFixed(2)} is left in this advance.`, { fields: { amountPaise: 'More than the advance left' } });
+  const due = doc.totalPaise - doc.paidPaise;
+  if (amount > due) throw new AppError('VALIDATION_FAILED', `Amount is more than the balance due (₹${(Number(due) / 100).toFixed(2)}).`, { fields: { amountPaise: 'More than balance due' } });
+  const adjustment = await db().advanceAdjustment.create({ data: { tenantId: ctx.tenantId, paymentId: advance.id, documentId: doc.id, amountPaise: amount, createdBy: ctx.userId } });
+  await setPaid(doc, doc.paidPaise + amount);
+  await audit({ action: 'billing.advance.use', entity: 'advance_adjustment', entityId: adjustment.id, after: { advance: advance.number, invoice: doc.number, amountPaise: input.amountPaise } });
+  return getDocument(ctx, doc.id, 'invoice');
+}
+
+async function useCredit(ctx: TenantCtx, doc: SalesDocument, creditNoteId: string, amount: bigint) {
+  const note = await db().salesDocument.findUnique({ where: { id: creditNoteId } });
+  const usable = note && note.kind === 'credit_note' && note.status === 'issued' && note.contactId === doc.contactId && !!doc.contactId && inScope(ctx, note, SCOPE_FIELDS);
+  if (!note || !usable) throw new AppError('VALIDATION_FAILED', "Choose a credit note from this invoice's customer.", { fields: { paymentId: 'Not available' } });
+  const left = note.totalPaise - note.paidPaise;
+  if (amount > left) throw new AppError('VALIDATION_FAILED', `Only ₹${(Number(left) / 100).toFixed(2)} is left on this credit note.`, { fields: { amountPaise: 'More than the credit left' } });
+  const due = doc.totalPaise - doc.paidPaise;
+  if (amount > due) throw new AppError('VALIDATION_FAILED', `Amount is more than the balance due (₹${(Number(due) / 100).toFixed(2)}).`, { fields: { amountPaise: 'More than balance due' } });
+  const adjustment = await db().advanceAdjustment.create({ data: { tenantId: ctx.tenantId, creditNoteId: note.id, documentId: doc.id, amountPaise: amount, createdBy: ctx.userId } });
+  await setPaid(doc, doc.paidPaise + amount, doc.creditedPaise + amount);
+  await setCreditUsed(note, note.paidPaise + amount);
+  await audit({ action: 'billing.credit_note.use', entity: 'advance_adjustment', entityId: adjustment.id, after: { creditNote: note.number, invoice: doc.number, amountPaise: Number(amount) } });
+  return getDocument(ctx, doc.id, 'invoice');
+}
+
+/** Take an advance or credit note back off an invoice with an opposite row; the value returns to it. */
+export async function removeAdvanceUse(ctx: TenantCtx, id: string) {
+  const adjustment = await db().advanceAdjustment.findUnique({ where: { id }, include: { reversal: { select: { id: true } } } });
+  if (!adjustment) throw notFound('Advance adjustment');
+  const doc = await getDocument(ctx, adjustment.documentId, 'invoice');
+  if (adjustment.reversesId || adjustment.reversal) throw new AppError('CONFLICT', 'This advance is already removed from the invoice.');
+  const note = adjustment.creditNoteId ? await db().salesDocument.findUniqueOrThrow({ where: { id: adjustment.creditNoteId } }) : null;
+  if (note?.sourceId === doc.id) throw new AppError('CONFLICT', 'This credit note was made for this invoice. Cancel the credit note instead.');
+  await db().advanceAdjustment.create({ data: { tenantId: ctx.tenantId, paymentId: adjustment.paymentId, creditNoteId: adjustment.creditNoteId, documentId: doc.id, amountPaise: -adjustment.amountPaise, reversesId: adjustment.id, createdBy: ctx.userId } });
+  await setPaid(doc, doc.paidPaise - adjustment.amountPaise, doc.creditedPaise - (note ? adjustment.amountPaise : 0n));
+  if (note) await setCreditUsed(note, note.paidPaise - adjustment.amountPaise);
+  await audit({ action: 'billing.advance.remove', entity: 'advance_adjustment', entityId: adjustment.id, after: { invoice: doc.number, amountPaise: adjustment.amountPaise } });
+  return getDocument(ctx, doc.id, 'invoice');
+}
+
+/** Copy a quotation into a new draft invoice or an order and mark the quotation converted (SAL-01). */
+export async function convertQuotation(ctx: TenantCtx, id: string, target: 'invoice' | 'sales_order' = 'invoice') {
   const q = await getDocument(ctx, id, 'quotation');
   if (q.status === 'converted') throw new AppError('CONFLICT', 'This quotation is already converted.');
   if (q.status === 'declined') throw new AppError('CONFLICT', 'Declined quotations cannot be converted.');
   const invoice = await createDocument(
     ctx,
-    'invoice',
+    target,
     {
       contactId: q.contactId,
       buyer: q.contactId ? undefined : (q.buyer as unknown as DocInput['buyer']),
@@ -297,8 +475,9 @@ export async function publicDocument(token: string) {
   if (!doc || doc.status === 'draft') throw notFound('Document');
   return {
     kind: doc.kind, number: doc.number, status: doc.status, issueDate: doc.issueDate, dueDate: doc.dueDate, buyer: doc.buyer, seller: doc.seller,
+    creditedPaise: doc.creditedPaise, noteType: doc.noteType, sourceNumber: doc.sourceNumber,
     placeOfSupply: doc.placeOfSupply, subtotalPaise: doc.subtotalPaise, discountPaise: doc.discountPaise, taxablePaise: doc.taxablePaise,
-    cgstPaise: doc.cgstPaise, sgstPaise: doc.sgstPaise, igstPaise: doc.igstPaise, totalPaise: doc.totalPaise, paidPaise: doc.paidPaise,
+    cgstPaise: doc.cgstPaise, sgstPaise: doc.sgstPaise, igstPaise: doc.igstPaise, roundOffPaise: doc.roundOffPaise, totalPaise: doc.totalPaise, paidPaise: doc.paidPaise,
     notes: doc.notes, terms: doc.terms,
     lines: doc.lines.map((l) => ({ description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: l.quantity, unitPricePaise: l.unitPricePaise, discountPaise: l.discountPaise, taxablePaise: l.taxablePaise, gstRateBp: l.gstRateBp, cgstPaise: l.cgstPaise, sgstPaise: l.sgstPaise, igstPaise: l.igstPaise, totalPaise: l.totalPaise })),
   };

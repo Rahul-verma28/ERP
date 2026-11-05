@@ -121,6 +121,8 @@ export const PREFERENCE_SCHEMAS = {
     invoicePrefix: Prefix,
     quotationPrefix: Prefix,
     receiptPrefix: Prefix,
+    creditNotePrefix: Prefix,
+    salesOrderPrefix: Prefix,
     template: z.enum(['classic', 'modern', 'compact']),
     paper: z.enum(['a4', '80mm', '58mm']),
     terms: z.string().trim().max(2000, 'Keep terms under 2,000 characters'),
@@ -159,6 +161,7 @@ export const PREFERENCE_SCHEMAS = {
       defaultGstRateBp: z.number().int().refine((v) => (GST_RATES_BP as readonly number[]).includes(v), 'Choose a valid GST rate'),
       hsnDigits: z.union([z.literal(4), z.literal(6)]),
       reverseCharge: z.boolean(),
+      roundOff: z.boolean().optional(),
     })
     .superRefine((t, c) => {
       if (t.composition && !t.compositionRateBp) c.addIssue({ code: z.ZodIssueCode.custom, path: ['compositionRateBp'], message: 'Choose your composition rate' });
@@ -238,13 +241,15 @@ const SERIES = [
   { docType: 'invoice', label: 'Tax invoice', prefixKey: 'invoicePrefix' },
   { docType: 'quotation', label: 'Quotation', prefixKey: 'quotationPrefix' },
   { docType: 'receipt', label: 'Receipt', prefixKey: 'receiptPrefix' },
+  { docType: 'credit_note', label: 'Credit note', prefixKey: 'creditNotePrefix' },
+  { docType: 'sales_order', label: 'Sales order', prefixKey: 'salesOrderPrefix' },
 ] as const;
 export type SeriesType = (typeof SERIES)[number]['docType'];
 
 /** The last number actually given to a document in this series and year (not just next − 1). */
 async function lastIssued(docType: SeriesType, fy: string, usedPrefix: string) {
   if (docType === 'receipt') {
-    const p = await db().payment.findFirst({ where: { number: { startsWith: usedPrefix } }, orderBy: { createdAt: 'desc' }, select: { number: true } });
+    const p = await db().payment.findFirst({ where: { number: { startsWith: usedPrefix }, reversesId: null }, orderBy: { createdAt: 'desc' }, select: { number: true } });
     return p?.number ?? null;
   }
   const d = await db().salesDocument.findFirst({

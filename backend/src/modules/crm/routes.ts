@@ -151,7 +151,7 @@ router.get('/contacts/:id', validate(IdParam, 'params'), dynamicPermission('view
   const [activities, invoices, appointments, owner] = await Promise.all([
     db().activity.findMany({ where: { contactId: c.id }, orderBy: { createdAt: 'desc' }, take: 100 }),
     db().salesDocument.findMany({
-      where: { contactId: c.id },
+      where: { contactId: c.id, kind: { not: 'opening_balance' } },
       orderBy: { issueDate: 'desc' },
       take: 20,
       select: { id: true, kind: true, number: true, status: true, issueDate: true, totalPaise: true, paidPaise: true },
@@ -186,9 +186,10 @@ router.patch('/contacts/:id', validate(IdParam, 'params'), dynamicPermission('ed
 
 router.delete('/contacts/:id', validate(IdParam, 'params'), dynamicPermission('delete'), tx(async (req, res) => {
   const c = await loadInScope(req);
-  const docs = await db().salesDocument.count({ where: { contactId: c.id } });
+  const [invoices, receipts] = await Promise.all([db().salesDocument.count({ where: { contactId: c.id } }), db().payment.count({ where: { contactId: c.id } })]);
+  const docs = invoices + receipts;
   if (docs) {
-    // Customers with invoices are kept for the records; they are deactivated instead
+    // Customers with invoices or advances are kept for the records; they are deactivated instead
     await db().contact.update({ where: { id: c.id }, data: { isActive: false, version: { increment: 1 } } });
   } else {
     await db().activity.deleteMany({ where: { contactId: c.id } });

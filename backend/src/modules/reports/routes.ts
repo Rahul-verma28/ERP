@@ -15,6 +15,7 @@ import { validate } from '../../middleware/request';
 import { DASHBOARD_TABS, DASHBOARD_WIDGETS, dashboardWithDefaults, daysBetween, type DashboardTab } from '../../contracts/dashboard';
 import { TAB_HANDLERS, availableTabs, dashboardConfig, scoper } from './dashboard';
 import { search } from './search';
+import * as sales from './sales';
 
 // Home dashboard (RPT-01): one call, widgets only for modules the role can see,
 // every figure filtered by that module's data scope. Totals are computed here, never in the UI.
@@ -48,7 +49,7 @@ router.get('/dashboard/summary', requirePermission('reports.dashboard.view'), tx
     const [todaySum, monthSum, dues, overdue, recent, week] = await Promise.all([
       db().salesDocument.aggregate({ where: { AND: [scope, live, { issueDate: dateOnly(today) }] }, _sum: { totalPaise: true }, _count: true }),
       db().salesDocument.aggregate({ where: { AND: [scope, live, { issueDate: { gte: dateOnly(monthStart) } }] }, _sum: { totalPaise: true }, _count: true }),
-      db().salesDocument.aggregate({ where: { AND: [scope, { kind: 'invoice', status: { in: ['issued', 'partially_paid'] } }] }, _sum: { totalPaise: true, paidPaise: true }, _count: true }),
+      db().salesDocument.aggregate({ where: { AND: [scope, { kind: { in: ['invoice', 'opening_balance'] }, status: { in: ['issued', 'partially_paid'] } }] }, _sum: { totalPaise: true, paidPaise: true }, _count: true }),
       db().salesDocument.count({ where: { AND: [scope, { kind: 'invoice', status: { in: ['issued', 'partially_paid'] }, dueDate: { lt: dateOnly(today) } }] } }),
       db().salesDocument.findMany({
         where: { AND: [scope, { kind: 'invoice', status: { not: 'draft' } }] },
@@ -58,11 +59,22 @@ router.get('/dashboard/summary', requirePermission('reports.dashboard.view'), tx
       }),
       db().salesDocument.groupBy({ by: ['issueDate'], where: { AND: [scope, live, { issueDate: { gte: weekAgo } }] }, _sum: { totalPaise: true } }),
     ]);
-    const byDay = Object.fromEntries(week.map((w) => [w.issueDate.toISOString().slice(0, 10), Number(w._sum.totalPaise ?? 0)]));
+    // Credit notes take sales back on the day they are issued
+    const creditNote = { kind: 'credit_note' as const, status: 'issued' as const };
+    const [todayCredit, monthCredit, weekCredit] = await Promise.all([
+      db().salesDocument.aggregate({ where: { AND: [scope, creditNote, { issueDate: dateOnly(today) }] }, _sum: { totalPaise: true } }),
+      db().salesDocument.aggregate({ where: { AND: [scope, creditNote, { issueDate: { gte: dateOnly(monthStart) } }] }, _sum: { totalPaise: true } }),
+      db().salesDocument.groupBy({ by: ['issueDate'], where: { AND: [scope, creditNote, { issueDate: { gte: weekAgo } }] }, _sum: { totalPaise: true } }),
+    ]);
+    const byDay: Record<string, number> = Object.fromEntries(week.map((w) => [w.issueDate.toISOString().slice(0, 10), Number(w._sum.totalPaise ?? 0)]));
+    for (const w of weekCredit) {
+      const d = w.issueDate.toISOString().slice(0, 10);
+      byDay[d] = (byDay[d] ?? 0) - Number(w._sum.totalPaise ?? 0);
+    }
     out.sales = {
-      todayPaise: todaySum._sum.totalPaise ?? 0n,
+      todayPaise: (todaySum._sum.totalPaise ?? 0n) - (todayCredit._sum.totalPaise ?? 0n),
       todayCount: todaySum._count,
-      monthPaise: monthSum._sum.totalPaise ?? 0n,
+      monthPaise: (monthSum._sum.totalPaise ?? 0n) - (monthCredit._sum.totalPaise ?? 0n),
       monthCount: monthSum._count,
       duesPaise: (dues._sum.totalPaise ?? 0n) - (dues._sum.paidPaise ?? 0n),
       duesCount: dues._count,
@@ -148,6 +160,24 @@ async function readDashboardPrefs(userId: string, tenantId: string) {
 }
 
 // Tabs are checked one by one (a stylist with no dashboard permission still gets My day)
+// ── Sales reports and the GST working sheet ──
+router.get('/reports/sales', requirePermission('reports.report.view'), validate(sales.ReportPeriod.extend({ by: z.enum(['day', 'month', 'customer', 'item']) }), 'query'), tx(async (req, res) => {
+  const { by, from, to } = req.query as unknown as z.infer<typeof sales.ReportPeriod> & { by: 'day' | 'month' | 'customer' | 'item' };
+  res.json(by === 'item' ? await sales.itemReport(req.ctx!, { from, to }) : await sales.salesReport(req.ctx!, by, { from, to }));
+}));
+router.get('/reports/collection', requirePermission('reports.report.view'), validate(sales.ReportPeriod, 'query'), tx(async (req, res) => {
+  res.json(await sales.collectionReport(req.ctx!, req.query as unknown as z.infer<typeof sales.ReportPeriod>));
+}));
+router.get('/reports/gst', requirePermission('reports.report.view'), validate(sales.ReportPeriod, 'query'), tx(async (req, res) => {
+  res.json(await sales.gstReport(req.ctx!, req.query as unknown as z.infer<typeof sales.ReportPeriod>));
+}));
+router.get('/reports/gst/download', requirePermission('reports.report.export'), validate(sales.ReportPeriod, 'query'), tx(async (req, res) => {
+  const file = await sales.gstWorkbook(req.ctx!, req.query as unknown as z.infer<typeof sales.ReportPeriod>);
+  res.setHeader('Content-Type', file.type);
+  res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+  res.send(file.body);
+}));
+
 router.get('/dashboard/config', tx(async (req, res) => {
   const ctx = req.ctx!;
   const { scoped, readOnly } = await scoper(ctx);

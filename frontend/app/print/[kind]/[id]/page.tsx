@@ -19,8 +19,9 @@ function Receipt({ doc, width }: { doc: SalesDoc; width: "80mm" | "58mm" }) {
     <div className="mx-auto bg-white p-2 font-mono text-[11px] leading-tight text-black" style={{ width }}>
       <p className="text-center text-sm font-bold">{s?.legalName || s?.name}</p>
       {s?.gstin && <p className="text-center">GSTIN {s.gstin}</p>}
-      <p className="my-1 border-y border-dashed border-black py-1 text-center">{doc.kind === "invoice" ? "TAX INVOICE" : "QUOTATION"} {doc.number}<br />{formatDate(doc.issueDate)}</p>
+      <p className="my-1 border-y border-dashed border-black py-1 text-center">{doc.kind === "invoice" ? "TAX INVOICE" : doc.kind === "credit_note" ? "CREDIT NOTE" : doc.kind === "sales_order" ? "SALES ORDER" : "QUOTATION"} {doc.number}<br />{formatDate(doc.issueDate)}</p>
       <p>To: {doc.buyer.name}</p>
+      {doc.sourceNumber && <p>Against: {doc.sourceNumber}</p>}
       <table className="my-1 w-full">
         <tbody>
           {doc.lines.map((l, i) => (
@@ -39,8 +40,9 @@ function Receipt({ doc, width }: { doc: SalesDoc; width: "80mm" | "58mm" }) {
             <p className="flex justify-between"><span>SGST</span><span>{formatPaise(doc.sgstPaise)}</span></p>
           </>
         )}
+        {!!doc.roundOffPaise && <p className="flex justify-between"><span>Round off</span><span>{formatPaise(doc.roundOffPaise)}</span></p>}
         <p className="flex justify-between text-sm font-bold"><span>TOTAL</span><span>{formatPaise(doc.totalPaise)}</span></p>
-        {doc.paidPaise > 0 && <p className="flex justify-between"><span>Paid</span><span>{formatPaise(doc.paidPaise)}</span></p>}
+        {doc.kind === "invoice" && doc.paidPaise > 0 && <p className="flex justify-between"><span>Paid</span><span>{formatPaise(doc.paidPaise)}</span></p>}
       </div>
       <p className="mt-2 text-center">Thank you!</p>
     </div>
@@ -57,7 +59,7 @@ export default function PrintPage({ params }: { params: Promise<{ kind: string; 
   React.useEffect(() => {
     if (status !== "authenticated") return
     api
-      .get<SalesDoc>(`/${kind === "quotation" ? "quotations" : "invoices"}/${id}`)
+      .get<SalesDoc>(`/${kind === "quotation" ? "quotations" : kind === "credit_note" ? "credit-notes" : kind === "sales_order" ? "sales-orders" : "invoices"}/${id}`)
       .then((d) => {
         setDoc(d)
         // Paper size from Settings › Documents › Print (frozen on the invoice)

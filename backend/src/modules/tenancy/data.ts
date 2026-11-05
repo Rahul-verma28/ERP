@@ -86,20 +86,24 @@ async function table(kind: ExportKind, since: Date | null, fields: Record<string
     return {
       name: 'Invoices',
       rows: [
-        ['Number', 'Date', 'Due date', 'Customer', 'Customer GSTIN', 'Place of supply', 'Status', 'Taxable (₹)', 'CGST (₹)', 'SGST (₹)', 'IGST (₹)', 'Total (₹)', 'Paid (₹)', 'Balance (₹)'],
+        ['Number', 'Date', 'Due date', 'Customer', 'Customer GSTIN', 'Place of supply', 'Status', 'Taxable (₹)', 'CGST (₹)', 'SGST (₹)', 'IGST (₹)', 'Total (₹)', 'Paid (₹)', 'Credit notes (₹)', 'Balance (₹)'],
         ...list.map((d) => {
           const b = (d.buyer ?? {}) as { name?: string; gstin?: string };
-          return [d.number, day(d.issueDate), day(d.dueDate), b.name ?? null, b.gstin ?? null, d.placeOfSupply, d.status, money(d.taxablePaise), money(d.cgstPaise), money(d.sgstPaise), money(d.igstPaise), money(d.totalPaise), money(d.paidPaise), money(d.totalPaise - d.paidPaise)];
+          return [d.number, day(d.issueDate), day(d.dueDate), b.name ?? null, b.gstin ?? null, d.placeOfSupply, d.status, money(d.taxablePaise), money(d.cgstPaise), money(d.sgstPaise), money(d.igstPaise), money(d.totalPaise), money(d.paidPaise - d.creditedPaise), money(d.creditedPaise), money(d.totalPaise - d.paidPaise)];
         }),
       ],
     };
   }
   const list = await db().payment.findMany({ where: since ? { paidOn: { gte: since } } : {}, include: { document: { select: { number: true, buyer: true } } }, orderBy: { paidOn: 'asc' } });
+  // Advances have no invoice, so their customer name comes from the contact
+  const contactIds = [...new Set(list.filter((p) => !p.document && p.contactId).map((p) => p.contactId!))];
+  const contacts = contactIds.length ? await db().contact.findMany({ where: { id: { in: contactIds } }, select: { id: true, name: true, companyName: true } }) : [];
+  const contactName = new Map(contacts.map((c) => [c.id, c.companyName || c.name]));
   return {
     name: 'Payments',
     rows: [
       ['Receipt', 'Date', 'Invoice', 'Customer', 'Amount (₹)', 'Method', 'Reference'],
-      ...list.map((p) => [p.number, day(p.paidOn), p.document.number, ((p.document.buyer ?? {}) as { name?: string }).name ?? null, money(p.amountPaise), p.method, p.reference]),
+      ...list.map((p) => [p.number, day(p.paidOn), p.document?.number ?? 'Advance', p.document ? ((p.document.buyer ?? {}) as { name?: string }).name ?? null : contactName.get(p.contactId ?? '') ?? null, money(p.amountPaise), p.method, p.reference]),
     ],
   };
 }
