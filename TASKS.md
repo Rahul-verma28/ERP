@@ -363,6 +363,15 @@ The client allows selling with a few complete modules, so this replaces the budg
 - [x] Sales reports: by day, month, customer, item; collection by method; credit notes netted, also in Top customers — code and tests done 2026-11-05, checked in the browser
 - [x] GST working sheet for the CA: B2B, B2C, credit notes, HSN, totals, Excel — code and tests done 2026-11-05, checked in the browser; layout needs the CA's check
 - [x] Sales order: from a quotation or direct, invoiced in parts, Open / Part invoiced / Completed / Cancelled — code and tests done 2026-11-05, checked in the browser
+- [x] Bill of supply: no GSTIN or composition scheme charges no GST and prints "Bill of Supply"; left out of the GST sheet, shown as its own total — code and tests done 2026-11-05, checked in the browser; format and composition line need the CA's check
+- [x] Credit limit: on the customer, net of advances and credit; going over stops the bill, `billing.invoice.approve` can issue anyway — code and tests done 2026-11-05, checked in the browser
+- [x] Price lists: a discount on everything plus exact prices per item, chosen on the customer, used on new bills — code and tests done 2026-11-05, checked in the browser
+- [x] Delivery challan: from an order or direct, own number series, counts towards the order, makes a draft invoice — code and tests done 2026-11-05, checked in the browser (cancel by tests only)
+- [x] Ship-to address: on any document, sets the place of supply, prints beside Bill to — code and tests done 2026-11-05, checked in the browser
+- [x] Proforma invoice: a quotation printed as a proforma, no sales or GST effect — code and tests done 2026-11-05, checked in the browser
+- [x] Debit note: raises an invoice, own number series, takes payments, in the ledger, sales and GST — code and tests done 2026-11-05, checked in the browser (GST amounts by tests only; the test business has no GSTIN)
+- [x] Pending order report: lines left on open orders — code and tests done 2026-11-05; screen opened in the browser with no pending lines, rows by tests only
+- [x] Free quantity: on the line, no price or tax, prints "+ 2 free", counts in item and HSN quantity — code and tests done 2026-11-05, checked in the browser
 
 ## Phase 2 — Operations (weeks 5–8)
 Exit gate: stock and accounts update from sales and purchases.

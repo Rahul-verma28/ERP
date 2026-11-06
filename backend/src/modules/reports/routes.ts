@@ -45,11 +45,11 @@ router.get('/dashboard/summary', requirePermission('reports.dashboard.view'), tx
   const inv = scoped('billing.invoice.view');
   if (inv) {
     const scope = scopeWhere(inv, { owner: ['createdBy'], branch: 'branchId' });
-    const live = { kind: 'invoice' as const, status: { in: ['issued' as const, 'partially_paid' as const, 'paid' as const] } };
+    const live = { kind: { in: ['invoice' as const, 'debit_note' as const] }, status: { in: ['issued' as const, 'partially_paid' as const, 'paid' as const] } };
     const [todaySum, monthSum, dues, overdue, recent, week] = await Promise.all([
       db().salesDocument.aggregate({ where: { AND: [scope, live, { issueDate: dateOnly(today) }] }, _sum: { totalPaise: true }, _count: true }),
       db().salesDocument.aggregate({ where: { AND: [scope, live, { issueDate: { gte: dateOnly(monthStart) } }] }, _sum: { totalPaise: true }, _count: true }),
-      db().salesDocument.aggregate({ where: { AND: [scope, { kind: { in: ['invoice', 'opening_balance'] }, status: { in: ['issued', 'partially_paid'] } }] }, _sum: { totalPaise: true, paidPaise: true }, _count: true }),
+      db().salesDocument.aggregate({ where: { AND: [scope, { kind: { in: ['invoice', 'opening_balance', 'debit_note'] }, status: { in: ['issued', 'partially_paid'] } }] }, _sum: { totalPaise: true, paidPaise: true }, _count: true }),
       db().salesDocument.count({ where: { AND: [scope, { kind: 'invoice', status: { in: ['issued', 'partially_paid'] }, dueDate: { lt: dateOnly(today) } }] } }),
       db().salesDocument.findMany({
         where: { AND: [scope, { kind: 'invoice', status: { not: 'draft' } }] },
@@ -164,6 +164,9 @@ async function readDashboardPrefs(userId: string, tenantId: string) {
 router.get('/reports/sales', requirePermission('reports.report.view'), validate(sales.ReportPeriod.extend({ by: z.enum(['day', 'month', 'customer', 'item']) }), 'query'), tx(async (req, res) => {
   const { by, from, to } = req.query as unknown as z.infer<typeof sales.ReportPeriod> & { by: 'day' | 'month' | 'customer' | 'item' };
   res.json(by === 'item' ? await sales.itemReport(req.ctx!, { from, to }) : await sales.salesReport(req.ctx!, by, { from, to }));
+}));
+router.get('/reports/pending-orders', requirePermission('reports.report.view'), tx(async (req, res) => {
+  res.json(await sales.pendingOrders(req.ctx!));
 }));
 router.get('/reports/collection', requirePermission('reports.report.view'), validate(sales.ReportPeriod, 'query'), tx(async (req, res) => {
   res.json(await sales.collectionReport(req.ctx!, req.query as unknown as z.infer<typeof sales.ReportPeriod>));

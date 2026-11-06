@@ -47,7 +47,7 @@ const SUMMARY_SELECT = {
   totalPaise: true, paidPaise: true, createdAt: true, createdBy: true, branchId: true, noteType: true, sourceId: true, sourceNumber: true,
 } satisfies Prisma.SalesDocumentSelect;
 
-function registerReadRoutes(kind: SalesDocKind, base: string, module: 'sales.quotation' | 'billing.invoice' | 'billing.credit_note' | 'sales.order') {
+function registerReadRoutes(kind: SalesDocKind, base: string, module: 'sales.quotation' | 'billing.invoice' | 'billing.credit_note' | 'sales.order' | 'sales.delivery') {
   router.get(base, requirePermission(`${module}.view`), validate(DocList, 'query'), tx(async (req, res) => {
     const q = req.query as unknown as z.infer<typeof DocList>;
     const where: Prisma.SalesDocumentWhereInput = {
@@ -100,7 +100,7 @@ function registerReadRoutes(kind: SalesDocKind, base: string, module: 'sales.quo
   }));
 }
 
-function registerDocRoutes(kind: 'invoice' | 'quotation' | 'sales_order', base: string, module: 'sales.quotation' | 'billing.invoice' | 'sales.order') {
+function registerDocRoutes(kind: 'invoice' | 'quotation' | 'sales_order' | 'delivery_challan', base: string, module: 'sales.quotation' | 'billing.invoice' | 'sales.order' | 'sales.delivery') {
   registerReadRoutes(kind, base, module);
 
   router.post(base, requirePermission(`${module}.create`), validate(billing.DocInput.extend({ issue: z.boolean().default(false) })), tx(async (req, res) => {
@@ -120,6 +120,7 @@ function registerDocRoutes(kind: 'invoice' | 'quotation' | 'sales_order', base: 
     await db().salesDocumentLine.deleteMany({ where: { documentId: doc.id } });
     await db().salesDocument.delete({ where: { id: doc.id } });
     if (doc.sourceType === 'sales_order' && doc.sourceId) await billing.refreshOrderStatus(doc.sourceId);
+    if (doc.sourceType === 'delivery_challan' && doc.sourceId) await billing.reopenChallan(doc.sourceId);
     await audit({ action: `${module}.delete_draft`, entity: kind, entityId: doc.id, before: { number: doc.number } });
     res.status(204).end();
   }));
@@ -128,6 +129,8 @@ function registerDocRoutes(kind: 'invoice' | 'quotation' | 'sales_order', base: 
 registerDocRoutes('quotation', '/quotations', 'sales.quotation');
 registerDocRoutes('invoice', '/invoices', 'billing.invoice');
 registerDocRoutes('sales_order', '/sales-orders', 'sales.order');
+registerDocRoutes('delivery_challan', '/delivery-challans', 'sales.delivery');
+registerReadRoutes('debit_note', '/debit-notes', 'billing.credit_note');
 registerReadRoutes('credit_note', '/credit-notes', 'billing.credit_note');
 
 // ── Quotation lifecycle ──
@@ -166,6 +169,17 @@ router.post('/sales-orders/:id/cancel', requirePermission('sales.order.edit'), v
   res.json(await orders.cancelOrder(req.ctx!, String(req.params.id), req.body.reason));
 }));
 
+// ── Delivery challans ──
+router.post('/sales-orders/:id/challan', requirePermission('sales.delivery.create'), validate(IdParam, 'params'), validate(orders.OrderInvoiceInput), tx(async (req, res) => {
+  res.status(201).json(await orders.invoiceFromOrder(req.ctx!, String(req.params.id), req.body, 'delivery_challan'));
+}));
+router.post('/delivery-challans/:id/invoice', requirePermission('billing.invoice.create'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.status(201).json(await orders.invoiceFromChallan(req.ctx!, String(req.params.id)));
+}));
+router.post('/delivery-challans/:id/cancel', requirePermission('sales.delivery.edit'), validate(IdParam, 'params'), validate(z.object({ reason: z.string().trim().min(3).max(300) })), tx(async (req, res) => {
+  res.json(await orders.cancelChallan(req.ctx!, String(req.params.id), req.body.reason));
+}));
+
 // ── Invoice lifecycle ──
 router.post(
   '/invoices/cash-bill',
@@ -179,6 +193,12 @@ router.post(
 );
 router.post('/invoices/:id/issue', requirePermission('billing.invoice.create'), validate(IdParam, 'params'), tx(async (req, res) => {
   res.json(await billing.issueInvoice(req.ctx!, String(req.params.id)));
+}));
+// Someone allowed to approve can go over a customer's credit limit
+router.post('/invoices/:id/issue-over-limit', requirePermission('billing.invoice.create'), requirePermission('billing.invoice.approve'), validate(IdParam, 'params'), tx(async (req, res) => {
+  const invoice = await billing.issueInvoice(req.ctx!, String(req.params.id), { skipCreditLimit: true });
+  await audit({ action: 'billing.invoice.over_credit_limit', entity: 'invoice', entityId: invoice.id, after: { number: invoice.number, totalPaise: invoice.totalPaise } });
+  res.json(invoice);
 }));
 
 router.post(
@@ -214,6 +234,17 @@ router.delete('/customers/:id/opening-balance', requirePermission('billing.invoi
 }));
 router.post('/opening-balances/:id/payments', requirePermission('billing.payment.create'), validate(IdParam, 'params'), validate(billing.PaymentInput), tx(async (req, res) => {
   res.status(201).json(await billing.recordPayment(req.ctx!, String(req.params.id), req.body, 'opening_balance'));
+}));
+
+// ── Debit notes ──
+router.post('/invoices/:id/debit-notes', requirePermission('billing.credit_note.create'), validate(IdParam, 'params'), validate(creditNotes.DebitNoteInput), tx(async (req, res) => {
+  res.status(201).json(await creditNotes.createDebitNote(req.ctx!, String(req.params.id), req.body));
+}));
+router.post('/debit-notes/:id/cancel', requirePermission('billing.credit_note.approve'), validate(IdParam, 'params'), validate(z.object({ reason: z.string().trim().min(3).max(300) })), tx(async (req, res) => {
+  res.json(await creditNotes.cancelDebitNote(req.ctx!, String(req.params.id), req.body.reason));
+}));
+router.post('/debit-notes/:id/payments', requirePermission('billing.payment.create'), validate(IdParam, 'params'), validate(billing.PaymentInput), tx(async (req, res) => {
+  res.status(201).json(await billing.recordPayment(req.ctx!, String(req.params.id), req.body, 'debit_note'));
 }));
 
 // ── Credit notes and sales returns ──

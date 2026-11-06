@@ -7,7 +7,7 @@ import { AppError, notFound } from '../../kernel/errors';
 import { normaliseEmail } from '../../kernel/crypto';
 import { optionalText, zEmail, zGstin, zPhone, zPincode, zStateCode } from '../../kernel/zodRules';
 import * as rules from '../../contracts/validation';
-import { IdParam, ListQuery, assertRecordLimit, assertVersion, inScope, markOnboarding, page, pageArgs, scopeWhere } from '../../kernel/query';
+import { IdParam, ListQuery, Paise, assertRecordLimit, assertVersion, inScope, markOnboarding, page, pageArgs, scopeWhere } from '../../kernel/query';
 import { validate } from '../../middleware/request';
 import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { validateCustom } from '../config/service';
@@ -38,6 +38,9 @@ const ContactInput = z.object({
   isActive: z.boolean().optional(),
   notes: optional(z.string().max(4000)),
   custom: z.record(z.unknown()).optional(),
+  /** Empty = no limit */
+  creditLimitPaise: Paise.optional().nullable(),
+  priceListId: z.string().uuid().optional().nullable(),
 });
 const ContactPatch = ContactInput.partial().extend({ version: z.number().int() });
 
@@ -210,6 +213,14 @@ router.post('/leads/:id/convert', validate(IdParam, 'params'), requirePermission
   await db().activity.create({ data: { tenantId: req.ctx!.tenantId, contactId: c.id, type: 'note', title: 'Converted to customer', createdBy: req.ctx!.userId } });
   await markOnboarding(req.ctx!, 'firstCustomer');
   res.json(updated);
+}));
+
+// The prices this customer pays: a discount on everything, and exact prices for some items
+router.get('/contacts/:id/prices', validate(IdParam, 'params'), requirePermission('catalog.item.view'), tx(async (req, res) => {
+  const c = await db().contact.findUnique({ where: { id: String(req.params.id) }, select: { priceListId: true } });
+  if (!c) throw notFound('Customer');
+  const list = c.priceListId ? await db().priceList.findUnique({ where: { id: c.priceListId }, include: { items: { select: { itemId: true, pricePaise: true } } } }) : null;
+  res.json(list ? { name: list.name, discountBp: list.discountBp, prices: Object.fromEntries(list.items.map((i) => [i.itemId, Number(i.pricePaise)])) } : null);
 }));
 
 // ── Timeline (CRM-03) ──

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Prisma, SalesDocKind, SalesDocument } from '@prisma/client';
+import { Prisma, type SalesDocKind, type SalesDocument } from '@prisma/client';
 import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
@@ -30,6 +30,8 @@ export const LineInput = z.object({
   gstRateBp: z.number().int().refine((v) => (GST_RATES_BP as readonly number[]).includes(v), 'Choose a valid GST rate'),
   /** Invoice made from an order: the order line it bills */
   sourceLineId: z.string().uuid().optional().nullable(),
+  /** Given free on top of quantity: no price and no tax */
+  freeQuantity: z.number().min(0).max(1e7).optional(),
 }).superRefine((l, c) => {
   if (l.discountPaise > Math.round(l.quantity * l.unitPricePaise)) c.addIssue({ code: z.ZodIssueCode.custom, path: ['discountPaise'], message: "Discount can't be more than the line amount" });
 });
@@ -60,6 +62,16 @@ export const DocInput = z.object({
   pricesIncludeGst: z.boolean().optional(),
   /** Round the total to the whole rupee */
   roundOff: z.boolean().optional(),
+  /** Goods go somewhere other than the billing address */
+  shipTo: z.object({
+    name: optionalText(z.string().trim().max(160)),
+    line1: optionalText(z.string().trim().max(200)),
+    city: optionalText(z.string().trim().max(80)),
+    pincode: optionalText(z.string().trim().max(10)),
+    stateCode: zStateCode.optional().nullable(),
+  }).optional().nullable(),
+  /** Quotation printed as a proforma invoice */
+  proforma: z.boolean().optional(),
 });
 export type DocInput = z.infer<typeof DocInput>;
 
@@ -110,10 +122,14 @@ async function resolveLines(lines: DocInput['lines']) {
 async function prepare(ctx: TenantCtx, input: DocInput, existing?: SalesDocument) {
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId } });
   const { contactId, buyer } = await resolveBuyer(input);
-  const resolved = await resolveLines(input.lines);
+  // Not registered, or on the composition scheme: no GST is charged and the bill is a bill of supply
+  const taxes = withDefaults(tenant.preferences).taxes;
+  const noTax = !tenant.gstin || taxes.composition;
+  const resolved = (await resolveLines(input.lines)).map((l) => (noTax ? { ...l, gstRateBp: 0 } : l));
   const exclusive = (paise: number, rateBp: number) => Number(divRound(BigInt(paise) * 10_000n, BigInt(10_000 + rateBp)));
-  const lines = input.pricesIncludeGst ? resolved.map((l) => ({ ...l, unitPricePaise: exclusive(l.unitPricePaise, l.gstRateBp), discountPaise: exclusive(l.discountPaise, l.gstRateBp) })) : resolved;
-  const placeOfSupply = buyer.stateCode ?? tenant.billingStateCode ?? null;
+  const lines = input.pricesIncludeGst && !noTax ? resolved.map((l) => ({ ...l, unitPricePaise: exclusive(l.unitPricePaise, l.gstRateBp), discountPaise: exclusive(l.discountPaise, l.gstRateBp) })) : resolved;
+  // Goods sent elsewhere: tax follows where they go. A CA should confirm this for each case.
+  const placeOfSupply = input.shipTo?.stateCode ?? buyer.stateCode ?? tenant.billingStateCode ?? null;
   const intraState = !tenant.billingStateCode || !placeOfSupply || placeOfSupply === tenant.billingStateCode;
   const { lines: computed, totals } = computeDocument(lines, intraState);
   const roundOffPaise = input.roundOff ? divRound(totals.totalPaise, 100n) * 100n - totals.totalPaise : 0n;
@@ -126,6 +142,8 @@ async function prepare(ctx: TenantCtx, input: DocInput, existing?: SalesDocument
     doc: {
       contactId,
       buyer: buyer as unknown as Prisma.InputJsonValue,
+      shipTo: input.shipTo ? (input.shipTo as Prisma.InputJsonValue) : Prisma.JsonNull,
+      noteType: input.proforma === undefined ? (existing?.noteType ?? null) : input.proforma ? 'proforma' : null,
       placeOfSupply,
       branchId: input.branchId ?? existing?.branchId ?? ctx.branchIds[0] ?? null,
       issueDate: dateOnly(input.issueDate ?? todayIST()),
@@ -140,7 +158,7 @@ async function prepare(ctx: TenantCtx, input: DocInput, existing?: SalesDocument
     lines: computed.map((l, position) => ({
       tenantId: ctx.tenantId, itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit,
       quantity: (Number(l.quantityMilli) / 1000).toFixed(3), unitPricePaise: BigInt(l.unitPricePaise), discountPaise: BigInt(l.discountPaise ?? 0),
-      taxablePaise: l.taxablePaise, gstRateBp: l.gstRateBp, cgstPaise: l.cgstPaise, sgstPaise: l.sgstPaise, igstPaise: l.igstPaise, totalPaise: l.totalPaise, position, sourceLineId: l.sourceLineId ?? null,
+      taxablePaise: l.taxablePaise, gstRateBp: l.gstRateBp, cgstPaise: l.cgstPaise, sgstPaise: l.sgstPaise, igstPaise: l.igstPaise, totalPaise: l.totalPaise, position, sourceLineId: l.sourceLineId ?? null, freeQuantity: (l.freeQuantity ?? 0).toFixed(3),
     })),
   };
 }
@@ -154,11 +172,11 @@ export async function getDocument(ctx: TenantCtx, id: string, kind: SalesDocKind
       adjustments: { orderBy: { createdAt: 'asc' }, include: { payment: { select: { number: true } }, creditNote: { select: { number: true, sourceId: true } } } },
     },
   });
-  if (!doc || doc.kind !== kind || !inScope(ctx, doc, SCOPE_FIELDS)) throw notFound({ invoice: 'Invoice', quotation: 'Quotation', credit_note: 'Credit note', opening_balance: 'Opening balance', sales_order: 'Sales order' }[kind]);
+  if (!doc || doc.kind !== kind || !inScope(ctx, doc, SCOPE_FIELDS)) throw notFound({ invoice: 'Invoice', quotation: 'Quotation', credit_note: 'Credit note', opening_balance: 'Opening balance', sales_order: 'Sales order', delivery_challan: 'Delivery challan', debit_note: 'Debit note' }[kind]);
   return doc;
 }
 
-export async function createDocument(ctx: TenantCtx, kind: 'invoice' | 'quotation' | 'sales_order', input: DocInput, opts: { issue?: boolean; sourceType?: string; sourceId?: string } = {}) {
+export async function createDocument(ctx: TenantCtx, kind: 'invoice' | 'quotation' | 'sales_order' | 'delivery_challan', input: DocInput, opts: { issue?: boolean; sourceType?: string; sourceId?: string; skipCreditLimit?: boolean } = {}) {
   const { tenant, doc, lines } = await prepare(ctx, input);
   // Default terms from Settings › Documents when the document has none
   if (!doc.terms) {
@@ -169,22 +187,22 @@ export async function createDocument(ctx: TenantCtx, kind: 'invoice' | 'quotatio
   const numbered = kind === 'invoice' ? null : await allocateNumber(ctx.tenantId, kind, tenant.fyStartMonth);
   const created = await db().salesDocument.create({
     data: {
-      ...doc, tenantId: ctx.tenantId, kind, status: kind === 'sales_order' ? 'open' : 'draft', number: numbered?.number, fy: numbered?.fy, shareToken: kind === 'sales_order' ? randomToken(18) : undefined,
+      ...doc, tenantId: ctx.tenantId, kind, status: kind === 'sales_order' ? 'open' : kind === 'delivery_challan' ? 'issued' : 'draft', number: numbered?.number, fy: numbered?.fy, shareToken: kind === 'sales_order' || kind === 'delivery_challan' ? randomToken(18) : undefined,
       createdBy: ctx.userId, sourceType: opts.sourceType, sourceId: opts.sourceId,
       lines: { create: lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) },
     },
   });
-  if (kind === 'invoice' && opts.issue) return issueInvoice(ctx, created.id);
+  if (kind === 'invoice' && opts.issue) return issueInvoice(ctx, created.id, { skipCreditLimit: opts.skipCreditLimit });
   return getDocument(ctx, created.id, kind);
 }
 
 export async function updateDocument(ctx: TenantCtx, id: string, kind: SalesDocKind, input: DocInput, version: number) {
   const existing = await getDocument(ctx, id, kind);
-  const editable = kind === 'invoice' ? existing.status === 'draft' : kind === 'sales_order' ? existing.status === 'open' : ['draft', 'sent'].includes(existing.status);
+  const editable = kind === 'invoice' ? existing.status === 'draft' : kind === 'sales_order' ? existing.status === 'open' : kind === 'delivery_challan' ? existing.status === 'issued' : ['draft', 'sent'].includes(existing.status);
   // BIL-04: issued invoices are immutable; corrections go through credit/debit notes
-  if (!editable) throw new AppError('CONFLICT', kind === 'invoice' ? 'Issued invoices cannot be edited. Cancel it or issue a credit note.' : kind === 'sales_order' ? 'This order can no longer be edited.' : 'This quotation can no longer be edited.');
-  if (kind === 'sales_order' && (await db().salesDocument.count({ where: { kind: 'invoice', sourceId: id, status: { not: 'cancelled' } } }))) {
-    throw new AppError('CONFLICT', 'This order has invoices, so it can no longer be edited.');
+  if (!editable) throw new AppError('CONFLICT', kind === 'invoice' ? 'Issued invoices cannot be edited. Cancel it or issue a credit note.' : kind === 'sales_order' ? 'This order can no longer be edited.' : kind === 'delivery_challan' ? 'This challan is already invoiced or cancelled.' : 'This quotation can no longer be edited.');
+  if (kind === 'sales_order' && (await db().salesDocument.count({ where: { kind: { in: ['invoice', 'delivery_challan'] }, sourceId: id, status: { not: 'cancelled' } } }))) {
+    throw new AppError('CONFLICT', 'This order has invoices or challans, so it can no longer be edited.');
   }
   if (existing.version !== version) throw new AppError('VERSION_CONFLICT', 'This document was changed by someone else. Reload and try again.');
   const { doc, lines } = await prepare(ctx, input, existing);
@@ -197,8 +215,34 @@ export async function updateDocument(ctx: TenantCtx, id: string, kind: SalesDocK
   return getDocument(ctx, id, kind);
 }
 
+/** What the customer owes now on bills, before this one. */
+async function customerOwes(contactId: string) {
+  const open = await db().salesDocument.aggregate({
+    where: { contactId, kind: { in: ['invoice', 'opening_balance', 'debit_note'] }, status: { in: ['issued', 'partially_paid'] } },
+    _sum: { totalPaise: true, paidPaise: true },
+  });
+  // Advances and credit not yet used are the customer's money, so they come off, as in the ledger
+  const [advances, credits] = await Promise.all([
+    db().payment.findMany({ where: { contactId, documentId: null, reversesId: null, reversal: null }, select: { amountPaise: true, adjustments: { select: { amountPaise: true } } } }),
+    db().salesDocument.aggregate({ where: { contactId, kind: 'credit_note', status: 'issued' }, _sum: { totalPaise: true, paidPaise: true } }),
+  ]);
+  const heldAdvance = advances.reduce((sum, a) => sum + a.amountPaise - a.adjustments.reduce((used, u) => used + u.amountPaise, 0n), 0n);
+  const heldCredit = (credits._sum.totalPaise ?? 0n) - (credits._sum.paidPaise ?? 0n);
+  return (open._sum.totalPaise ?? 0n) - (open._sum.paidPaise ?? 0n) - heldAdvance - heldCredit;
+}
+
+async function checkCreditLimit(contactId: string | null, addingPaise: bigint) {
+  if (!contactId) return;
+  const contact = await db().contact.findUnique({ where: { id: contactId }, select: { creditLimitPaise: true } });
+  if (contact?.creditLimitPaise == null) return;
+  const owes = await customerOwes(contactId);
+  if (owes + addingPaise <= contact.creditLimitPaise) return;
+  const rupees = (p: bigint) => `₹${(Number(p) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  throw new AppError('CONFLICT', `This takes the customer over their credit limit of ${rupees(contact.creditLimitPaise)}. They owe ${rupees(owes)}, and this bill adds ${rupees(addingPaise)}.`, { creditLimit: true });
+}
+
 /** Issue a draft invoice: allocate the FY number, freeze seller details, count against the plan. */
-export async function issueInvoice(ctx: TenantCtx, id: string) {
+export async function issueInvoice(ctx: TenantCtx, id: string, opts: { skipCreditLimit?: boolean } = {}) {
   const doc = await getDocument(ctx, id, 'invoice');
   if (doc.status !== 'draft') throw new AppError('CONFLICT', 'Only draft invoices can be issued.');
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId } });
@@ -215,9 +259,11 @@ export async function issueInvoice(ctx: TenantCtx, id: string) {
     notes: doc.notes,
     terms: doc.terms,
     roundOff: doc.roundOffPaise !== 0n,
-    lines: doc.lines.map((l) => ({ itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: Number(l.unitPricePaise), discountPaise: Number(l.discountPaise), gstRateBp: l.gstRateBp, sourceLineId: l.sourceLineId })),
+    shipTo: doc.shipTo as DocInput['shipTo'],
+    lines: doc.lines.map((l) => ({ itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: Number(l.unitPricePaise), discountPaise: Number(l.discountPaise), gstRateBp: l.gstRateBp, sourceLineId: l.sourceLineId, freeQuantity: Number(l.freeQuantity) })),
   };
   const { doc: fresh, lines } = await prepare(ctx, input, doc);
+  if (!opts.skipCreditLimit) await checkCreditLimit(doc.contactId, fresh.totalPaise);
 
   const ent = await getEntitlements(ctx.tenantId);
   await consumeMonthly(ctx, 'invoices', ent.limits.invoicesPerMonth, 'invoices');
@@ -235,6 +281,8 @@ export async function issueInvoice(ctx: TenantCtx, id: string) {
     upiId: pay.upiId || null, showUpiQr: pay.showUpiQr && !!pay.upiId,
     // Settings › Documents › Print, frozen with the invoice like everything else here
     showHsnSummary: prefs.documents.showHsnSummary, showSignatory: prefs.documents.showSignatory, paper: prefs.documents.paper,
+    // Decided here and frozen: which document this is, whatever the business becomes later
+    billOfSupply: !tenant.gstin || prefs.taxes.composition, composition: !!tenant.gstin && prefs.taxes.composition,
   };
   await db().salesDocumentLine.deleteMany({ where: { documentId: id } });
   await db().salesDocument.update({
@@ -258,6 +306,7 @@ export async function cancelInvoice(ctx: TenantCtx, id: string, reason: string) 
   if (doc.paidPaise > 0n) throw new AppError('CONFLICT', 'This invoice has payments recorded. Issue a credit note instead (paid plans).');
   await db().salesDocument.update({ where: { id }, data: { status: 'cancelled', cancelledAt: new Date(), cancelReason: reason, version: { increment: 1 } } });
   if (doc.sourceType === 'sales_order' && doc.sourceId) await refreshOrderStatus(doc.sourceId);
+  if (doc.sourceType === 'delivery_challan' && doc.sourceId) await reopenChallan(doc.sourceId);
   await audit({ action: 'billing.invoice.cancel', entity: 'invoice', entityId: id, before: { status: doc.status }, after: { reason } });
   return getDocument(ctx, id, 'invoice');
 }
@@ -271,7 +320,7 @@ export const PaymentInput = z.object({
 });
 
 /** BIL-03: record a receipt against an issued invoice; status moves to partially paid / paid. */
-export async function recordPayment(ctx: TenantCtx, id: string, input: z.infer<typeof PaymentInput>, kind: 'invoice' | 'opening_balance' = 'invoice') {
+export async function recordPayment(ctx: TenantCtx, id: string, input: z.infer<typeof PaymentInput>, kind: 'invoice' | 'opening_balance' | 'debit_note' = 'invoice') {
   const doc = await getDocument(ctx, id, kind);
   if (!['issued', 'partially_paid'].includes(doc.status)) throw new AppError('CONFLICT', 'Payments can only be recorded on issued, unpaid invoices.');
   const balance = doc.totalPaise - doc.paidPaise;
@@ -295,7 +344,7 @@ export async function refreshOrderStatus(orderId: string) {
   const order = await db().salesDocument.findUnique({ where: { id: orderId }, include: { lines: true } });
   if (!order || order.kind !== 'sales_order' || order.status === 'cancelled') return;
   const invoiced = await db().salesDocumentLine.findMany({
-    where: { sourceLineId: { in: order.lines.map((l) => l.id) }, document: { kind: 'invoice', status: { not: 'cancelled' } } },
+    where: { sourceLineId: { in: order.lines.map((l) => l.id) }, document: { kind: { in: ['invoice', 'delivery_challan'] }, status: { not: 'cancelled' } } },
     select: { sourceLineId: true, quantity: true },
   });
   const done = (lineId: string) => invoiced.filter((i) => i.sourceLineId === lineId).reduce((s, i) => s + Number(i.quantity), 0);
@@ -303,9 +352,15 @@ export async function refreshOrderStatus(orderId: string) {
   if (status !== order.status) await db().salesDocument.update({ where: { id: orderId }, data: { status, version: { increment: 1 } } });
 }
 
+/** The invoice made from a challan went away: the challan can be invoiced again. */
+export async function reopenChallan(challanId: string) {
+  await db().salesDocument.updateMany({ where: { id: challanId, kind: 'delivery_challan', status: 'converted' }, data: { status: 'issued', version: { increment: 1 } } });
+}
+
 /** Issue a walk-in or counter bill and take the whole amount in one step. */
 export async function createCashBill(ctx: TenantCtx, input: DocInput, receive: { method: z.infer<typeof PaymentInput>['method']; reference?: string | null }) {
-  const invoice = await createDocument(ctx, 'invoice', input, { issue: true });
+  // The money comes in now, so nothing is added to what the customer owes
+  const invoice = await createDocument(ctx, 'invoice', input, { issue: true, skipCreditLimit: true });
   if (invoice.totalPaise <= 0n) return invoice;
   return recordPayment(ctx, invoice.id, { amountPaise: Number(invoice.totalPaise), method: receive.method, reference: receive.reference ?? null });
 }
@@ -336,7 +391,7 @@ export async function reversePayment(ctx: TenantCtx, id: string) {
   // A refund sits on its credit note: undoing it gives the credit back
   const owner = payment.documentId ? await db().salesDocument.findUnique({ where: { id: payment.documentId }, select: { kind: true } }) : null;
   const note = owner?.kind === 'credit_note' ? await getDocument(ctx, payment.documentId!, 'credit_note') : null;
-  const doc = owner?.kind === 'invoice' || owner?.kind === 'opening_balance' ? await getDocument(ctx, payment.documentId!, owner.kind) : null;
+  const doc = owner?.kind === 'invoice' || owner?.kind === 'opening_balance' || owner?.kind === 'debit_note' ? await getDocument(ctx, payment.documentId!, owner.kind) : null;
   if (!doc && !note && payment.adjustments.reduce((sum, a) => sum + a.amountPaise, 0n) > 0n) {
     throw new AppError('CONFLICT', 'This advance is used on an invoice. Remove it from the invoice first.');
   }
@@ -475,10 +530,10 @@ export async function publicDocument(token: string) {
   if (!doc || doc.status === 'draft') throw notFound('Document');
   return {
     kind: doc.kind, number: doc.number, status: doc.status, issueDate: doc.issueDate, dueDate: doc.dueDate, buyer: doc.buyer, seller: doc.seller,
-    creditedPaise: doc.creditedPaise, noteType: doc.noteType, sourceNumber: doc.sourceNumber,
+    creditedPaise: doc.creditedPaise, noteType: doc.noteType, sourceNumber: doc.sourceNumber, shipTo: doc.shipTo,
     placeOfSupply: doc.placeOfSupply, subtotalPaise: doc.subtotalPaise, discountPaise: doc.discountPaise, taxablePaise: doc.taxablePaise,
     cgstPaise: doc.cgstPaise, sgstPaise: doc.sgstPaise, igstPaise: doc.igstPaise, roundOffPaise: doc.roundOffPaise, totalPaise: doc.totalPaise, paidPaise: doc.paidPaise,
     notes: doc.notes, terms: doc.terms,
-    lines: doc.lines.map((l) => ({ description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: l.quantity, unitPricePaise: l.unitPricePaise, discountPaise: l.discountPaise, taxablePaise: l.taxablePaise, gstRateBp: l.gstRateBp, cgstPaise: l.cgstPaise, sgstPaise: l.sgstPaise, igstPaise: l.igstPaise, totalPaise: l.totalPaise })),
+    lines: doc.lines.map((l) => ({ description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: l.quantity, freeQuantity: l.freeQuantity, unitPricePaise: l.unitPricePaise, discountPaise: l.discountPaise, taxablePaise: l.taxablePaise, gstRateBp: l.gstRateBp, cgstPaise: l.cgstPaise, sgstPaise: l.sgstPaise, igstPaise: l.igstPaise, totalPaise: l.totalPaise })),
   };
 }

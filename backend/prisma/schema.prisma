@@ -1135,6 +1135,8 @@ enum SalesDocKind {
   credit_note
   opening_balance
   sales_order
+  delivery_challan
+  debit_note
 
   @@map("sales_doc_kind")
 }
@@ -1264,6 +1266,9 @@ model Contact {
   custom      Json        @default("{}")
   /// Created by "Try with sample data"; removed together from Settings › Data
   isSample    Boolean     @default(false) @map("is_sample")
+  /// Empty = no limit
+  creditLimitPaise BigInt? @map("credit_limit_paise")
+  priceListId String?     @map("price_list_id") @db.Uuid
   createdBy   String?     @map("created_by") @db.Uuid
   convertedAt DateTime?   @map("converted_at") @db.Timestamptz
   createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
@@ -1274,6 +1279,35 @@ model Contact {
   @@index([tenantId, phone])
   @@index([tenantId, email])
   @@map("contacts")
+}
+
+/// Rates for a group of customers: a discount on every item, and exact prices for some.
+model PriceList {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  name       String
+  discountBp Int      @default(0) @map("discount_bp")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  items PriceListItem[]
+
+  @@unique([tenantId, name])
+  @@map("price_lists")
+}
+
+model PriceListItem {
+  id          String @id @default(uuid(7)) @db.Uuid
+  tenantId    String @map("tenant_id") @db.Uuid
+  priceListId String @map("price_list_id") @db.Uuid
+  itemId      String @map("item_id") @db.Uuid
+  pricePaise  BigInt @map("price_paise")
+
+  priceList PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+
+  @@unique([priceListId, itemId])
+  @@index([tenantId, itemId])
+  @@map("price_list_items")
 }
 
 model Activity {
@@ -1327,6 +1361,8 @@ model SalesDocument {
   cgstPaise     BigInt         @default(0) @map("cgst_paise")
   sgstPaise     BigInt         @default(0) @map("sgst_paise")
   igstPaise     BigInt         @default(0) @map("igst_paise")
+  /// Where the goods go when it is not the billing address: name, line1, city, pincode, stateCode
+  shipTo        Json?          @map("ship_to")
   /// Added to make the total a whole rupee; part of totalPaise
   roundOffPaise BigInt         @default(0) @map("round_off_paise")
   totalPaise    BigInt         @default(0) @map("total_paise")
@@ -1382,6 +1418,8 @@ model SalesDocumentLine {
   igstPaise      BigInt  @default(0) @map("igst_paise")
   totalPaise     BigInt  @map("total_paise")
   position       Int     @default(0)
+  /// Given free on top of quantity; carries no price or tax
+  freeQuantity   Decimal @default(0) @map("free_quantity") @db.Decimal(18, 3)
   sourceLineId   String? @map("source_line_id") @db.Uuid // credit note: the invoice line it credits; invoice: the order line it bills
 
   document SalesDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)

@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils"
 // Settings › Documents (wireframe X2): number series, template, print options, terms.
 
 interface Series {
-  docType: "invoice" | "quotation" | "receipt" | "credit_note" | "sales_order"
+  docType: "invoice" | "quotation" | "receipt" | "credit_note" | "sales_order" | "delivery_challan" | "debit_note"
   label: string
   prefix: string
   nextNo: number
@@ -37,7 +37,7 @@ interface Series {
   minNext: number
 }
 
-const PREFIX_KEY = { invoice: "invoicePrefix", quotation: "quotationPrefix", receipt: "receiptPrefix", credit_note: "creditNotePrefix", sales_order: "salesOrderPrefix" } as const
+const PREFIX_KEY = { invoice: "invoicePrefix", quotation: "quotationPrefix", receipt: "receiptPrefix", credit_note: "creditNotePrefix", sales_order: "salesOrderPrefix", delivery_challan: "deliveryChallanPrefix", debit_note: "debitNotePrefix" } as const
 
 export default function DocumentsSettingsPage() {
   const { can } = useAuth()

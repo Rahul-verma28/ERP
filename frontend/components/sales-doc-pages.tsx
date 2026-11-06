@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeft, Ban, Copy, FileMinus, FileText, IndianRupee, Pencil, Plus, Printer, Send, Trash2, Undo2 } from "lucide-react"
+import { ArrowLeft, Ban, Copy, FileMinus, FileText, IndianRupee, Pencil, Plus, Printer, Send, Trash2, Truck, Undo2 } from "lucide-react"
 import { UseAdvanceDialog, type AdvanceList } from "@/components/advances"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -28,8 +28,8 @@ import { cn } from "@/lib/utils"
 import { docApi, docLabel, docPath, type DocKind, type SalesDoc } from "@/lib/sales"
 
 type Kind = DocKind
-const perm = (kind: Kind) => ({ invoice: "billing.invoice", quotation: "sales.quotation", sales_order: "sales.order" })[kind]
-const LIST_NAME = { invoice: "Invoices", quotation: "Quotations", sales_order: "Sales orders" }
+const perm = (kind: Kind) => ({ invoice: "billing.invoice", quotation: "sales.quotation", sales_order: "sales.order", delivery_challan: "sales.delivery" })[kind]
+const LIST_NAME = { invoice: "Invoices", quotation: "Quotations", sales_order: "Sales orders", delivery_challan: "Delivery challans" }
 
 interface Row {
   id: string
@@ -41,6 +41,7 @@ interface Row {
   totalPaise: number
   paidPaise: number
   branchId: string | null
+  noteType?: string | null
 }
 
 const STATUS_FILTERS: Record<Kind, { value: string; label: string }[]> = {
@@ -64,6 +65,12 @@ const STATUS_FILTERS: Record<Kind, { value: string; label: string }[]> = {
     { value: "open", label: "Open" },
     { value: "part_invoiced", label: "Part invoiced" },
     { value: "completed", label: "Completed" },
+    { value: "cancelled", label: "Cancelled" },
+  ],
+  delivery_challan: [
+    { value: "", label: "All" },
+    { value: "issued", label: "Not billed" },
+    { value: "converted", label: "Invoiced" },
     { value: "cancelled", label: "Cancelled" },
   ],
 }
@@ -90,6 +97,10 @@ function listStatus(kind: Kind, r: Row, today: string): { label: string; tone: k
     if (r.status === "cancelled") return { label: "Cancelled", tone: "gray" }
     return { label: "Draft", tone: "gray" }
   }
+  if (kind === "delivery_challan") {
+    const c: Record<string, { label: string; tone: keyof typeof PILL }> = { issued: { label: "Not billed", tone: "blue" }, converted: { label: "Invoiced", tone: "green" }, cancelled: { label: "Cancelled", tone: "gray" } }
+    return c[r.status] ?? { label: r.status, tone: "gray" }
+  }
   const tone: Record<string, keyof typeof PILL> = { draft: "gray", sent: "blue", accepted: "green", converted: "green", declined: "red", open: "blue", part_invoiced: "amber", completed: "green" }
   const words = r.status.replace(/_/g, " ")
   return { label: words.charAt(0).toUpperCase() + words.slice(1), tone: tone[r.status] ?? "gray" }
@@ -111,7 +122,7 @@ export function SalesDocList({ kind }: { kind: Kind }) {
   const due = (r: Row) => Math.max(0, r.totalPaise - r.paidPaise)
 
   const columns: Column<Row>[] = [
-    { key: "number", header: "Number", hideable: false, cell: (r) => <span className="font-semibold">{r.number ?? "Draft"}</span>, csv: (r) => r.number ?? "Draft", sort: (r) => r.number ?? "" },
+    { key: "number", header: "Number", hideable: false, cell: (r) => <span className="font-semibold">{r.number ?? "Draft"}{r.noteType === "proforma" && <span className="ml-2 text-xs font-normal text-muted-foreground">Proforma</span>}</span>, csv: (r) => r.number ?? "Draft", sort: (r) => r.number ?? "" },
     { key: "date", header: "Date", cell: (r) => formatDate(r.issueDate), csv: (r) => r.issueDate.slice(0, 10), sort: (r) => r.issueDate },
     { key: "customer", header: "Customer", cell: (r) => r.buyer?.name ?? "—", csv: (r) => r.buyer?.name, sort: (r) => r.buyer?.name?.toLowerCase() ?? "" },
     { key: "branch", header: "Branch", defaultHidden: (branches.data?.data.length ?? 0) < 2, cell: (r) => branchName(r.branchId), csv: (r) => branchName(r.branchId) },
@@ -144,11 +155,11 @@ export function SalesDocList({ kind }: { kind: Kind }) {
 
   return (
     <DataList<Row>
-      id={{ invoice: "invoices", quotation: "quotations", sales_order: "sales-orders" }[kind]}
+      id={{ invoice: "invoices", quotation: "quotations", sales_order: "sales-orders", delivery_challan: "delivery-challans" }[kind]}
       path={docApi(kind)}
       countsPath={`${docApi(kind)}/counts`}
       header={{
-        breadcrumb: { invoice: "Billing › Invoices", quotation: "Sales › Quotations", sales_order: "Sales › Sales orders" }[kind],
+        breadcrumb: { invoice: "Billing › Invoices", quotation: "Sales › Quotations", sales_order: "Sales › Sales orders", delivery_challan: "Sales › Delivery challans" }[kind],
         title: LIST_NAME[kind],
         actions: (
           <>
@@ -156,6 +167,8 @@ export function SalesDocList({ kind }: { kind: Kind }) {
             {kind === "invoice" && canCreate && can("billing.payment.create") && <HeaderLink href="/app/m/billing/new?cash=1">Cash bill</HeaderLink>}
             {kind === "quotation" && can("sales.order.view") && <HeaderLink href="/app/m/sales/orders">Sales orders</HeaderLink>}
             {kind === "sales_order" && can("sales.quotation.view") && <HeaderLink href="/app/m/sales">Quotations</HeaderLink>}
+            {kind === "sales_order" && can("sales.delivery.view") && <HeaderLink href="/app/m/sales/challans">Delivery challans</HeaderLink>}
+            {kind === "delivery_challan" && can("sales.order.view") && <HeaderLink href="/app/m/sales/orders">Sales orders</HeaderLink>}
           </>
         ),
         primary: newButton,
@@ -165,12 +178,12 @@ export function SalesDocList({ kind }: { kind: Kind }) {
       presets={presets}
       filters={[periodFilter(me?.tenant?.fyStartMonth ?? 4)]}
       rowHref={(r) => `/app/m/${docPath(kind)}/${r.id}`}
-      exportName={{ invoice: "invoices", quotation: "quotations", sales_order: "sales-orders" }[kind]}
+      exportName={{ invoice: "invoices", quotation: "quotations", sales_order: "sales-orders", delivery_challan: "delivery-challans" }[kind]}
       emptyState={
         <EmptyState
           icon={FileText}
           title={`No ${label.toLowerCase()}s yet`}
-          description={{ invoice: "Create a GST invoice in under a minute, or bring your old invoices in.", quotation: "Send a quotation and convert it to an invoice when accepted.", sales_order: "Write down what the customer ordered, then invoice it in one go or in parts." }[kind]}
+          description={{ invoice: "Create a GST invoice in under a minute, or bring your old invoices in.", quotation: "Send a quotation and convert it to an invoice when accepted.", sales_order: "Write down what the customer ordered, then invoice it in one go or in parts.", delivery_challan: "Send goods with a challan, then make the invoice from it." }[kind]}
           action={newButton}
         />
       }
@@ -265,7 +278,7 @@ function PaymentDialog({ doc, onClose, onSaved }: { doc: SalesDoc; onClose: () =
   )
 }
 
-function OrderInvoiceDialog({ order, onClose, onSaved }: { order: SalesDoc; onClose: () => void; onSaved: (inv: SalesDoc) => void }) {
+function OrderInvoiceDialog({ order, target, onClose, onSaved }: { order: SalesDoc; target: "invoice" | "challan"; onClose: () => void; onSaved: (d: SalesDoc) => void }) {
   const { data: lines, error: loadError } = useApi<{ id: string; description: string; unit: string; quantityLeft: number }[]>(`/sales-orders/${order.id}/open-lines`)
   const [typed, setTyped] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
@@ -278,8 +291,8 @@ function OrderInvoiceDialog({ order, onClose, onSaved }: { order: SalesDoc; onCl
     setBusy(true)
     setError(null)
     try {
-      const inv = await api.post<SalesDoc>(`/sales-orders/${order.id}/invoice`, { lines: chosen.map((l) => ({ sourceLineId: l.id, quantity: Number(qty(l)) })) })
-      toast.success("Draft invoice created")
+      const inv = await api.post<SalesDoc>(`/sales-orders/${order.id}/${target}`, { lines: chosen.map((l) => ({ sourceLineId: l.id, quantity: Number(qty(l)) })) })
+      toast.success(target === "invoice" ? "Draft invoice created" : "Delivery challan created")
       onSaved(inv)
     } catch (err) {
       setError(errorMessage(err))
@@ -290,8 +303,8 @@ function OrderInvoiceDialog({ order, onClose, onSaved }: { order: SalesDoc; onCl
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create invoice</DialogTitle>
-          <DialogDescription>Choose how much of {order.number} to bill now. You can bill the rest later.</DialogDescription>
+          <DialogTitle>{target === "invoice" ? "Create invoice" : "Create delivery challan"}</DialogTitle>
+          <DialogDescription>Choose how much of {order.number} to {target === "invoice" ? "bill" : "send"} now. You can do the rest later.</DialogDescription>
         </DialogHeader>
         <form onSubmit={save} className="grid gap-4">
           {loadError && <FormError message={loadError.message} />}
@@ -306,7 +319,7 @@ function OrderInvoiceDialog({ order, onClose, onSaved }: { order: SalesDoc; onCl
             </div>
           ))}
           <FormError message={error} />
-          <DialogFooter><Button type="submit" disabled={busy || !lines}>{busy ? "Saving…" : "Create draft invoice"}</Button></DialogFooter>
+          <DialogFooter><Button type="submit" disabled={busy || !lines}>{busy ? "Saving…" : target === "invoice" ? "Create draft invoice" : "Create challan"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -319,8 +332,11 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
   const { data: doc, setData, reload, error } = useApi<SalesDoc>(`${docApi(kind)}/${id}`)
   const advances = useApi<AdvanceList>(kind === "invoice" && doc?.contactId && can("billing.payment.view") ? `/advances?contactId=${doc.contactId}` : null)
   const creditNotes = useApi<{ data: { id: string; number: string; status: string; issueDate: string; totalPaise: number }[] }>(kind === "invoice" && can("billing.credit_note.view") ? `/credit-notes?sourceId=${id}&limit=50` : null)
-  const orderInvoices = useApi<{ data: { id: string; number: string | null; status: string; totalPaise: number }[] }>(kind === "sales_order" && can("billing.invoice.view") ? `/invoices?sourceId=${id}&limit=50` : null)
-  const [invoicingOrder, setInvoicingOrder] = React.useState(false)
+  const orderInvoices = useApi<{ data: { id: string; number: string | null; status: string; totalPaise: number }[] }>((kind === "sales_order" || kind === "delivery_challan") && can("billing.invoice.view") ? `/invoices?sourceId=${id}&limit=50` : null)
+  const challans = useApi<{ data: { id: string; number: string | null; status: string; totalPaise: number }[] }>(kind === "sales_order" && can("sales.delivery.view") ? `/delivery-challans?sourceId=${id}&limit=50` : null)
+  const debitNotes = useApi<{ data: { id: string; number: string; status: string; issueDate: string; totalPaise: number }[] }>(kind === "invoice" && can("billing.credit_note.view") ? `/debit-notes?sourceId=${id}&limit=50` : null)
+  const [invoicingOrder, setInvoicingOrder] = React.useState<null | "invoice" | "challan">(null)
+  const [overLimit, setOverLimit] = React.useState<string | null>(null)
   const [paying, setPaying] = React.useState(false)
   const [usingAdvance, setUsingAdvance] = React.useState(false)
   const [reversing, setReversing] = React.useState<NonNullable<SalesDoc["payments"]>[number] | null>(null)
@@ -332,7 +348,7 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
   if (!doc) return <div className="grid place-items-center py-24"><Spinner /></div>
 
   const p = perm(kind)
-  const editable = kind === "invoice" ? doc.status === "draft" : kind === "sales_order" ? doc.status === "open" : ["draft", "sent"].includes(doc.status)
+  const editable = kind === "invoice" ? doc.status === "draft" : kind === "sales_order" ? doc.status === "open" : kind === "delivery_challan" ? doc.status === "issued" : ["draft", "sent"].includes(doc.status)
   const shareUrl = doc.shareToken ? `${window.location.origin}/d/${doc.shareToken}` : null
   const balance = doc.totalPaise - doc.paidPaise
   const spendable = (advances.data?.balancePaise ?? 0) + (advances.data?.creditPaise ?? 0)
@@ -359,7 +375,7 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
-            {doc.number ?? `Draft ${docLabel(kind).toLowerCase()}`} <StatusBadge status={doc.status} />
+            {doc.number ?? `Draft ${docLabel(kind).toLowerCase()}`} <StatusBadge status={kind === "delivery_challan" && doc.status === "converted" ? "invoiced" : kind === "delivery_challan" && doc.status === "issued" ? "not_billed" : doc.status} />
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {doc.buyer.name} · {formatPaise(doc.totalPaise)}
@@ -370,7 +386,18 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
         <div className="flex flex-wrap gap-2">
           {editable && can(`${p}.edit`) && <Link href={`/app/m/${docPath(kind)}/${id}/edit`} className={buttonVariants({ variant: "outline" })}><Pencil /> Edit</Link>}
           {kind === "invoice" && doc.status === "draft" && can("billing.invoice.create") && (
-            <Button disabled={busy} onClick={() => act(() => api.post<SalesDoc>(`/invoices/${id}/issue`), "Invoice issued")}><Send /> Issue invoice</Button>
+            <Button disabled={busy} onClick={async () => {
+              setBusy(true)
+              try {
+                setData(await api.post<SalesDoc>(`/invoices/${id}/issue`))
+                toast.success("Invoice issued")
+              } catch (e) {
+                if (e instanceof ApiError && e.details?.creditLimit && can("billing.invoice.approve")) setOverLimit(e.message)
+                else toast.error(errorMessage(e))
+              } finally {
+                setBusy(false)
+              }
+            }}><Send /> Issue invoice</Button>
           )}
           {kind === "invoice" && ["issued", "partially_paid"].includes(doc.status) && can("billing.payment.create") && (
             <Button onClick={() => setPaying(true)}><IndianRupee /> Record payment</Button>
@@ -379,7 +406,7 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
             <Button variant="outline" onClick={() => setUsingAdvance(true)}>Use advance or credit ({formatPaise(spendable)})</Button>
           )}
           {kind === "invoice" && ["issued", "partially_paid", "paid"].includes(doc.status) && can("billing.credit_note.create") && (
-            <Link href={`/app/m/billing/${id}/credit-note`} className={buttonVariants({ variant: "outline" })}><FileMinus /> Credit note</Link>
+            <Link href={`/app/m/billing/${id}/credit-note`} className={buttonVariants({ variant: "outline" })}><FileMinus /> Credit or debit note</Link>
           )}
           {kind === "quotation" && doc.status === "draft" && can("sales.quotation.edit") && (
             <Button variant="outline" disabled={busy} onClick={() => act(() => api.post<SalesDoc>(`/quotations/${id}/status`, { status: "sent" }), "Marked as sent")}><Send /> Mark sent</Button>
@@ -428,7 +455,31 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
             </Button>
           )}
           {kind === "sales_order" && ["open", "part_invoiced"].includes(doc.status) && can("billing.invoice.create") && (
-            <Button onClick={() => setInvoicingOrder(true)}><FileText /> Create invoice</Button>
+            <Button onClick={() => setInvoicingOrder("invoice")}><FileText /> Create invoice</Button>
+          )}
+          {kind === "sales_order" && ["open", "part_invoiced"].includes(doc.status) && can("sales.delivery.create") && (
+            <Button variant="outline" onClick={() => setInvoicingOrder("challan")}><Truck /> Create challan</Button>
+          )}
+          {kind === "delivery_challan" && doc.status === "issued" && can("billing.invoice.create") && (
+            <Button
+              disabled={busy}
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  const inv = await api.post<SalesDoc>(`/delivery-challans/${id}/invoice`)
+                  toast.success("Draft invoice created")
+                  router.push(`/app/m/billing/${inv.id}`)
+                } catch (e) {
+                  toast.error(errorMessage(e))
+                  setBusy(false)
+                }
+              }}
+            >
+              <FileText /> Create invoice
+            </Button>
+          )}
+          {kind === "delivery_challan" && doc.status === "issued" && can("sales.delivery.edit") && (
+            <Button variant="ghost" onClick={() => setCancelling(true)}><Ban /> Cancel</Button>
           )}
           {doc.status !== "draft" && <a href={`/print/${kind}/${id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><Printer /> Print / PDF</a>}
           {kind === "invoice" && ["issued", "partially_paid"].includes(doc.status) && doc.paidPaise === 0 && can("billing.invoice.approve") && (
@@ -527,6 +578,49 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
               </CardContent>
             </Card>
           )}
+          {(challans.data?.data.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader><CardTitle className="text-base">Delivery challans</CardTitle></CardHeader>
+              <CardContent>
+                <ul className="grid gap-2 text-sm">
+                  {challans.data!.data.map((n) => (
+                    <li key={n.id}>
+                      <Link href={`/app/m/sales/challans/${n.id}`} className="flex justify-between gap-2 hover:underline">
+                        <span className="min-w-0">
+                          <span className="font-mono text-xs">{n.number}</span>
+                          <span className="block text-xs text-muted-foreground">{n.status === "converted" ? "Invoiced" : n.status === "issued" ? "Not billed" : "Cancelled"}</span>
+                        </span>
+                        <span className="font-medium tabular-nums">{formatPaise(n.totalPaise)}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+          {(debitNotes.data?.data.length ?? 0) > 0 && (
+            <Card>
+              <CardHeader><CardTitle className="text-base">Debit notes</CardTitle></CardHeader>
+              <CardContent>
+                <ul className="grid gap-2 text-sm">
+                  {debitNotes.data!.data.map((n) => (
+                    <li key={n.id}>
+                      <Link href={`/app/m/billing/debit-notes/${n.id}`} className="flex justify-between gap-2 hover:underline">
+                        <span className="min-w-0">
+                          <span className="font-mono text-xs">{n.number}</span>
+                          <span className="block text-xs text-muted-foreground">{formatDate(n.issueDate)}{n.status === "cancelled" ? " · Cancelled" : ""}</span>
+                        </span>
+                        <span className="font-medium tabular-nums">{formatPaise(n.totalPaise)}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+          {doc.sourceType === "delivery_challan" && doc.sourceId && (
+            <Link href={`/app/m/sales/challans/${doc.sourceId}`} className="text-sm text-muted-foreground hover:text-foreground">Created from a delivery challan →</Link>
+          )}
           {(orderInvoices.data?.data.length ?? 0) > 0 && (
             <Card>
               <CardHeader><CardTitle className="text-base">Invoices</CardTitle></CardHeader>
@@ -556,7 +650,15 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
         </div>
       </div>
 
-      {invoicingOrder && <OrderInvoiceDialog order={doc} onClose={() => setInvoicingOrder(false)} onSaved={(inv) => router.push(`/app/m/billing/${inv.id}`)} />}
+      {invoicingOrder && <OrderInvoiceDialog order={doc} target={invoicingOrder} onClose={() => setInvoicingOrder(null)} onSaved={(d) => router.push(invoicingOrder === "invoice" ? `/app/m/billing/${d.id}` : `/app/m/sales/challans/${d.id}`)} />}
+      <ConfirmDialog
+        open={!!overLimit}
+        onOpenChange={(o) => !o && setOverLimit(null)}
+        title="Over the credit limit"
+        description={overLimit ?? ""}
+        confirmLabel="Issue anyway"
+        onConfirm={() => act(() => api.post<SalesDoc>(`/invoices/${id}/issue-over-limit`), "Invoice issued")}
+      />
       {paying && <PaymentDialog doc={doc} onClose={() => setPaying(false)} onSaved={(d) => { setPaying(false); setData(d) }} />}
       {usingAdvance && <UseAdvanceDialog doc={doc} list={advances.data!} onClose={() => setUsingAdvance(false)} onSaved={(d) => { setUsingAdvance(false); setData(d); void advances.reload() }} />}
       <ConfirmDialog

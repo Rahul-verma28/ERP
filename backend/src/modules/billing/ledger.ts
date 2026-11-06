@@ -32,7 +32,7 @@ export async function customerLedger(ctx: TenantCtx, contactId: string, period: 
   const contact = await loadContact(ctx, contactId);
   const [docs, payments, held] = await Promise.all([
     db().salesDocument.findMany({
-      where: { AND: [{ contactId, kind: { in: ['invoice', 'credit_note', 'opening_balance'] }, status: { notIn: ['draft', 'cancelled'] } }, scopeWhere(ctx, SCOPE_FIELDS)] },
+      where: { AND: [{ contactId, kind: { in: ['invoice', 'credit_note', 'opening_balance', 'debit_note'] }, status: { notIn: ['draft', 'cancelled'] } }, scopeWhere(ctx, SCOPE_FIELDS)] },
       select: { id: true, kind: true, number: true, status: true, issueDate: true, createdAt: true, totalPaise: true, paidPaise: true },
     }),
     db().payment.findMany({
@@ -75,7 +75,7 @@ export async function customerLedger(ctx: TenantCtx, contactId: string, period: 
   const opening = docs.find((d) => d.kind === 'opening_balance');
 
   return {
-    contact: { id: contact.id, name: contact.companyName || contact.name, phone: contact.phone, email: contact.email, gstin: contact.gstin, address: contact.address },
+    contact: { id: contact.id, name: contact.companyName || contact.name, phone: contact.phone, email: contact.email, gstin: contact.gstin, address: contact.address, creditLimitPaise: contact.creditLimitPaise },
     from: period.from ?? null,
     to: period.to ?? null,
     broughtForwardPaise: broughtForward,

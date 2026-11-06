@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { MoneyInput } from "@/components/common"
 import { DiscardChangesDialog, ErrorSummary, Field, FormError, NativeSelect } from "@/components/form"
 import { CustomFieldsForm, useCustomFields } from "@/components/custom-fields"
 import { UserSelect } from "@/components/pickers"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { useApi } from "@/lib/use-api"
 import { Cancelled, useForm } from "@/lib/use-form"
 
 export interface Contact {
@@ -32,6 +34,8 @@ export interface Contact {
   isActive: boolean
   notes: string | null
   custom: Record<string, unknown>
+  creditLimitPaise?: number | null
+  priceListId?: string | null
   createdAt: string
   version: number
 }
@@ -41,7 +45,8 @@ export const LEAD_SOURCES = ["Walk-in", "Phone call", "WhatsApp", "Instagram", "
 type Duplicate = { id: string; name: string; type: "customer" | "lead" } | null
 
 export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "customer" | "lead"; contact?: Contact; onClose: () => void; onSaved: (c: Contact) => void }) {
-  const { term } = useAuth()
+  const { term, can } = useAuth()
+  const priceLists = useApi<{ data: { id: string; name: string }[] }>(kind === "customer" && can("catalog.price_list.view") ? "/price-lists" : null)
   const fields = useCustomFields(kind === "lead" ? "lead" : "contact")
   const [customErrors, setCustomErrors] = React.useState<Record<string, string>>({})
   const [allowDuplicate, setAllowDuplicate] = React.useState(false)
@@ -65,6 +70,8 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
       ownerId: contact?.ownerId ?? (null as string | null),
       notes: contact?.notes ?? "",
       custom: contact?.custom ?? ({} as Record<string, unknown>),
+      creditLimitPaise: contact?.creditLimitPaise ?? (null as number | null),
+      priceListId: contact?.priceListId ?? "",
     },
     labels: { name: "Name", phone: "Phone", email: "Email", gstin: "GSTIN", stateCode: "State", pincode: "PIN code", notes: "Notes" },
     clean: { name: squish, companyName: squish, phone: (v) => v.trim(), email: (v) => v.trim().toLowerCase(), gstin: upperNoSpaces, line1: squish, city: squish, pincode: (v) => v.replace(/\s/g, "") },
@@ -92,7 +99,7 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
         ownerId: v.ownerId,
         notes: v.notes || null,
         custom: v.custom,
-        ...(kind === "lead" ? { leadSource: v.leadSource || null, leadStatus: v.leadStatus } : {}),
+        ...(kind === "lead" ? { leadSource: v.leadSource || null, leadStatus: v.leadStatus } : { creditLimitPaise: v.creditLimitPaise, priceListId: v.priceListId || null }),
       }
       try {
         const saved = contact
@@ -189,6 +196,21 @@ export function ContactDialog({ kind, contact, onClose, onSaved }: { kind: "cust
                     ))}
                   </NativeSelect>
                 </Field>
+              </>
+            )}
+            {kind === "customer" && (
+              <>
+                <Field label="Credit limit" hint="Bills past this need approval. Empty means no limit.">
+                  <MoneyInput value={v.creditLimitPaise} onChange={(a) => form.set("creditLimitPaise", a)} aria-label="Credit limit" />
+                </Field>
+                {(priceLists.data?.data.length ?? 0) > 0 && (
+                  <Field label="Price list" hint="New bills use these rates.">
+                    <NativeSelect {...form.field("priceListId")}>
+                      <option value="">Standard prices</option>
+                      {priceLists.data!.data.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </NativeSelect>
+                  </Field>
+                )}
               </>
             )}
             <Field label="State (place of supply)" error={form.errors.stateCode}>

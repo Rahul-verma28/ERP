@@ -219,4 +219,42 @@ export async function importItems(ctx: Pick<TenantCtx, 'tenantId' | 'userId'>, i
     return result;
 }
 
+// ── Price lists ──
+
+const PriceListInput = z.object({ name: z.string().trim().min(2, 'Use at least 2 characters').max(80), discountBp: z.number().int().min(0).max(10_000).default(0) });
+
+router.get('/price-lists', requirePermission('catalog.price_list.view'), tx(async (_req, res) => {
+  const rows = await db().priceList.findMany({ orderBy: { name: 'asc' }, include: { _count: { select: { items: true } } } });
+  const customers = await db().contact.groupBy({ by: ['priceListId'], where: { priceListId: { not: null } }, _count: true });
+  const counts = new Map(customers.map((c) => [c.priceListId, c._count]));
+  res.json({ data: rows.map(({ _count, ...r }) => ({ ...r, itemCount: _count.items, customerCount: counts.get(r.id) ?? 0 })) });
+}));
+router.post('/price-lists', requirePermission('catalog.price_list.create'), validate(PriceListInput), tx(async (req, res) => {
+  const list = await db().priceList.create({ data: { ...req.body, tenantId: req.ctx!.tenantId } });
+  await audit({ action: 'catalog.price_list.create', entity: 'price_list', entityId: list.id, after: req.body });
+  res.status(201).json(list);
+}));
+router.patch('/price-lists/:id', requirePermission('catalog.price_list.edit'), validate(IdParam, 'params'), validate(PriceListInput), tx(async (req, res) => {
+  const list = await db().priceList.update({ where: { id: String(req.params.id) }, data: req.body });
+  await audit({ action: 'catalog.price_list.edit', entity: 'price_list', entityId: list.id, after: req.body });
+  res.json(list);
+}));
+router.delete('/price-lists/:id', requirePermission('catalog.price_list.delete'), validate(IdParam, 'params'), tx(async (req, res) => {
+  await db().priceList.delete({ where: { id: String(req.params.id) } });
+  await audit({ action: 'catalog.price_list.delete', entity: 'price_list', entityId: String(req.params.id) });
+  res.status(204).end();
+}));
+// Exact prices on a list; an empty price takes the item back to the list's discount
+router.get('/price-lists/:id/items', requirePermission('catalog.price_list.view'), validate(IdParam, 'params'), tx(async (req, res) => {
+  const rows = await db().priceListItem.findMany({ where: { priceListId: String(req.params.id) } });
+  res.json({ data: rows.map((r) => ({ itemId: r.itemId, pricePaise: r.pricePaise })) });
+}));
+router.put('/price-lists/:id/items/:itemId', requirePermission('catalog.price_list.edit'), validate(z.object({ id: z.string().uuid(), itemId: z.string().uuid() }), 'params'), validate(z.object({ pricePaise: Paise.nullable() })), tx(async (req, res) => {
+  const priceListId = String(req.params.id);
+  const itemId = String(req.params.itemId);
+  if (req.body.pricePaise === null) await db().priceListItem.deleteMany({ where: { priceListId, itemId } });
+  else await db().priceListItem.upsert({ where: { priceListId_itemId: { priceListId, itemId } }, create: { tenantId: req.ctx!.tenantId, priceListId, itemId, pricePaise: BigInt(req.body.pricePaise) }, update: { pricePaise: BigInt(req.body.pricePaise) } });
+  res.status(204).end();
+}));
+
 export default router;

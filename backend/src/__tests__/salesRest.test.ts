@@ -25,7 +25,7 @@ afterAll(() => prisma.$disconnect());
 async function setup() {
   const n = String(Math.floor(Math.random() * 1e9)).padStart(9, '0');
   const user = await db().user.create({ data: { name: 'Sales Tester', email: `sales-${n}@example.test`, mobile: `+917${n}` } });
-  const tenant = await db().tenant.create({ data: { name: `Sales Test ${n}`, industryKey: 'general', templateVersion: 1, ownerUserId: user.id, billingStateCode: '09' } });
+  const tenant = await db().tenant.create({ data: { name: `Sales Test ${n}`, industryKey: 'general', templateVersion: 1, ownerUserId: user.id, billingStateCode: '09', gstin: '09AAACS1234F1Z5' } });
   const contact = await db().contact.create({ data: { tenantId: tenant.id, type: 'customer', name: 'Sharma Traders', gstin: '09AAACS1234F1Z5', stateCode: '09' } });
   const ctx: TenantCtx = { kind: 'tenant', tenantId: tenant.id, userId: user.id, memberId: randomUUID(), roleId: randomUUID(), sessionId: randomUUID(), branchIds: [], scope: 'all' };
   return { ctx, contact };

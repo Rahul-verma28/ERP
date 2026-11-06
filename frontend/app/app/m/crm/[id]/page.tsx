@@ -25,7 +25,7 @@ import { ContactDialog, type Contact } from "../contact-form"
 interface Detail extends Contact {
   owner: { id: string; name: string } | null
   activities: { id: string; type: "note" | "call" | "meeting" | "follow_up"; title: string | null; body: string | null; dueAt: string | null; completedAt: string | null; createdAt: string; createdByName: string | null; assigneeName: string | null }[]
-  documents: { id: string; kind: "invoice" | "quotation" | "credit_note" | "sales_order"; number: string | null; status: string; issueDate: string; totalPaise: number; paidPaise: number }[]
+  documents: { id: string; kind: "invoice" | "quotation" | "credit_note" | "debit_note" | "sales_order" | "delivery_challan"; number: string | null; status: string; issueDate: string; totalPaise: number; paidPaise: number }[]
   appointments: { id: string; title: string; startAt: string; status: string }[]
 }
 
@@ -192,7 +192,7 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
                   <ul className="divide-y">
                     {c.documents.map((d) => (
                       <li key={d.id}>
-                        <Link href={d.kind === "credit_note" ? `/app/m/billing/credit-notes/${d.id}` : d.kind === "sales_order" ? `/app/m/sales/orders/${d.id}` : `/app/m/${d.kind === "invoice" ? "billing" : "sales"}/${d.id}`} className="flex items-center gap-3 py-2 text-sm hover:underline">
+                        <Link href={d.kind === "credit_note" ? `/app/m/billing/credit-notes/${d.id}` : d.kind === "debit_note" ? `/app/m/billing/debit-notes/${d.id}` : d.kind === "sales_order" ? `/app/m/sales/orders/${d.id}` : d.kind === "delivery_challan" ? `/app/m/sales/challans/${d.id}` : `/app/m/${d.kind === "invoice" ? "billing" : "sales"}/${d.id}`} className="flex items-center gap-3 py-2 text-sm hover:underline">
                           <span className="w-28 font-mono text-xs">{d.number ?? "Draft"}</span>
                           <span className="text-muted-foreground">{formatDate(d.issueDate)}</span>
                           <StatusBadge status={d.status} />

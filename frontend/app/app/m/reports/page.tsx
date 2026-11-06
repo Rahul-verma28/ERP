@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { toast } from "sonner"
 import { Download } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -80,7 +81,7 @@ interface GstReport {
   b2c: ({ placeOfSupply: string | null } & GstAmounts)[]
   creditNotes: (GstHead & GstAmounts & { invoiceNumber: string | null; noteType: string | null })[]
   hsn: ({ hsnSac: string | null; unit: string; quantity: number } & GstAmounts)[]
-  totals: Omit<GstAmounts, "gstRateBp"> & { totalPaise: number; roundOffPaise: number; invoices: number; creditNotes: number }
+  totals: Omit<GstAmounts, "gstRateBp"> & { totalPaise: number; roundOffPaise: number; invoices: number; creditNotes: number; debitNotes: number; billOfSupplyPaise: number }
 }
 
 const stateName = (code: string | null) => GST_STATES.find(([c]) => c === code)?.[1] ?? code ?? "—"
@@ -158,12 +159,37 @@ function CollectionReport({ query }: { query: string }) {
   )
 }
 
+interface PendingRow { orderId: string; number: string; date: string; deliverBy: string | null; customer: string; item: string; unit: string; ordered: number; billed: number; left: number; valuePaise: number }
+
+function PendingOrders() {
+  const { data, error } = useApi<{ rows: PendingRow[] }>("/reports/pending-orders")
+  if (!data) return <Loading error={error} />
+  return (
+    <ReportTable
+      title={`${data.rows.length} line${data.rows.length === 1 ? "" : "s"} left on open orders, all dates`}
+      rows={data.rows}
+      exportName="pending-orders"
+      cols={[
+        { header: "Order", cell: (r) => <Link href={`/app/m/sales/orders/${r.orderId}`} className="hover:underline">{r.number}</Link>, csv: (r) => r.number },
+        { header: "Date", cell: (r) => formatDate(r.date), csv: (r) => r.date },
+        { header: "Deliver by", cell: (r) => (r.deliverBy ? formatDate(r.deliverBy) : "—"), csv: (r) => r.deliverBy ?? "" },
+        { header: "Customer", cell: (r) => r.customer, csv: (r) => r.customer },
+        { header: "Item", cell: (r) => r.item, csv: (r) => r.item },
+        { header: "Ordered", right: true, cell: (r) => `${r.ordered} ${r.unit}`, csv: (r) => r.ordered },
+        { header: "Done", right: true, cell: (r) => r.billed, csv: (r) => r.billed },
+        { header: "Left", right: true, cell: (r) => r.left, csv: (r) => r.left },
+        money<PendingRow>("Value left", (r) => r.valuePaise),
+      ]}
+    />
+  )
+}
+
 function GstSheet({ query }: { query: string }) {
   const { can } = useAuth()
   const { data, error } = useApi<GstReport>(`/reports/gst?${query}`)
   if (!data) return <Loading error={error} />
   const t = data.totals
-  const figures = [["Invoices", t.invoices], ["Credit notes", t.creditNotes], ["Taxable", formatPaise(t.taxablePaise)], ["CGST", formatPaise(t.cgstPaise)], ["SGST", formatPaise(t.sgstPaise)], ["IGST", formatPaise(t.igstPaise)], ["Round off", formatPaise(t.roundOffPaise)], ["Total", formatPaise(t.totalPaise)]] as const
+  const figures = [["Invoices", t.invoices], ["Credit notes", t.creditNotes], ["Debit notes", t.debitNotes], ["Taxable", formatPaise(t.taxablePaise)], ["CGST", formatPaise(t.cgstPaise)], ["SGST", formatPaise(t.sgstPaise)], ["IGST", formatPaise(t.igstPaise)], ["Round off", formatPaise(t.roundOffPaise)], ["Total", formatPaise(t.totalPaise)], ...(t.billOfSupplyPaise ? [["Bills of supply (not in these sheets)", formatPaise(t.billOfSupplyPaise)]] : [])] as (readonly [string, string | number])[]
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-amber-100 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">
@@ -192,8 +218,8 @@ function GstSheet({ query }: { query: string }) {
         { header: "Place of supply", cell: (r) => stateName(r.placeOfSupply), csv: (r) => r.placeOfSupply ?? "" },
         ...taxCols<GstReport["b2c"][number]>(),
       ]} />
-      <ReportTable title="Credit notes" exportName="gst-credit-notes" rows={data.creditNotes} cols={[
-        { header: "Credit note", cell: (r) => r.number, csv: (r) => r.number },
+      <ReportTable title="Credit and debit notes" exportName="gst-notes" rows={data.creditNotes} cols={[
+        { header: "Note", cell: (r) => <>{r.number}{r.noteType === "debit" && <span className="ml-2 text-xs text-muted-foreground">Debit</span>}</>, csv: (r) => r.number },
         { header: "Date", cell: (r) => formatDate(r.date), csv: (r) => r.date },
         { header: "Invoice", cell: (r) => r.invoiceNumber, csv: (r) => r.invoiceNumber ?? "" },
         { header: "GSTIN", cell: (r) => <span className="font-mono text-xs">{r.gstin ?? "—"}</span>, csv: (r) => r.gstin ?? "" },
@@ -214,6 +240,7 @@ const TABS = [
   { key: "customer", label: "By customer" },
   { key: "item", label: "By item" },
   { key: "collection", label: "Collection" },
+  { key: "pending", label: "Pending orders" },
   { key: "gst", label: "GST" },
 ] as const
 
@@ -250,6 +277,7 @@ export default function ReportsPage() {
       {(tab === "day" || tab === "month" || tab === "customer") && <SalesReport key={tab} by={tab} query={query} />}
       {tab === "item" && <ItemReport query={query} />}
       {tab === "collection" && <CollectionReport query={query} />}
+      {tab === "pending" && <PendingOrders />}
       {tab === "gst" && <GstSheet query={query} />}
     </>
   )

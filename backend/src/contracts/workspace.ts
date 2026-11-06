@@ -186,6 +186,8 @@ export interface WorkspacePreferences {
     receiptPrefix: string;
     creditNotePrefix: string;
     salesOrderPrefix: string;
+    deliveryChallanPrefix: string;
+    debitNotePrefix: string;
     template: DocTemplate;
     paper: 'a4' | '80mm' | '58mm';
     /** Printed on invoices */
@@ -224,7 +226,7 @@ export interface WorkspacePreferences {
 }
 
 export const DEFAULT_PREFERENCES: WorkspacePreferences = {
-  documents: { invoicePrefix: 'INV/{FY}/', quotationPrefix: 'QT/{FY}/', receiptPrefix: 'RCT/{FY}/', creditNotePrefix: 'CN/{FY}/', salesOrderPrefix: 'SO/{FY}/', template: 'classic', paper: 'a4', terms: '', quotationTerms: '', showHsnSummary: true, showSignatory: true },
+  documents: { invoicePrefix: 'INV/{FY}/', quotationPrefix: 'QT/{FY}/', receiptPrefix: 'RCT/{FY}/', creditNotePrefix: 'CN/{FY}/', salesOrderPrefix: 'SO/{FY}/', deliveryChallanPrefix: 'DC/{FY}/', debitNotePrefix: 'DN/{FY}/', template: 'classic', paper: 'a4', terms: '', quotationTerms: '', showHsnSummary: true, showSignatory: true },
   payments: { bankHolder: '', bankAccount: '', ifsc: '', upiId: '', showUpiQr: false },
   taxes: { composition: false, compositionRateBp: null, pricesIncludeTax: true, roundOff: false, defaultGstRateBp: 1800, hsnDigits: 4, reverseCharge: false },
   branding: { brandColor: '#2450D8', preset: 'default', theme: 'system', font: 'inter', density: 'comfortable' },

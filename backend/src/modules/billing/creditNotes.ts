@@ -176,3 +176,54 @@ export async function refundCreditNote(ctx: TenantCtx, id: string, input: z.infe
   await audit({ action: 'billing.refund.create', entity: 'payment', entityId: payment.id, after: { creditNote: note.number, amountPaise: input.amountPaise, method: input.method } });
   return getDocument(ctx, id, 'credit_note');
 }
+
+// ── Debit notes: the customer owes more than the invoice said (rate went up, bill was short) ──
+
+export const DebitNoteInput = z.object({
+  issueDate: DateStr.optional(),
+  notes: z.string().trim().max(2000).optional().nullable(),
+  lines: z.array(z.object({ sourceLineId: z.string().uuid(), taxablePaise: Paise.refine((v) => v > 0, 'Enter the amount to add') })).min(1, 'Choose at least one line').max(200),
+});
+
+export async function createDebitNote(ctx: TenantCtx, invoiceId: string, input: z.infer<typeof DebitNoteInput>) {
+  const doc = await getDocument(ctx, invoiceId, 'invoice');
+  if (!CreditableStatus.includes(doc.status)) throw new AppError('CONFLICT', 'A debit note can only be made on an issued invoice.');
+  const issueDate = input.issueDate ?? todayIST();
+  if (dateOnly(issueDate) < doc.issueDate) throw new AppError('VALIDATION_FAILED', 'The debit note date cannot be before the invoice date.', { fields: { issueDate: 'Before the invoice date' } });
+  const byId = new Map(doc.lines.map((l) => [l.id, l]));
+  const intra = doc.igstPaise === 0n;
+  const lines = input.lines.map((want, i) => {
+    const line = byId.get(want.sourceLineId);
+    if (!line) throw new AppError('VALIDATION_FAILED', 'Choose a line from this invoice.', { fields: { [`lines.${i}.taxablePaise`]: 'Choose a line from this invoice' } });
+    const taxable = BigInt(want.taxablePaise);
+    const rate = BigInt(line.gstRateBp);
+    const half = intra ? divRound(taxable * rate, 20_000n) : 0n;
+    const igst = intra ? 0n : divRound(taxable * rate, 10_000n);
+    return {
+      tenantId: ctx.tenantId, sourceLineId: line.id, itemId: line.itemId, description: line.description, hsnSac: line.hsnSac, unit: 'adj', quantity: '1.000', unitPricePaise: taxable, discountPaise: 0n,
+      taxablePaise: taxable, gstRateBp: line.gstRateBp, cgstPaise: half, sgstPaise: half, igstPaise: igst, totalPaise: taxable + half + half + igst, position: i,
+    };
+  });
+  const sum = (pick: (l: (typeof lines)[number]) => bigint) => lines.reduce((s, l) => s + pick(l), 0n);
+  const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
+  const { number, fy } = await allocateNumber(ctx.tenantId, 'debit_note', tenant.fyStartMonth, dateOnly(issueDate));
+  const note = await db().salesDocument.create({
+    data: {
+      tenantId: ctx.tenantId, kind: 'debit_note', status: 'issued', number, fy, sourceType: 'invoice', sourceId: doc.id, sourceNumber: doc.number, branchId: doc.branchId, contactId: doc.contactId,
+      buyer: doc.buyer as object, seller: doc.seller as object, placeOfSupply: doc.placeOfSupply, issueDate: dateOnly(issueDate), subtotalPaise: sum((l) => l.taxablePaise), taxablePaise: sum((l) => l.taxablePaise),
+      cgstPaise: sum((l) => l.cgstPaise), sgstPaise: sum((l) => l.sgstPaise), igstPaise: sum((l) => l.igstPaise), totalPaise: sum((l) => l.totalPaise), notes: input.notes ?? null, shareToken: randomToken(18), createdBy: ctx.userId, issuedAt: new Date(),
+      lines: { create: lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) },
+    },
+  });
+  await audit({ action: 'billing.debit_note.issue', entity: 'debit_note', entityId: note.id, after: { number, invoice: doc.number, totalPaise: note.totalPaise } });
+  return getDocument(ctx, note.id, 'debit_note');
+}
+
+export async function cancelDebitNote(ctx: TenantCtx, id: string, reason: string) {
+  const note = await getDocument(ctx, id, 'debit_note');
+  if (note.status === 'cancelled') throw new AppError('CONFLICT', 'This debit note is already cancelled.');
+  if (note.paidPaise > 0n) throw new AppError('CONFLICT', 'This debit note has a payment. Reverse the payment first.');
+  await db().salesDocument.update({ where: { id }, data: { status: 'cancelled', cancelledAt: new Date(), cancelReason: reason, version: { increment: 1 } } });
+  await audit({ action: 'billing.debit_note.cancel', entity: 'debit_note', entityId: id, after: { reason } });
+  return getDocument(ctx, id, 'debit_note');
+}

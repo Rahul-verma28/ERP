@@ -40,36 +40,49 @@ interface Row {
   sourceNumber: string | null
 }
 
-export function CreditNoteList() {
+export function CreditNoteList({ kind = "credit_note" }: { kind?: "credit_note" | "debit_note" }) {
   const { me } = useAuth()
-  const left = (r: Row) => (r.status === "issued" ? Math.max(0, r.totalPaise - r.paidPaise) : 0)
+  const debit = kind === "debit_note"
+  const left = (r: Row) => (r.status !== "cancelled" ? Math.max(0, r.totalPaise - r.paidPaise) : 0)
   const columns: Column<Row>[] = [
     { key: "number", header: "Number", hideable: false, cell: (r) => <span className="font-semibold">{r.number}</span>, csv: (r) => r.number, sort: (r) => r.number ?? "" },
     { key: "date", header: "Date", cell: (r) => formatDate(r.issueDate), csv: (r) => r.issueDate.slice(0, 10), sort: (r) => r.issueDate },
     { key: "customer", header: "Customer", cell: (r) => r.buyer?.name ?? "—", csv: (r) => r.buyer?.name, sort: (r) => r.buyer?.name?.toLowerCase() ?? "" },
     { key: "invoice", header: "Invoice", cell: (r) => r.sourceNumber ?? "—", csv: (r) => r.sourceNumber },
-    { key: "type", header: "Type", cell: (r) => NOTE_TYPE[r.noteType ?? ""] ?? "—", csv: (r) => NOTE_TYPE[r.noteType ?? ""] },
+    ...(debit ? [] : [{ key: "type", header: "Type", cell: (r: Row) => NOTE_TYPE[r.noteType ?? ""] ?? "—", csv: (r: Row) => NOTE_TYPE[r.noteType ?? ""] }]),
     { key: "amount", header: "Amount", align: "right", cell: (r) => formatPaise(r.totalPaise), csv: (r) => (r.totalPaise / 100).toFixed(2), sort: (r) => r.totalPaise },
-    { key: "left", header: "Left", align: "right", cell: (r) => formatPaise(left(r)), csv: (r) => (left(r) / 100).toFixed(2), sort: (r) => left(r) },
+    { key: "left", header: debit ? "Due" : "Left", align: "right", cell: (r) => formatPaise(left(r)), csv: (r) => (left(r) / 100).toFixed(2), sort: (r) => left(r) },
     { key: "status", header: "Status", cell: (r) => <StatusBadge status={r.status} />, csv: (r) => r.status },
   ]
   return (
     <DataList<Row>
-      id="credit-notes"
-      path="/credit-notes"
-      countsPath="/credit-notes/counts"
-      header={{ breadcrumb: "Billing › Credit notes", title: "Credit notes", description: "Open an invoice to make a credit note.", actions: <HeaderLink href="/app/m/billing">Invoices</HeaderLink> }}
+      id={debit ? "debit-notes" : "credit-notes"}
+      path={debit ? "/debit-notes" : "/credit-notes"}
+      countsPath={debit ? "/debit-notes/counts" : "/credit-notes/counts"}
+      header={{
+        breadcrumb: `Billing › ${debit ? "Debit" : "Credit"} notes`,
+        title: debit ? "Debit notes" : "Credit notes",
+        description: `Open an invoice to make a ${debit ? "debit" : "credit"} note.`,
+        actions: (
+          <>
+            <HeaderLink href={debit ? "/app/m/billing/credit-notes" : "/app/m/billing/debit-notes"}>{debit ? "Credit notes" : "Debit notes"}</HeaderLink>
+            <HeaderLink href="/app/m/billing">Invoices</HeaderLink>
+          </>
+        ),
+      }}
       columns={columns}
       searchPlaceholder="Search number, customer, mobile, GSTIN"
       presets={[
         { key: "all", label: "All", params: {}, countKey: "all" },
-        { key: "issued", label: "Issued", params: { status: "issued" }, countKey: "issued" },
+        { key: "issued", label: debit ? "Unpaid" : "Issued", params: { status: "issued" }, countKey: "issued" },
         { key: "cancelled", label: "Cancelled", params: { status: "cancelled" }, countKey: "cancelled" },
       ]}
       filters={[periodFilter(me?.tenant?.fyStartMonth ?? 4)]}
-      rowHref={(r) => `/app/m/billing/credit-notes/${r.id}`}
-      exportName="credit-notes"
-      emptyState={<EmptyState icon={FileMinus} title="No credit notes yet" description="When goods come back or a bill needs reducing, open the invoice and make a credit note." />}
+      rowHref={(r) => `/app/m/billing/${debit ? "debit" : "credit"}-notes/${r.id}`}
+      exportName={debit ? "debit-notes" : "credit-notes"}
+      emptyState={debit
+        ? <EmptyState icon={FileMinus} title="No debit notes yet" description="When a bill was short or a rate went up, open the invoice and make a debit note." />
+        : <EmptyState icon={FileMinus} title="No credit notes yet" description="When goods come back or a bill needs reducing, open the invoice and make a credit note." />}
     />
   )
 }
@@ -112,6 +125,7 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
   if (!invoice.data || !lines.data) return <div className="grid place-items-center py-24"><Spinner /></div>
 
   const doc = invoice.data
+  const debit = type === "debit"
   const value = (l: OpenLine) => (type === "return" ? Number(quantities[l.id] || 0) : amounts[l.id] ?? 0)
   const total = lines.data.reduce((sum, l) => sum + preview(l, type, value(l)), 0)
   const due = Math.max(0, doc.totalPaise - doc.paidPaise)
@@ -122,6 +136,12 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
     setBusy(true)
     setError(null)
     try {
+      if (debit) {
+        const added = await api.post<SalesDoc>(`/invoices/${invoiceId}/debit-notes`, { issueDate, notes: notes.trim() || null, lines: chosen.map((l) => ({ sourceLineId: l.id, taxablePaise: value(l) })) })
+        toast.success("Debit note issued")
+        router.replace(`/app/m/billing/debit-notes/${added.id}`)
+        return
+      }
       const note = await api.post<SalesDoc>(`/invoices/${invoiceId}/credit-notes`, {
         type,
         issueDate,
@@ -139,7 +159,7 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
   return (
     <>
       <Link href={`/app/m/billing/${invoiceId}`} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {doc.number}</Link>
-      <PageHeader title="New credit note" description={`Against ${doc.number} · ${doc.buyer.name} · Issued ${formatDate(doc.issueDate)}`} />
+      <PageHeader title={debit ? "New debit note" : "New credit note"} description={`Against ${doc.number} · ${doc.buyer.name} · Issued ${formatDate(doc.issueDate)}`} />
       <Card>
         <CardContent className="grid gap-5">
           <div className="grid gap-4 sm:grid-cols-3">
@@ -147,6 +167,7 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
               <NativeSelect value={type} onChange={(e) => { setType(e.target.value); setError(null) }}>
                 <option value="return">Goods returned</option>
                 <option value="amount">Amount reduced only</option>
+                <option value="debit">Amount increased (debit note)</option>
               </NativeSelect>
             </Field>
             <Field label="Date"><Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} /></Field>
@@ -157,8 +178,8 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
                   <th className="py-2 pr-3 font-medium">Item</th>
-                  <th className="py-2 pr-3 text-right font-medium">{type === "return" ? "Can return" : "Value left"}</th>
-                  <th className="py-2 pr-3 text-right font-medium">{type === "return" ? "Return qty" : "Reduce by (before GST)"}</th>
+                  <th className="py-2 pr-3 text-right font-medium">{type === "return" ? "Can return" : debit ? "Billed" : "Value left"}</th>
+                  <th className="py-2 pr-3 text-right font-medium">{type === "return" ? "Return qty" : debit ? "Add (before GST)" : "Reduce by (before GST)"}</th>
                   <th className="py-2 pr-3 text-right font-medium">GST</th>
                   <th className="py-2 text-right font-medium">Amount</th>
                 </tr>
@@ -167,7 +188,7 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
                 {lines.data.map((l) => (
                   <tr key={l.id} className="border-b border-border/60">
                     <td className="py-2 pr-3">{l.description}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{type === "return" ? `${l.quantityLeft} ${l.unit}` : formatPaise(l.taxableLeftPaise)}</td>
+                    <td className="py-2 pr-3 text-right tabular-nums">{type === "return" ? `${l.quantityLeft} ${l.unit}` : formatPaise(debit ? l.taxablePaise : l.taxableLeftPaise)}</td>
                     <td className="py-2 pr-3">
                       <div className="ml-auto w-32">
                         {type === "return"
@@ -183,12 +204,13 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
             </table>
           </div>
           <dl className="ml-auto grid w-full max-w-xs gap-1 text-sm">
-            <div className="flex justify-between font-semibold"><dt>Credit note total</dt><dd className="tabular-nums">{formatPaise(total)}</dd></div>
-            <div className="flex justify-between text-muted-foreground"><dt>Invoice balance after this</dt><dd className="tabular-nums">{formatPaise(Math.max(0, due - total))}</dd></div>
-            {total > due && <div className="flex justify-between text-muted-foreground"><dt>Stays as customer credit</dt><dd className="tabular-nums">{formatPaise(total - due)}</dd></div>}
+            <div className="flex justify-between font-semibold"><dt>{debit ? "Debit note total" : "Credit note total"}</dt><dd className="tabular-nums">{formatPaise(total)}</dd></div>
+            {!debit && <div className="flex justify-between text-muted-foreground"><dt>Invoice balance after this</dt><dd className="tabular-nums">{formatPaise(Math.max(0, due - total))}</dd></div>}
+            {debit && <div className="flex justify-between text-muted-foreground"><dt>Customer owes more</dt><dd className="tabular-nums">{formatPaise(total)}</dd></div>}
+            {!debit && total > due && <div className="flex justify-between text-muted-foreground"><dt>Stays as customer credit</dt><dd className="tabular-nums">{formatPaise(total - due)}</dd></div>}
           </dl>
           <FormError message={error} />
-          <div className="flex justify-end"><Button disabled={busy} onClick={issue}>{busy ? "Issuing…" : "Issue credit note"}</Button></div>
+          <div className="flex justify-end"><Button disabled={busy} onClick={issue}>{busy ? "Issuing…" : debit ? "Issue debit note" : "Issue credit note"}</Button></div>
         </CardContent>
       </Card>
     </>
@@ -354,6 +376,154 @@ export function CreditNoteDetail({ id }: { id: string }) {
             const { invoice } = await api.post<{ invoice: SalesDoc }>(`/payments/${reversing!.id}/reverse`)
             setData(invoice)
             toast.success("Refund reversed")
+          } catch (e) {
+            toast.error(errorMessage(e))
+          }
+        }}
+      />
+    </>
+  )
+}
+
+function DebitPaymentDialog({ note, onClose, onSaved }: { note: SalesDoc; onClose: () => void; onSaved: (d: SalesDoc) => void }) {
+  const due = note.totalPaise - note.paidPaise
+  const [amount, setAmount] = React.useState<number | null>(due)
+  const [method, setMethod] = React.useState("cash")
+  const [reference, setReference] = React.useState("")
+  const [paidOn, setPaidOn] = React.useState(todayInIndia())
+  const [error, setError] = React.useState<string | null>(null)
+  const [errors, setErrors] = React.useState<Record<string, string>>({})
+  const [busy, setBusy] = React.useState(false)
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    if (!amount) return setErrors({ amountPaise: "Enter an amount" })
+    setBusy(true)
+    setError(null)
+    try {
+      const d = await api.post<SalesDoc>(`/debit-notes/${note.id}/payments`, { amountPaise: amount, method, reference: reference || null, paidOn })
+      toast.success("Payment recorded")
+      onSaved(d)
+    } catch (err) {
+      if (err instanceof ApiError) setErrors(err.fields)
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Record payment</DialogTitle>
+          <DialogDescription>Due on {note.number}: {formatPaise(due)}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={save} className="grid gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Amount" error={errors.amountPaise}><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
+            <Field label="Date"><Input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} /></Field>
+            <Field label="Method">
+              <NativeSelect value={method} onChange={(e) => setMethod(e.target.value)}>
+                {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </NativeSelect>
+            </Field>
+            <Field label="Reference" hint="UPI ref, cheque no., etc."><Input value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
+          </div>
+          <FormError message={error} />
+          <DialogFooter><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Record payment"}</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export function DebitNoteDetail({ id }: { id: string }) {
+  const { can, me } = useAuth()
+  const { data: note, setData, error } = useApi<SalesDoc>(`/debit-notes/${id}`)
+  const [paying, setPaying] = React.useState(false)
+  const [cancelling, setCancelling] = React.useState(false)
+  const [reversing, setReversing] = React.useState<NonNullable<SalesDoc["payments"]>[number] | null>(null)
+
+  if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
+  if (!note) return <div className="grid place-items-center py-24"><Spinner /></div>
+
+  const due = note.status === "cancelled" ? 0 : note.totalPaise - note.paidPaise
+  return (
+    <>
+      <Link href="/app/m/billing/debit-notes" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> Debit notes</Link>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">{note.number} <StatusBadge status={note.status} /></h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {note.buyer.name} · {formatPaise(note.totalPaise)} · Against <Link href={`/app/m/billing/${note.sourceId}`} className="underline underline-offset-2 hover:text-foreground">{note.sourceNumber}</Link>
+            {note.cancelReason && ` · Cancelled: ${note.cancelReason}`}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {due > 0 && can("billing.payment.create") && <Button onClick={() => setPaying(true)}><IndianRupee /> Record payment</Button>}
+          <a href={`/print/debit_note/${id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><Printer /> Print / PDF</a>
+          {note.status !== "cancelled" && note.paidPaise === 0 && can("billing.credit_note.approve") && <Button variant="ghost" onClick={() => setCancelling(true)}><Ban /> Cancel</Button>}
+        </div>
+      </div>
+      <div className="grid gap-6 xl:grid-cols-[1fr_18rem]">
+        <div className="overflow-hidden rounded-4xl border shadow-sm">
+          <SalesDocView doc={note} fallbackSeller={{ name: me?.tenant?.name ?? "", gstin: me?.tenant?.gstin, stateCode: me?.tenant?.billingStateCode }} />
+        </div>
+        {(note.payments?.length ?? 0) > 0 && (
+          <Card className="content-start">
+            <CardHeader><CardTitle className="text-base">Payments</CardTitle></CardHeader>
+            <CardContent>
+              <ul className="grid gap-2 text-sm">
+                {note.payments!.map((pm) => {
+                  const reversed = note.payments!.some((o) => o.reversesId === pm.id)
+                  return (
+                    <li key={pm.id} className="flex justify-between gap-2">
+                      <span className="min-w-0">
+                        <span className="font-mono text-xs">{pm.number}</span>
+                        {reversed && <Badge variant="outline" className="ml-2">Reversed</Badge>}
+                        <span className="block text-xs text-muted-foreground">{formatDate(pm.paidOn)} · {pm.reversesId ? "Reversal" : PAYMENT_METHODS.find((m) => m.value === pm.method)?.label}</span>
+                      </span>
+                      <span className="flex items-start gap-1">
+                        <span className="font-medium tabular-nums">{formatPaise(pm.amountPaise)}</span>
+                        {!pm.reversesId && !reversed && can("billing.payment.approve") && <Button variant="ghost" size="icon-xs" aria-label={`Reverse ${pm.number}`} onClick={() => setReversing(pm)}><Undo2 /></Button>}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+      {paying && <DebitPaymentDialog note={note} onClose={() => setPaying(false)} onSaved={(d) => { setPaying(false); setData(d) }} />}
+      <ConfirmDialog
+        open={cancelling}
+        onOpenChange={setCancelling}
+        destructive
+        title={`Cancel ${note.number}?`}
+        description="The number stays used. The customer no longer owes this amount."
+        reasonLabel="Reason for cancelling"
+        confirmLabel="Cancel debit note"
+        onConfirm={async (reason) => {
+          try {
+            setData(await api.post<SalesDoc>(`/debit-notes/${id}/cancel`, { reason }))
+            toast.success("Debit note cancelled")
+          } catch (e) {
+            toast.error(errorMessage(e))
+          }
+        }}
+      />
+      <ConfirmDialog
+        open={!!reversing}
+        onOpenChange={(o) => !o && setReversing(null)}
+        destructive
+        title={`Reverse ${reversing?.number}?`}
+        description="An opposite entry is added and the amount is due again. The original stays on record."
+        confirmLabel="Reverse payment"
+        onConfirm={async () => {
+          try {
+            const { invoice } = await api.post<{ invoice: SalesDoc }>(`/payments/${reversing!.id}/reverse`)
+            setData(invoice)
+            toast.success("Payment reversed")
           } catch (e) {
             toast.error(errorMessage(e))
           }

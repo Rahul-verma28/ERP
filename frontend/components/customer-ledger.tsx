@@ -35,7 +35,7 @@ export interface LedgerRow {
   balancePaise: number
 }
 export interface Ledger {
-  contact: { id: string; name: string; phone: string | null; email: string | null; gstin: string | null; address: Record<string, string> | null }
+  contact: { id: string; name: string; phone: string | null; email: string | null; gstin: string | null; address: Record<string, string> | null; creditLimitPaise: number | null }
   from: string | null
   to: string | null
   broughtForwardPaise: number
@@ -54,6 +54,7 @@ export function ledgerDocument(r: LedgerRow) {
   const label: Record<string, string> = {
     invoice: "Invoice",
     credit_note: "Credit note",
+    debit_note: "Debit note",
     opening_balance: "Opening balance",
     receipt: `Payment · ${methodLabel(r.method)}${r.against ? ` · ${r.against}` : ""}`,
     advance: `Advance · ${methodLabel(r.method)}`,
@@ -67,7 +68,7 @@ export function ledgerDocument(r: LedgerRow) {
 export const ledgerBalance = (paise: number) => (paise < 0 ? `${formatPaise(-paise)} Cr` : formatPaise(paise))
 
 const rowHref = (r: LedgerRow) =>
-  r.type === "invoice" ? `/app/m/billing/${r.id}` : r.type === "credit_note" ? `/app/m/billing/credit-notes/${r.id}` : r.type === "receipt" && r.documentId && r.against ? `/app/m/billing/${r.documentId}` : null
+  r.type === "invoice" ? `/app/m/billing/${r.id}` : r.type === "credit_note" ? `/app/m/billing/credit-notes/${r.id}` : r.type === "debit_note" ? `/app/m/billing/debit-notes/${r.id}` : r.type === "receipt" && r.documentId && r.against ? `/app/m/billing/${r.documentId}` : null
 
 /** Start of the financial year holding today, as YYYY-MM-DD. */
 function fyStart(today: string, startMonth: number) {
@@ -206,6 +207,12 @@ export function CustomerLedger({ contactId }: { contactId: string }) {
           <p className="text-xs text-muted-foreground">Advance and credit left</p>
           <p className="mt-1 text-lg font-semibold tabular-nums">{formatPaise(held)}</p>
         </div>
+        {data.contact.creditLimitPaise != null && (
+          <div className="rounded-2xl bg-muted p-3">
+            <p className="text-xs text-muted-foreground">Credit limit</p>
+            <p className={"mt-1 text-lg font-semibold tabular-nums" + (data.balancePaise > data.contact.creditLimitPaise ? " text-destructive" : "")}>{formatPaise(data.contact.creditLimitPaise)}</p>
+          </div>
+        )}
         {data.aging.map((b) => (
           <div key={b.label} className="rounded-2xl bg-muted p-3">
             <p className="text-xs text-muted-foreground">{b.label}</p>

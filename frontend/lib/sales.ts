@@ -18,9 +18,19 @@ export interface DocLine {
   totalPaise?: number
   /** Invoice made from an order: the order line it bills */
   sourceLineId?: string | null
+  /** Given free on top of quantity: no price and no tax */
+  freeQuantity?: number | string
 }
 
-export type DocKind = "invoice" | "quotation" | "sales_order"
+export type DocKind = "invoice" | "quotation" | "sales_order" | "delivery_challan"
+
+export interface ShipTo {
+  name?: string | null
+  line1?: string | null
+  city?: string | null
+  pincode?: string | null
+  stateCode?: string | null
+}
 
 export interface Buyer {
   name: string
@@ -48,11 +58,14 @@ export interface Seller {
   showHsnSummary?: boolean
   showSignatory?: boolean
   paper?: "a4" | "80mm" | "58mm"
+  /** Frozen at issue: not registered, or on the composition scheme */
+  billOfSupply?: boolean
+  composition?: boolean
 }
 
 export interface SalesDoc {
   id: string
-  kind: DocKind | "credit_note"
+  kind: DocKind | "credit_note" | "debit_note"
   status: string
   number: string | null
   contactId: string | null
@@ -73,6 +86,7 @@ export interface SalesDoc {
   creditedPaise?: number
   noteType?: string | null
   sourceNumber?: string | null
+  shipTo?: ShipTo | null
   notes: string | null
   terms: string | null
   shareToken: string | null
@@ -114,6 +128,6 @@ export const withoutGst = (lines: DocLine[]) =>
 /** What rounding the total to the whole rupee adds (negative when it takes away). */
 export const roundOffOf = (total: number) => divRound(total, 100) * 100 - total
 
-export const docPath = (kind: DocKind) => ({ invoice: "billing", quotation: "sales", sales_order: "sales/orders" })[kind]
-export const docApi = (kind: DocKind) => ({ invoice: "/invoices", quotation: "/quotations", sales_order: "/sales-orders" })[kind]
-export const docLabel = (kind: DocKind) => ({ invoice: "Invoice", quotation: "Quotation", sales_order: "Sales order" })[kind]
+export const docPath = (kind: DocKind) => ({ invoice: "billing", quotation: "sales", sales_order: "sales/orders", delivery_challan: "sales/challans" })[kind]
+export const docApi = (kind: DocKind) => ({ invoice: "/invoices", quotation: "/quotations", sales_order: "/sales-orders", delivery_challan: "/delivery-challans" })[kind]
+export const docLabel = (kind: DocKind) => ({ invoice: "Invoice", quotation: "Quotation", sales_order: "Sales order", delivery_challan: "Delivery challan" })[kind]

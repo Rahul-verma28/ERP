@@ -4,7 +4,8 @@ import * as React from "react"
 import { toast } from "sonner"
 import { Package, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import Link from "next/link"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -197,6 +198,7 @@ export default function CatalogPage() {
         description="One catalogue for billing, quotations and bookings. Prices exclude GST."
         actions={
           <>
+            {can("catalog.price_list.view") && <Link href="/app/m/catalog/price-lists" className={buttonVariants({ variant: "outline" })}>Price lists</Link>}
             {can("catalog.category.create") && <Button variant="outline" onClick={addCategory}>New category</Button>}
             {can("catalog.item.create") && <Button onClick={() => setEditing("new")}><Plus /> Add item</Button>}
           </>

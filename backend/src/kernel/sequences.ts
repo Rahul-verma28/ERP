@@ -7,7 +7,7 @@ import { withDefaults } from '../contracts/workspace';
 // The prefix comes from the workspace preferences (Settings › Documents, default INV/{FY}/);
 // changing it applies to the next number, and the running count carries on.
 
-const PREFIX_KEY = { invoice: 'invoicePrefix', quotation: 'quotationPrefix', receipt: 'receiptPrefix', credit_note: 'creditNotePrefix', sales_order: 'salesOrderPrefix' } as const;
+const PREFIX_KEY = { invoice: 'invoicePrefix', quotation: 'quotationPrefix', receipt: 'receiptPrefix', credit_note: 'creditNotePrefix', sales_order: 'salesOrderPrefix', delivery_challan: 'deliveryChallanPrefix', debit_note: 'debitNotePrefix' } as const;
 
 export async function allocateNumber(tenantId: string, docType: keyof typeof PREFIX_KEY, fyStartMonth: number, at = new Date()) {
   const fy = financialYear(at, fyStartMonth);

@@ -123,6 +123,8 @@ export const PREFERENCE_SCHEMAS = {
     receiptPrefix: Prefix,
     creditNotePrefix: Prefix,
     salesOrderPrefix: Prefix,
+    deliveryChallanPrefix: Prefix,
+    debitNotePrefix: Prefix,
     template: z.enum(['classic', 'modern', 'compact']),
     paper: z.enum(['a4', '80mm', '58mm']),
     terms: z.string().trim().max(2000, 'Keep terms under 2,000 characters'),
@@ -243,6 +245,8 @@ const SERIES = [
   { docType: 'receipt', label: 'Receipt', prefixKey: 'receiptPrefix' },
   { docType: 'credit_note', label: 'Credit note', prefixKey: 'creditNotePrefix' },
   { docType: 'sales_order', label: 'Sales order', prefixKey: 'salesOrderPrefix' },
+  { docType: 'delivery_challan', label: 'Delivery challan', prefixKey: 'deliveryChallanPrefix' },
+  { docType: 'debit_note', label: 'Debit note', prefixKey: 'debitNotePrefix' },
 ] as const;
 export type SeriesType = (typeof SERIES)[number]['docType'];
 

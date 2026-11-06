@@ -80,10 +80,11 @@ const change = (now: number, prev: number | null) => (prev === null ? null : { p
 
 // ── Shared queries ──
 
-const LIVE_INVOICE = { kind: 'invoice' as const, status: { in: ['issued' as const, 'partially_paid' as const, 'paid' as const] } };
+// Debit notes add to sales the way credit notes take away
+const LIVE_INVOICE = { kind: { in: ['invoice' as const, 'debit_note' as const] }, status: { in: ['issued' as const, 'partially_paid' as const, 'paid' as const] } };
 const LIVE_CREDIT_NOTE = { kind: 'credit_note' as const, status: 'issued' as const };
 // Opening balances are owed too; they have no due date, so overdue lists never pick them up
-const OPEN_INVOICE = { kind: { in: ['invoice' as const, 'opening_balance' as const] }, status: { in: ['issued' as const, 'partially_paid' as const] } };
+const OPEN_INVOICE = { kind: { in: ['invoice' as const, 'opening_balance' as const, 'debit_note' as const] }, status: { in: ['issued' as const, 'partially_paid' as const] } };
 
 function docWhere(c: TenantCtx, branchId: string | null): Prisma.SalesDocumentWhereInput {
   return { AND: [scopeWhere(c, { owner: ['createdBy'], branch: 'branchId' }), branchId ? { branchId } : {}] };
