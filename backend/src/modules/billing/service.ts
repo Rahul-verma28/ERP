@@ -123,7 +123,7 @@ async function prepare(ctx: TenantCtx, input: DocInput, existing?: SalesDocument
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId } });
   const { contactId, buyer } = await resolveBuyer(input);
   // Not registered, or on the composition scheme: no GST is charged and the bill is a bill of supply
-  const taxes = withDefaults(tenant.preferences).taxes;
+  const taxes = withDefaults(tenant.preferences, tenant.profile).taxes;
   const noTax = !tenant.gstin || taxes.composition;
   const resolved = (await resolveLines(input.lines)).map((l) => (noTax ? { ...l, gstRateBp: 0 } : l));
   const exclusive = (paise: number, rateBp: number) => Number(divRound(BigInt(paise) * 10_000n, BigInt(10_000 + rateBp)));
@@ -269,7 +269,7 @@ export async function issueInvoice(ctx: TenantCtx, id: string, opts: { skipCredi
   await consumeMonthly(ctx, 'invoices', ent.limits.invoicesPerMonth, 'invoices');
   const { number, fy } = await allocateNumber(ctx.tenantId, 'invoice', tenant.fyStartMonth, doc.issueDate);
   const branch = doc.branchId ? await db().branch.findUnique({ where: { id: doc.branchId } }) : null;
-  const prefs = withDefaults(tenant.preferences);
+  const prefs = withDefaults(tenant.preferences, tenant.profile);
   const profile = (tenant.profile ?? {}) as WorkspaceProfile;
   const pay = prefs.payments;
   const seller = {
@@ -304,6 +304,9 @@ export async function cancelInvoice(ctx: TenantCtx, id: string, reason: string) 
   if (doc.status === 'draft') throw new AppError('CONFLICT', 'Delete the draft instead of cancelling it.');
   if (doc.status === 'cancelled') throw new AppError('CONFLICT', 'This invoice is already cancelled.');
   if (doc.paidPaise > 0n) throw new AppError('CONFLICT', 'This invoice has payments recorded. Issue a credit note instead (paid plans).');
+  if (await db().salesDocument.count({ where: { kind: 'debit_note', sourceId: id, status: { not: 'cancelled' } } })) {
+    throw new AppError('CONFLICT', 'This invoice has a debit note. Cancel the debit note first.');
+  }
   await db().salesDocument.update({ where: { id }, data: { status: 'cancelled', cancelledAt: new Date(), cancelReason: reason, version: { increment: 1 } } });
   if (doc.sourceType === 'sales_order' && doc.sourceId) await refreshOrderStatus(doc.sourceId);
   if (doc.sourceType === 'delivery_challan' && doc.sourceId) await reopenChallan(doc.sourceId);
@@ -531,6 +534,7 @@ export async function publicDocument(token: string) {
   return {
     kind: doc.kind, number: doc.number, status: doc.status, issueDate: doc.issueDate, dueDate: doc.dueDate, buyer: doc.buyer, seller: doc.seller,
     creditedPaise: doc.creditedPaise, noteType: doc.noteType, sourceNumber: doc.sourceNumber, shipTo: doc.shipTo,
+    ewayBillNo: doc.ewayBillNo, ewayBillDate: doc.ewayBillDate, irn: doc.irn, irnAckNo: doc.irnAckNo, irnAckDate: doc.irnAckDate,
     placeOfSupply: doc.placeOfSupply, subtotalPaise: doc.subtotalPaise, discountPaise: doc.discountPaise, taxablePaise: doc.taxablePaise,
     cgstPaise: doc.cgstPaise, sgstPaise: doc.sgstPaise, igstPaise: doc.igstPaise, roundOffPaise: doc.roundOffPaise, totalPaise: doc.totalPaise, paidPaise: doc.paidPaise,
     notes: doc.notes, terms: doc.terms,

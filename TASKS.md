@@ -372,6 +372,11 @@ The client allows selling with a few complete modules, so this replaces the budg
 - [x] Debit note: raises an invoice, own number series, takes payments, in the ledger, sales and GST — code and tests done 2026-11-05, checked in the browser (GST amounts by tests only; the test business has no GSTIN)
 - [x] Pending order report: lines left on open orders — code and tests done 2026-11-05; screen opened in the browser with no pending lines, rows by tests only
 - [x] Free quantity: on the line, no price or tax, prints "+ 2 free", counts in item and HSN quantity — code and tests done 2026-11-05, checked in the browser
+- [x] Batch 1 fixes: signup composition answer counts until Taxes is saved; an invoice with a live debit note cannot be cancelled — code and tests done 2026-11-06
+- [x] E-way bill JSON (no GSP account): from an invoice or challan, or many from the invoice list; portal bulk format v1.0.0621; lists what each bill is missing; number typed back and printed — code and tests done 2026-11-06, checked in the browser; a real upload on the portal still to try
+- [x] E-invoice JSON (no GSP account): B2B invoices, credit and debit notes, IRP schema 1.1, on/off in Settings › Taxes; IRN and Ack typed back and printed — code and tests done 2026-11-06, checked in the browser; signed QR needs the API account; a real upload still to try
+- [x] Dues and reminders by hand: who owes money after advances, WhatsApp, SMS and email with amount, bill links and UPI ID, last reminder noted — code and tests done 2026-11-06, checked in the browser
+- [x] UPI pay button on the share page with the amount filled in; the business still records the payment — code done 2026-11-06, checked in the browser
 
 ## Phase 2 — Operations (weeks 5–8)
 Exit gate: stock and accounts update from sales and purchases.

@@ -15,6 +15,7 @@ import { ConfirmDialog, EmptyState, MoneyInput, Spinner, StatusBadge } from "@/c
 import { DataList, HeaderLink, periodFilter, type Column } from "@/components/data-list"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { SalesDocView } from "@/components/sales-doc-view"
+import { EInvoiceButton } from "@/components/gst-files"
 import { todayInIndia } from "@contracts/validation"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -294,6 +295,7 @@ export function CreditNoteDetail({ id }: { id: string }) {
         </div>
         <div className="flex flex-wrap gap-2">
           {left > 0 && can("billing.refund.create") && <Button onClick={() => setRefunding(true)}><IndianRupee /> Refund customer</Button>}
+          <EInvoiceButton doc={note} onSaved={(d) => setData({ ...note, ...(d as Partial<SalesDoc>) })} />
           <a href={`/print/credit_note/${id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><Printer /> Print / PDF</a>
           {live && can("billing.credit_note.approve") && <Button variant="ghost" onClick={() => setCancelling(true)}><Ban /> Cancel</Button>}
         </div>
@@ -460,6 +462,7 @@ export function DebitNoteDetail({ id }: { id: string }) {
         </div>
         <div className="flex flex-wrap gap-2">
           {due > 0 && can("billing.payment.create") && <Button onClick={() => setPaying(true)}><IndianRupee /> Record payment</Button>}
+          <EInvoiceButton doc={note} onSaved={(d) => setData({ ...note, ...(d as Partial<SalesDoc>) })} />
           <a href={`/print/debit_note/${id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><Printer /> Print / PDF</a>
           {note.status !== "cancelled" && note.paidPaise === 0 && can("billing.credit_note.approve") && <Button variant="ghost" onClick={() => setCancelling(true)}><Ban /> Cancel</Button>}
         </div>

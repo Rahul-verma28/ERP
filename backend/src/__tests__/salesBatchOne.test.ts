@@ -59,6 +59,17 @@ describe('bill of supply', () => {
     });
   });
 
+  it('follows the composition answer from signup until Taxes is saved', async () => {
+    await rolledBack(async () => {
+      const { ctx, contact } = await setup({ gstin: '09AAACS1234F1Z5', profile: { composition: true } });
+      const doc = await billing.createDocument(ctx, 'invoice', { contactId: contact.id, lines: [line()] });
+      expect(doc).toMatchObject({ cgstPaise: 0n, totalPaise: 10_000n });
+      await db().tenant.update({ where: { id: ctx.tenantId }, data: { preferences: { taxes: { composition: false } } } });
+      const later = await billing.createDocument(ctx, 'invoice', { contactId: contact.id, lines: [line()] });
+      expect(later).toMatchObject({ cgstPaise: 900n, totalPaise: 11_800n });
+    });
+  });
+
   it('still charges GST for a registered business, and stays out of the GST sheet', async () => {
     await rolledBack(async () => {
       const { ctx, contact } = await setup();
@@ -190,6 +201,18 @@ describe('proforma invoice', () => {
 });
 
 describe('debit note', () => {
+  it('stops the invoice being cancelled while a debit note is live', async () => {
+    await rolledBack(async () => {
+      const { ctx, contact } = await setup();
+      const draft = await billing.createDocument(ctx, 'invoice', { contactId: contact.id, lines: [line()] });
+      const inv = await issued(ctx, draft.id);
+      const note = await createDebitNote(ctx, inv.id, { lines: [{ sourceLineId: inv.lines[0].id, taxablePaise: 1_000 }] });
+      await expect(billing.cancelInvoice(ctx, inv.id, 'Wrong bill')).rejects.toMatchObject({ code: 'CONFLICT' });
+      await cancelDebitNote(ctx, note.id, 'Not needed');
+      await expect(billing.cancelInvoice(ctx, inv.id, 'Wrong bill')).resolves.toMatchObject({ status: 'cancelled' });
+    });
+  });
+
   it('adds to what the customer owes, takes payments, and counts as a sale', async () => {
     await rolledBack(async () => {
       const { ctx, contact } = await setup();

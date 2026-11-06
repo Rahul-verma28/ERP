@@ -164,6 +164,7 @@ export const PREFERENCE_SCHEMAS = {
       hsnDigits: z.union([z.literal(4), z.literal(6)]),
       reverseCharge: z.boolean(),
       roundOff: z.boolean().optional(),
+      eInvoicing: z.boolean().optional(),
     })
     .superRefine((t, c) => {
       if (t.composition && !t.compositionRateBp) c.addIssue({ code: z.ZodIssueCode.custom, path: ['compositionRateBp'], message: 'Choose your composition rate' });
@@ -185,7 +186,7 @@ export const readSetup = (t: { onboarding: unknown }) => (((t.onboarding ?? {}) 
 
 export async function getWorkspace(tenantId: string) {
   const t = await getTenant(tenantId);
-  return { profile: readProfile(t), preferences: withDefaults(t.preferences), setup: readSetup(t) };
+  return { profile: readProfile(t), preferences: withDefaults(t.preferences, t.profile), setup: readSetup(t) };
 }
 
 export async function updateProfile(tenantId: string, patch: z.infer<typeof ProfileInput>) {

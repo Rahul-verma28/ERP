@@ -10,6 +10,11 @@ export interface ViewDoc {
   kind: "invoice" | "quotation" | "credit_note" | "sales_order" | "delivery_challan" | "debit_note"
   noteType?: string | null
   shipTo?: ShipTo | null
+  ewayBillNo?: string | null
+  ewayBillDate?: string | null
+  irn?: string | null
+  irnAckNo?: string | null
+  irnAckDate?: string | null
   number: string | null
   status: string
   issueDate: string
@@ -75,8 +80,15 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
           <p className="text-neutral-600">Date: {formatDate(doc.issueDate)}</p>
           {doc.sourceNumber && <p className="text-neutral-600">Against invoice: <span className="font-mono">{doc.sourceNumber}</span></p>}
           {doc.dueDate && <p className="text-neutral-600">{doc.kind === "invoice" ? "Due" : doc.kind === "sales_order" || doc.kind === "delivery_challan" ? "Deliver by" : "Valid until"}: {formatDate(doc.dueDate)}</p>}
+          {doc.ewayBillNo && <p className="text-neutral-600">E-way bill: <span className="font-mono">{doc.ewayBillNo}</span>{doc.ewayBillDate && ` · ${formatDate(doc.ewayBillDate)}`}</p>}
           {doc.status === "cancelled" && <p className="mt-1 font-semibold text-red-600">CANCELLED</p>}
         </div>
+        {doc.irn && (
+          <div className="w-full rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            <p>IRN: <span className="font-mono break-all">{doc.irn}</span></p>
+            <p>Ack no: <span className="font-mono">{doc.irnAckNo}</span>{doc.irnAckDate && ` · Ack date: ${formatDate(doc.irnAckDate)}`}</p>
+          </div>
+        )}
       </header>
 
       <section className="grid gap-4 border-b border-neutral-200 py-5 sm:grid-cols-2">

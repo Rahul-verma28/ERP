@@ -18,6 +18,7 @@ import { todayInIndia } from "@contracts/validation"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { SalesDocEditor } from "@/components/sales-doc-editor"
 import { SalesDocView } from "@/components/sales-doc-view"
+import { EInvoiceButton, EInvoiceDialog, EwayBillButton, EwayBillDialog, useEInvoicing } from "@/components/gst-files"
 import type { ContactOption } from "@/components/pickers"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -119,6 +120,18 @@ export function SalesDocList({ kind }: { kind: Kind }) {
     </HeaderLink>
   )
   const status = (r: Row) => listStatus(kind, r, today)
+  const eInvoicing = useEInvoicing()
+  const [bulk, setBulk] = React.useState<null | { type: "eway" | "einvoice"; ids: string[] }>(null)
+  const issuedOnly = (rows: Row[]) => rows.filter((r) => !["draft", "cancelled"].includes(r.status)).map((r) => r.id)
+  const openBulk = (type: "eway" | "einvoice") => (rows: Row[]) => {
+    const ids = issuedOnly(rows)
+    if (ids.length) setBulk({ type, ids })
+    else toast.error("Choose issued bills")
+  }
+  const bulkActions =
+    (kind === "invoice" || kind === "delivery_challan") && me?.tenant?.gstin
+      ? [{ label: "E-way bill JSON", run: openBulk("eway") }, ...(kind === "invoice" && eInvoicing ? [{ label: "E-invoice JSON", run: openBulk("einvoice") }] : [])]
+      : []
   const due = (r: Row) => Math.max(0, r.totalPaise - r.paidPaise)
 
   const columns: Column<Row>[] = [
@@ -154,6 +167,7 @@ export function SalesDocList({ kind }: { kind: Kind }) {
       : STATUS_FILTERS[kind].map((f) => ({ key: f.value || "all", label: f.label, params: (f.value ? { status: f.value } : {}) as Record<string, string>, countKey: f.value || "all" }))
 
   return (
+    <>
     <DataList<Row>
       id={{ invoice: "invoices", quotation: "quotations", sales_order: "sales-orders", delivery_challan: "delivery-challans" }[kind]}
       path={docApi(kind)}
@@ -163,6 +177,7 @@ export function SalesDocList({ kind }: { kind: Kind }) {
         title: LIST_NAME[kind],
         actions: (
           <>
+            {kind === "invoice" && <HeaderLink href="/app/m/billing/dues">Dues</HeaderLink>}
             {kind === "invoice" && can("billing.credit_note.view") && <HeaderLink href="/app/m/billing/credit-notes">Credit notes</HeaderLink>}
             {kind === "invoice" && canCreate && can("billing.payment.create") && <HeaderLink href="/app/m/billing/new?cash=1">Cash bill</HeaderLink>}
             {kind === "quotation" && can("sales.order.view") && <HeaderLink href="/app/m/sales/orders">Sales orders</HeaderLink>}
@@ -178,6 +193,7 @@ export function SalesDocList({ kind }: { kind: Kind }) {
       presets={presets}
       filters={[periodFilter(me?.tenant?.fyStartMonth ?? 4)]}
       rowHref={(r) => `/app/m/${docPath(kind)}/${r.id}`}
+      bulkActions={bulkActions}
       exportName={{ invoice: "invoices", quotation: "quotations", sales_order: "sales-orders", delivery_challan: "delivery-challans" }[kind]}
       emptyState={
         <EmptyState
@@ -188,6 +204,9 @@ export function SalesDocList({ kind }: { kind: Kind }) {
         />
       }
     />
+    {bulk?.type === "eway" && <EwayBillDialog ids={bulk.ids} label={`${bulk.ids.length}-bills`} hasChallan={kind === "delivery_challan"} onClose={() => setBulk(null)} />}
+    {bulk?.type === "einvoice" && <EInvoiceDialog ids={bulk.ids} label={`${bulk.ids.length}-bills`} onClose={() => setBulk(null)} />}
+    </>
   )
 }
 
@@ -481,6 +500,8 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
           {kind === "delivery_challan" && doc.status === "issued" && can("sales.delivery.edit") && (
             <Button variant="ghost" onClick={() => setCancelling(true)}><Ban /> Cancel</Button>
           )}
+          {(kind === "invoice" || kind === "delivery_challan") && <EwayBillButton doc={doc} onSaved={(d) => setData({ ...doc, ...(d as Partial<SalesDoc>) })} />}
+          {kind === "invoice" && <EInvoiceButton doc={doc} onSaved={(d) => setData({ ...doc, ...(d as Partial<SalesDoc>) })} />}
           {doc.status !== "draft" && <a href={`/print/${kind}/${id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><Printer /> Print / PDF</a>}
           {kind === "invoice" && ["issued", "partially_paid"].includes(doc.status) && doc.paidPaise === 0 && can("billing.invoice.approve") && (
             <Button variant="ghost" onClick={() => setCancelling(true)}><Ban /> Cancel</Button>
@@ -675,7 +696,7 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
         onOpenChange={setCancelling}
         destructive
         title={`Cancel ${doc.number}?`}
-        description={`The number stays used and the ${docLabel(kind).toLowerCase()} is kept for your records, marked cancelled.`}
+        description={`The number stays used and the ${docLabel(kind).toLowerCase()} is kept for your records, marked cancelled.${doc.ewayBillNo ? ` Also cancel e-way bill ${doc.ewayBillNo} on the portal, within 24 hours of making it.` : ""}${doc.irn ? " Also cancel the IRN on the e-invoice portal, within 24 hours of making it." : ""}`}
         reasonLabel="Reason for cancelling"
         confirmLabel={`Cancel ${docLabel(kind).toLowerCase()}`}
         onConfirm={(reason) => act(() => api.post<SalesDoc>(`${docApi(kind)}/${id}/cancel`, { reason }), `${docLabel(kind)} cancelled`)}

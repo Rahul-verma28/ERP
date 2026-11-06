@@ -9,12 +9,13 @@ import { validate } from '../../middleware/request';
 import { publicRoute, requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { publicLimiter } from '../../middleware/rateLimit';
 import { audit } from '../audit/service';
-import { todayIST } from '../../kernel/gst';
+import { dateOnly, todayIST } from '../../kernel/gst';
 import * as billing from './service';
 import * as creditNotes from './creditNotes';
 import * as ledger from './ledger';
 import * as orders from './orders';
 import { sendOverdueReminders } from '../tenancy/messages';
+import * as gstFiles from './gstFiles';
 
 // Quotations (sales module) and GST invoices + receipts (billing module).
 
@@ -293,5 +294,24 @@ router.get(
     res.json(page(rows, q.limit));
   }),
 );
+
+// GST portal files, made here and uploaded by the business; the numbers they give back
+router.post('/gst/eway-bill-json', requirePermission('billing.invoice.view'), validate(gstFiles.EwayInput), tx(async (req, res) => {
+  res.json(await gstFiles.ewayBillJson(req.ctx!, req.body));
+}));
+router.post('/gst/einvoice-json', requirePermission('billing.invoice.view'), validate(gstFiles.EInvoiceInput), tx(async (req, res) => {
+  res.json(await gstFiles.eInvoiceJson(req.ctx!, req.body));
+}));
+router.patch('/sales-documents/:id/gst-refs', requirePermission('billing.invoice.edit'), validate(IdParam, 'params'), validate(gstFiles.GstRefsInput), tx(async (req, res) => {
+  res.json(await gstFiles.saveGstRefs(req.ctx!, String(req.params.id), req.body));
+}));
+
+// Who owes money, for reminders sent by hand on WhatsApp, SMS or email
+router.get('/dues', requirePermission('billing.invoice.view'), validate(gstFiles.DuesQuery, 'query'), tx(async (req, res) => {
+  res.json(await gstFiles.dues(req.ctx!, req.query as z.infer<typeof gstFiles.DuesQuery>, dateOnly(todayIST())));
+}));
+router.post('/contacts/:id/reminded', requirePermission('billing.invoice.view'), validate(IdParam, 'params'), validate(gstFiles.RemindedInput), tx(async (req, res) => {
+  res.json(await gstFiles.markReminded(req.ctx!, String(req.params.id), req.body.via));
+}));
 
 export default router;

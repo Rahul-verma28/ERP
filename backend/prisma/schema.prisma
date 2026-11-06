@@ -1268,6 +1268,9 @@ model Contact {
   isSample    Boolean     @default(false) @map("is_sample")
   /// Empty = no limit
   creditLimitPaise BigInt? @map("credit_limit_paise")
+  lastRemindedAt   DateTime? @map("last_reminded_at") @db.Timestamptz
+  /// whatsapp | sms | email
+  lastReminderVia  String?   @map("last_reminder_via") @db.VarChar(10)
   priceListId String?     @map("price_list_id") @db.Uuid
   createdBy   String?     @map("created_by") @db.Uuid
   convertedAt DateTime?   @map("converted_at") @db.Timestamptz
@@ -1363,6 +1366,12 @@ model SalesDocument {
   igstPaise     BigInt         @default(0) @map("igst_paise")
   /// Where the goods go when it is not the billing address: name, line1, city, pincode, stateCode
   shipTo        Json?          @map("ship_to")
+  /// Given back by the GST portals after the JSON upload
+  ewayBillNo    String?        @map("eway_bill_no") @db.VarChar(12)
+  ewayBillDate  DateTime?      @map("eway_bill_date") @db.Date
+  irn           String?        @db.Char(64)
+  irnAckNo      String?        @map("irn_ack_no") @db.VarChar(20)
+  irnAckDate    DateTime?      @map("irn_ack_date") @db.Date
   /// Added to make the total a whole rupee; part of totalPaise
   roundOffPaise BigInt         @default(0) @map("round_off_paise")
   totalPaise    BigInt         @default(0) @map("total_paise")

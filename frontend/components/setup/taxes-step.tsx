@@ -50,6 +50,7 @@ export function TaxesStep({ tenant, workspace, refresh, complete, back }: StepPr
       hsnDigits: t.hsnDigits,
       reverseCharge: t.reverseCharge,
       roundOff: !!t.roundOff,
+      eInvoicing: !!t.eInvoicing,
     },
     rules: { compositionRateBp: (v, all) => (all.composition && !v ? "Choose your composition rate" : null) },
     onSubmit: async (v) => {
@@ -61,6 +62,7 @@ export function TaxesStep({ tenant, workspace, refresh, complete, back }: StepPr
         hsnDigits: v.hsnDigits,
         reverseCharge: v.reverseCharge,
         roundOff: v.roundOff,
+        eInvoicing: registered && !v.composition && v.eInvoicing,
       })
       await refresh()
       await complete("done")
@@ -126,6 +128,11 @@ export function TaxesStep({ tenant, workspace, refresh, complete, back }: StepPr
               </ChoiceChip>
             </div>
           </Row>
+          {!v.composition && (
+            <Row title="E-invoicing" description="Turn on if your turnover is above the e-invoice limit (₹5 Cr). B2B bills then get an E-invoice button for the portal file.">
+              <Toggle checked={v.eInvoicing} onChange={(c) => form.set("eInvoicing", c)} label="E-invoicing" />
+            </Row>
+          )}
           <Row title="Reverse charge on sales" description="Turn on only if your customers pay the GST for some sales.">
             <Toggle checked={v.reverseCharge} onChange={(c) => form.set("reverseCharge", c)} label="Reverse charge" />
           </Row>

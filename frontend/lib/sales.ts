@@ -87,6 +87,11 @@ export interface SalesDoc {
   noteType?: string | null
   sourceNumber?: string | null
   shipTo?: ShipTo | null
+  ewayBillNo?: string | null
+  ewayBillDate?: string | null
+  irn?: string | null
+  irnAckNo?: string | null
+  irnAckDate?: string | null
   notes: string | null
   terms: string | null
   shareToken: string | null

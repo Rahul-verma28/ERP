@@ -213,6 +213,8 @@ export interface WorkspacePreferences {
     reverseCharge: boolean;
     /** Round bills to the whole rupee by default */
     roundOff: boolean;
+    /** Turnover above the e-invoice limit: show e-invoice JSON on B2B bills */
+    eInvoicing: boolean;
   };
   branding: {
     brandColor: string;
@@ -228,13 +230,16 @@ export interface WorkspacePreferences {
 export const DEFAULT_PREFERENCES: WorkspacePreferences = {
   documents: { invoicePrefix: 'INV/{FY}/', quotationPrefix: 'QT/{FY}/', receiptPrefix: 'RCT/{FY}/', creditNotePrefix: 'CN/{FY}/', salesOrderPrefix: 'SO/{FY}/', deliveryChallanPrefix: 'DC/{FY}/', debitNotePrefix: 'DN/{FY}/', template: 'classic', paper: 'a4', terms: '', quotationTerms: '', showHsnSummary: true, showSignatory: true },
   payments: { bankHolder: '', bankAccount: '', ifsc: '', upiId: '', showUpiQr: false },
-  taxes: { composition: false, compositionRateBp: null, pricesIncludeTax: true, roundOff: false, defaultGstRateBp: 1800, hsnDigits: 4, reverseCharge: false },
+  taxes: { composition: false, compositionRateBp: null, pricesIncludeTax: true, roundOff: false, defaultGstRateBp: 1800, hsnDigits: 4, reverseCharge: false, eInvoicing: false },
   branding: { brandColor: '#2450D8', preset: 'default', theme: 'system', font: 'inter', density: 'comfortable' },
 };
 
 /** Fill missing keys from defaults (old rows, new settings added later). */
-export function withDefaults(stored: unknown): WorkspacePreferences {
+export function withDefaults(stored: unknown, profile?: unknown): WorkspacePreferences {
   const s = (stored && typeof stored === 'object' ? stored : {}) as Partial<Record<keyof WorkspacePreferences, object>>;
+  // Until Taxes is saved once, the composition answer from signup counts
+  const signup = (profile && typeof profile === 'object' ? (profile as { composition?: unknown }).composition : undefined) === true;
+  if (signup && !(s.taxes && 'composition' in s.taxes)) s.taxes = { ...(s.taxes ?? {}), composition: true };
   return {
     documents: { ...DEFAULT_PREFERENCES.documents, ...(s.documents ?? {}) },
     payments: { ...DEFAULT_PREFERENCES.payments, ...(s.payments ?? {}) },

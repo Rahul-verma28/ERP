@@ -561,8 +561,8 @@ export async function finance(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
       return { sales: sales.taxable, expenses: cost.total, profit: sales.taxable - cost.total };
     });
     out.gst = run(async () => {
-      const [sales, t] = await Promise.all([invoiced(inv, b, r), db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { preferences: true } })]);
-      const taxes = withDefaults(t.preferences).taxes;
+      const [sales, t] = await Promise.all([invoiced(inv, b, r), db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { preferences: true, profile: true } })]);
+      const taxes = withDefaults(t.preferences, t.profile).taxes;
       return { cgst: sales.cgst, sgst: sales.sgst, igst: sales.igst, total: sales.cgst + sales.sgst + sales.igst, composition: taxes.composition, compositionRateBp: taxes.compositionRateBp, taxable: sales.taxable, due: gstr3bDue(r.to) };
     });
   }
