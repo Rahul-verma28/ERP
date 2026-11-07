@@ -39,6 +39,13 @@ interface Item {
   trackStock?: boolean
   reorderLevel?: number | null
   stockQty?: number
+  reservedQty?: number
+  tracking?: "none" | "batch" | "serial"
+  altUnit?: string | null
+  altFactor?: number | null
+  barcode?: string | null
+  variantGroup?: string | null
+  attributes?: Record<string, string>
   custom: Record<string, unknown>
   version: number
 }
@@ -48,7 +55,51 @@ interface Category {
   name: string
 }
 
-const EMPTY = { type: "product" as Item["type"], name: "", sku: "", categoryId: "", unit: "pcs", pricePaise: null as number | null, costPricePaise: null as number | null, gstRateBp: 1800, hsnSac: "", durationMin: "", description: "", trackStock: false, reorderLevel: "", custom: {} as Record<string, unknown> }
+const EMPTY = { type: "product" as Item["type"], name: "", sku: "", categoryId: "", unit: "pcs", pricePaise: null as number | null, costPricePaise: null as number | null, gstRateBp: 1800, hsnSac: "", durationMin: "", description: "", trackStock: false, reorderLevel: "", tracking: "none" as "none" | "batch" | "serial", altUnit: "", altFactor: "", barcode: "", custom: {} as Record<string, unknown> }
+
+/** Make one item per combination: Size S, M × Colour Red, Blue gives four items in one group. */
+function VariantsDialog({ item, onClose, onDone }: { item: Item; onClose: () => void; onDone: () => void }) {
+  const [rows, setRows] = React.useState([{ name: "Size", values: "" }, { name: "Colour", values: "" }])
+  const [error, setError] = React.useState<string | null>(null)
+  const [busy, setBusy] = React.useState(false)
+  const attrs = Object.fromEntries(rows.filter((r) => r.name.trim() && r.values.trim()).map((r) => [r.name.trim(), [...new Set(r.values.split(",").map((v) => v.trim()).filter(Boolean))]]))
+  const count = Object.values(attrs).reduce((n, v) => n * v.length, Object.keys(attrs).length ? 1 : 0)
+  async function make() {
+    if (!count) return setError("Give at least one attribute with values")
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await api.post<{ created: number }>(`/items/${item.id}/variants`, { attributes: attrs })
+      toast.success(r.created ? `${r.created} variants added` : "Those variants already exist")
+      onDone()
+    } catch (e) {
+      setError(errorMessage(e))
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Variants of {item.variantGroup ?? item.name}</DialogTitle>
+          <DialogDescription>Each combination becomes its own item with the same price, GST and stock settings. Change any of them after.</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          {rows.map((r, i) => (
+            <div key={i} className="grid grid-cols-[8rem_1fr] gap-2">
+              <Input value={r.name} onChange={(e) => setRows((rs) => rs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder="Attribute" aria-label="Attribute" />
+              <Input value={r.values} onChange={(e) => setRows((rs) => rs.map((x, j) => (j === i ? { ...x, values: e.target.value } : x)))} placeholder="Values, comma separated: S, M, L" aria-label={`Values of ${r.name || "attribute"}`} />
+            </div>
+          ))}
+          {rows.length < 3 && <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => setRows((rs) => [...rs, { name: "", values: "" }])}><Plus /> Attribute</Button>}
+          <p className="text-sm text-muted-foreground">{count ? `${count} item${count === 1 ? "" : "s"} will be made` : "Nothing to make yet"}</p>
+          <FormError message={error} />
+        </div>
+        <DialogFooter><Button disabled={busy || !count} onClick={make}>{busy ? "Making…" : "Make variants"}</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 function ItemDialog({ item, categories, onClose, onSaved }: { item: Item | null; categories: Category[]; onClose: () => void; onSaved: () => void }) {
   const { can, me } = useAuth()
@@ -56,12 +107,13 @@ function ItemDialog({ item, categories, onClose, onSaved }: { item: Item | null;
   const canCost = me?.fieldAccess?.["item.cost_price"] === "write"
   const [form, setForm] = React.useState(() =>
     item
-      ? { ...EMPTY, ...item, sku: item.sku ?? "", categoryId: item.categoryId ?? "", hsnSac: item.hsnSac ?? "", durationMin: item.durationMin ? String(item.durationMin) : "", description: item.description ?? "", costPricePaise: item.costPricePaise ?? null, trackStock: !!item.trackStock, reorderLevel: item.reorderLevel != null ? String(item.reorderLevel) : "" }
+      ? { ...EMPTY, ...item, sku: item.sku ?? "", categoryId: item.categoryId ?? "", hsnSac: item.hsnSac ?? "", durationMin: item.durationMin ? String(item.durationMin) : "", description: item.description ?? "", costPricePaise: item.costPricePaise ?? null, trackStock: !!item.trackStock, reorderLevel: item.reorderLevel != null ? String(item.reorderLevel) : "", tracking: item.tracking ?? "none", altUnit: item.altUnit ?? "", altFactor: item.altFactor ? String(item.altFactor) : "", barcode: item.barcode ?? "" }
       : EMPTY
   )
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
+  const [makingVariants, setMakingVariants] = React.useState(false)
   const set = <K extends keyof typeof EMPTY>(k: K, v: (typeof EMPTY)[K]) => setForm((f) => ({ ...f, [k]: v }))
   const editable = item ? can("catalog.item.edit") : can("catalog.item.create")
 
@@ -83,7 +135,16 @@ function ItemDialog({ item, categories, onClose, onSaved }: { item: Item | null;
       hsnSac: form.hsnSac || null,
       durationMin: form.type === "service" && form.durationMin ? Number(form.durationMin) : null,
       description: form.description || null,
-      ...(form.type === "product" ? { trackStock: form.trackStock, reorderLevel: form.trackStock && form.reorderLevel !== "" ? Number(form.reorderLevel) : null } : { trackStock: false }),
+      ...(form.type === "product"
+        ? {
+            trackStock: form.trackStock,
+            reorderLevel: form.trackStock && form.reorderLevel !== "" ? Number(form.reorderLevel) : null,
+            tracking: form.trackStock ? form.tracking : "none",
+            altUnit: form.altUnit.trim() || null,
+            altFactor: form.altUnit.trim() && form.altFactor ? Number(form.altFactor) : null,
+            barcode: form.barcode.trim() || null,
+          }
+        : { trackStock: false }),
       custom: form.custom,
     }
     try {
@@ -165,6 +226,26 @@ function ItemDialog({ item, categories, onClose, onSaved }: { item: Item | null;
                   <Input inputMode="decimal" value={form.reorderLevel} onChange={(e) => set("reorderLevel", e.target.value.replace(/[^\d.]/g, ""))} disabled={!editable} />
                 </Field>
               )}
+              {form.trackStock && (
+                <Field label="Track by" hint={item?.stockQty ? "Can change only when stock is zero" : "Batch: number and expiry. Serial: one number per piece"} error={errors.tracking}>
+                  <NativeSelect value={form.tracking} onChange={(e) => set("tracking", e.target.value as typeof form.tracking)} disabled={!editable || !!item?.stockQty} aria-label="Track by">
+                    <option value="none">Quantity only</option>
+                    <option value="batch">Batch and expiry</option>
+                    <option value="serial">Serial / IMEI number</option>
+                  </NativeSelect>
+                </Field>
+              )}
+              <Field label="Barcode" hint="Scan into bills; printed on labels" error={errors.barcode}>
+                <Input value={form.barcode} onChange={(e) => set("barcode", e.target.value)} maxLength={48} disabled={!editable} />
+              </Field>
+              <div className="grid grid-cols-[1fr_6rem] gap-2">
+                <Field label="Second unit" hint={`e.g. box, carton`} error={errors.altUnit}>
+                  <Input value={form.altUnit} onChange={(e) => set("altUnit", e.target.value)} maxLength={20} disabled={!editable} placeholder="box" />
+                </Field>
+                <Field label={`${form.unit || "pcs"} in one`} error={errors.altFactor}>
+                  <Input inputMode="decimal" value={form.altFactor} onChange={(e) => set("altFactor", e.target.value.replace(/[^\d.]/g, ""))} disabled={!editable || !form.altUnit.trim()} placeholder="12" />
+                </Field>
+              </div>
             </div>
           )}
           <datalist id="units">{["pcs", "kg", "g", "l", "ml", "m", "box", "pack", "hour", "service", "month"].map((u) => <option key={u} value={u} />)}</datalist>
@@ -174,11 +255,18 @@ function ItemDialog({ item, categories, onClose, onSaved }: { item: Item | null;
           <CustomFieldsForm fields={fields} value={form.custom} onChange={(v) => set("custom", v)} errors={errors} disabled={!editable} />
           <FormError message={error} />
           {editable && (
-            <DialogFooter>
+            <DialogFooter className="flex-wrap gap-2">
+              {item && item.type === "product" && (
+                <>
+                  <a href={`/print/labels?ids=${item.id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}>Print labels</a>
+                  {can("catalog.item.create") && <Button type="button" variant="outline" onClick={() => setMakingVariants(true)}>Make variants</Button>}
+                </>
+              )}
               <Button type="submit" disabled={busy}>{busy ? "Saving…" : item ? "Save changes" : "Add item"}</Button>
             </DialogFooter>
           )}
         </form>
+        {makingVariants && item && <VariantsDialog item={item} onClose={() => setMakingVariants(false)} onDone={() => { setMakingVariants(false); onSaved() }} />}
       </DialogContent>
     </Dialog>
   )
@@ -258,12 +346,12 @@ export default function CatalogPage() {
                   <TableRow key={i.id} className="cursor-pointer" onClick={() => setEditing(i)}>
                     <TableCell className="pl-6">
                       <div className="font-medium">{i.name} {!i.isActive && <Badge variant="outline" className="ml-1">Archived</Badge>}</div>
-                      <div className="text-xs text-muted-foreground">{[i.sku, categories.data?.data.find((c) => c.id === i.categoryId)?.name, i.durationMin ? `${i.durationMin} min` : null].filter(Boolean).join(" · ") || i.unit}</div>
+                      <div className="text-xs text-muted-foreground">{[i.sku, i.variantGroup && i.attributes && Object.keys(i.attributes).length ? Object.values(i.attributes).join(" / ") : null, categories.data?.data.find((c) => c.id === i.categoryId)?.name, i.durationMin ? `${i.durationMin} min` : null, i.tracking === "batch" ? "Batch" : i.tracking === "serial" ? "Serial" : null].filter(Boolean).join(" · ") || i.unit}</div>
                     </TableCell>
                     <TableCell className="capitalize">{i.type}</TableCell>
                     <TableCell className="font-mono text-xs">{i.hsnSac ?? "—"}</TableCell>
                     <TableCell className="text-right">{i.gstRateBp / 100}%</TableCell>
-                    {can("inventory.stock.view") && <TableCell className={"text-right tabular-nums" + ((i.stockQty ?? 0) < 0 ? " text-destructive" : "")}>{i.trackStock ? `${i.stockQty ?? 0} ${i.unit}` : "—"}</TableCell>}
+                    {can("inventory.stock.view") && <TableCell className={"text-right tabular-nums" + ((i.stockQty ?? 0) < 0 ? " text-destructive" : "")}>{i.trackStock ? `${i.stockQty ?? 0} ${i.unit}${i.reservedQty ? ` · ${i.reservedQty} held` : ""}` : "—"}</TableCell>}
                     {showCost && <TableCell className="text-right tabular-nums text-muted-foreground">{i.costPricePaise != null ? formatPaise(i.costPricePaise) : "—"}</TableCell>}
                     <TableCell className="pr-6 text-right font-medium tabular-nums">{formatPaise(i.pricePaise)}</TableCell>
                   </TableRow>

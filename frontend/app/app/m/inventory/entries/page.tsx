@@ -16,7 +16,7 @@ export default function StockEntriesPage() {
   const showValue = can("inventory.valuation.view") || can("inventory.receipt.create")
   const columns: Column<StockEntry>[] = [
     { key: "date", header: "Date", hideable: false, cell: (r) => formatDate(r.entryDate), csv: (r) => r.entryDate.slice(0, 10), sort: (r) => r.createdAt },
-    { key: "kind", header: "Entry", cell: (r) => <span className="font-medium">{ENTRY_LABEL[r.kind]}{r.reason && <span className="block text-xs font-normal text-muted-foreground">{REASONS.find((x) => x.value === r.reason)?.label ?? r.reason}</span>}</span>, csv: (r) => ENTRY_LABEL[r.kind] },
+    { key: "kind", header: "Entry", cell: (r) => <span className="font-medium">{ENTRY_LABEL[r.kind]}{r.status === "in_transit" && <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200">On the way</span>}{r.reason && <span className="block text-xs font-normal text-muted-foreground">{REASONS.find((x) => x.value === r.reason)?.label ?? r.reason}</span>}</span>, csv: (r) => ENTRY_LABEL[r.kind] },
     { key: "where", header: "Godown", cell: (r) => (r.toLocation ? `${r.location} → ${r.toLocation}` : r.location), csv: (r) => (r.toLocation ? `${r.location} > ${r.toLocation}` : r.location) },
     { key: "party", header: "Supplier / note", cell: (r) => <span className="text-muted-foreground">{[r.party, r.reference, r.note].filter(Boolean).join(" · ") || "—"}</span>, csv: (r) => [r.party, r.reference, r.note].filter(Boolean).join(" ") },
     { key: "lines", header: "Items", align: "right", cell: (r) => r.lineCount ?? r.lines.length, csv: (r) => r.lineCount ?? r.lines.length },
@@ -34,6 +34,7 @@ export default function StockEntriesPage() {
         { key: "stock_in", label: "Stock in", params: { kind: "stock_in" } },
         { key: "adjustment", label: "Adjustments", params: { kind: "adjustment" } },
         { key: "transfer", label: "Transfers", params: { kind: "transfer" } },
+        { key: "transit", label: "On the way", params: { kind: "transfer", status: "in_transit" } },
         { key: "count", label: "Counts", params: { kind: "count" } },
         { key: "opening", label: "Opening", params: { kind: "opening" } },
       ]}

@@ -4,6 +4,7 @@ import { IdParam } from '../../kernel/query';
 import { validate } from '../../middleware/request';
 import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import * as inventory from './service';
+import * as reports from './reports';
 
 const router = Router();
 router.use(tenantAuth);
@@ -25,6 +26,28 @@ router.get('/stock', requirePermission('inventory.stock.view'), validate(invento
 }));
 router.get('/stock/items/:id', requirePermission('inventory.stock.view'), validate(IdParam, 'params'), validate(inventory.LedgerQuery, 'query'), tx(async (req, res) => {
   res.json(await inventory.itemLedger(req.ctx!, String(req.params.id), req.query as z.infer<typeof inventory.LedgerQuery>));
+}));
+
+router.get('/stock/items/:id/batches', requirePermission('inventory.stock.view'), validate(IdParam, 'params'), validate(inventory.BatchQuery, 'query'), tx(async (req, res) => {
+  res.json(await inventory.itemBatches(req.ctx!, String(req.params.id), req.query as z.infer<typeof inventory.BatchQuery>));
+}));
+router.get('/stock/items/:id/serials', requirePermission('inventory.stock.view'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json(await inventory.itemSerials(req.ctx!, String(req.params.id), { locationId: typeof req.query.locationId === 'string' ? req.query.locationId : undefined, status: typeof req.query.status === 'string' ? req.query.status : undefined }));
+}));
+router.get('/stock/serials/:serial', requirePermission('inventory.stock.view'), tx(async (req, res) => {
+  res.json(await inventory.findSerial(req.ctx!, String(req.params.serial).slice(0, 40)));
+}));
+router.get('/stock/ageing', requirePermission('inventory.stock.view'), tx(async (req, res) => {
+  res.json(await reports.stockAgeing(req.ctx!));
+}));
+router.get('/stock/near-expiry', requirePermission('inventory.stock.view'), validate(reports.ExpiryQuery, 'query'), tx(async (req, res) => {
+  res.json(await reports.nearExpiry(req.ctx!, req.query as unknown as z.infer<typeof reports.ExpiryQuery>));
+}));
+router.post('/stock/import/resolve', requirePermission('inventory.stock.view'), validate(inventory.ResolveInput), tx(async (req, res) => {
+  res.json(await inventory.resolveItems(req.ctx!, req.body));
+}));
+router.post('/stock/entries/:id/receive', requirePermission('inventory.transfer.create'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json(await inventory.receiveTransfer(req.ctx!, String(req.params.id)));
 }));
 
 // Entries made by hand. Each kind has its own permission.

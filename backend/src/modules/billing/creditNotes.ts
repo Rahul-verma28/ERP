@@ -17,6 +17,12 @@ import { getDocument, PaymentInput, setCreditUsed, setPaid } from './service';
 const CreditableStatus = ['issued', 'partially_paid', 'paid'];
 const milli = (q: unknown) => BigInt(Math.round(Number(q) * 1000));
 
+/** 30 November after the end of the April–March year the invoice falls in (Section 34(2) CGST Act) */
+export function creditNoteDeadline(invoiceDate: Date) {
+  const fyEndYear = invoiceDate.getUTCMonth() >= 3 ? invoiceDate.getUTCFullYear() + 1 : invoiceDate.getUTCFullYear();
+  return new Date(Date.UTC(fyEndYear, 10, 30));
+}
+
 export const CreditNoteInput = z.object({
   type: z.enum(['return', 'amount']),
   issueDate: DateStr.optional(),
@@ -27,6 +33,8 @@ export const CreditNoteInput = z.object({
     quantity: z.number().positive('Quantity must be more than 0').max(1e7).optional(),
     /** Value reduced, before GST */
     taxablePaise: Paise.optional(),
+    /** Serial-tracked goods: the numbers that came back; none means the ones sold on that line */
+    serials: z.array(z.string().trim().min(1).max(40)).max(1000).optional(),
   })).min(1, 'Choose at least one line').max(200),
 });
 export type CreditNoteInput = z.infer<typeof CreditNoteInput>;
@@ -58,6 +66,13 @@ export async function createCreditNote(ctx: TenantCtx, invoiceId: string, input:
   const doc = await getDocument(ctx, invoiceId, 'invoice');
   if (!CreditableStatus.includes(doc.status)) throw new AppError('CONFLICT', 'A credit note can only be made on an issued invoice.');
   const issueDate = input.issueDate ?? todayIST();
+  // Section 34(2) CGST Act: a credit note that reduces GST must be issued by 30 November after the
+  // end of the financial year (April to March) of the invoice. After that only a commercial credit
+  // without GST is possible, which a CA settles outside this screen.
+  const lastDay = creditNoteDeadline(doc.issueDate);
+  if (dateOnly(issueDate) > lastDay) {
+    throw new AppError('CONFLICT', `GST allows a credit note for this invoice only until ${lastDay.toISOString().slice(0, 10)} (Section 34(2)). Settle the difference without GST; ask your CA how to record it.`, { deadline: lastDay.toISOString().slice(0, 10) });
+  }
   if (dateOnly(issueDate) < doc.issueDate) throw new AppError('VALIDATION_FAILED', 'The credit note date cannot be before the invoice date.', { fields: { issueDate: 'Before the invoice date' } });
   const open = new Map((await creditableLines(ctx, invoiceId)).map((o) => [o.line.id, o]));
   const seen = new Set<string>();
@@ -104,6 +119,7 @@ export async function createCreditNote(ctx: TenantCtx, invoiceId: string, input:
     const igst = intra ? 0n : clearing ? left.igstPaise : min(divRound(taxable * rate, 10_000n), left.igstPaise);
     return {
       tenantId: ctx.tenantId, sourceLineId: line.id, itemId: line.itemId, description: line.description, hsnSac: line.hsnSac, unit, quantity, unitPricePaise: unitPrice, discountPaise: discount,
+      serials: input.type === 'return' ? [...new Set(want.serials ?? [])] : [],
       taxablePaise: taxable, gstRateBp: line.gstRateBp, cgstPaise: cgst, sgstPaise: sgst, igstPaise: igst, totalPaise: taxable + cgst + sgst + igst, position: i,
     };
   });
@@ -126,7 +142,7 @@ export async function createCreditNote(ctx: TenantCtx, invoiceId: string, input:
   const applied = min(totals.totalPaise, due > 0n ? due : 0n);
   const note = await db().salesDocument.create({
     data: {
-      tenantId: ctx.tenantId, kind: 'credit_note', status: 'issued', number, fy, noteType: input.type, sourceType: 'invoice', sourceId: doc.id, sourceNumber: doc.number,
+      tenantId: ctx.tenantId, kind: 'credit_note', status: 'issued', number, fy, noteType: input.type, sourceType: 'invoice', sourceId: doc.id, sourceNumber: doc.number, sourceDate: doc.issueDate,
       branchId: doc.branchId, contactId: doc.contactId, buyer: doc.buyer as object, seller: doc.seller as object, placeOfSupply: doc.placeOfSupply,
       issueDate: dateOnly(issueDate), ...totals, roundOffPaise, paidPaise: applied, notes: input.notes ?? null, shareToken: randomToken(18), createdBy: ctx.userId, issuedAt: new Date(),
       lines: { create: lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) },
@@ -213,7 +229,7 @@ export async function createDebitNote(ctx: TenantCtx, invoiceId: string, input: 
   const { number, fy } = await allocateNumber(ctx.tenantId, 'debit_note', tenant.fyStartMonth, dateOnly(issueDate));
   const note = await db().salesDocument.create({
     data: {
-      tenantId: ctx.tenantId, kind: 'debit_note', status: 'issued', number, fy, sourceType: 'invoice', sourceId: doc.id, sourceNumber: doc.number, branchId: doc.branchId, contactId: doc.contactId,
+      tenantId: ctx.tenantId, kind: 'debit_note', status: 'issued', number, fy, sourceType: 'invoice', sourceId: doc.id, sourceNumber: doc.number, sourceDate: doc.issueDate, branchId: doc.branchId, contactId: doc.contactId,
       buyer: doc.buyer as object, seller: doc.seller as object, placeOfSupply: doc.placeOfSupply, issueDate: dateOnly(issueDate), subtotalPaise: sum((l) => l.taxablePaise), taxablePaise: sum((l) => l.taxablePaise),
       cgstPaise: sum((l) => l.cgstPaise), sgstPaise: sum((l) => l.sgstPaise), igstPaise: sum((l) => l.igstPaise), totalPaise: sum((l) => l.totalPaise), notes: input.notes ?? null, shareToken: randomToken(18), createdBy: ctx.userId, issuedAt: new Date(),
       lines: { create: lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) },

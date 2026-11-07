@@ -1237,6 +1237,15 @@ model Item {
   trackStock     Boolean      @default(false) @map("track_stock")
   /// Low-stock alert below this quantity
   reorderLevel   Decimal?     @map("reorder_level") @db.Decimal(18, 3)
+  /// none | batch | serial
+  tracking       String       @default("none") @db.VarChar(10)
+  /// A second unit, e.g. box = 12 pcs: altFactor base units in one altUnit
+  altUnit        String?      @map("alt_unit") @db.VarChar(20)
+  altFactor      Decimal?     @map("alt_factor") @db.Decimal(18, 3)
+  barcode        String?      @db.VarChar(48)
+  /// Items made as variants of one product share this name
+  variantGroup   String?      @map("variant_group") @db.VarChar(160)
+  attributes     Json         @default("{}")
   custom         Json         @default("{}")
   source         RecordSource @default(tenant)
   createdBy      String?      @map("created_by") @db.Uuid
@@ -1387,6 +1396,8 @@ model SalesDocument {
   noteType      String?        @map("note_type")
   /// Credit note: the invoice number, frozen for printing
   sourceNumber  String?        @map("source_number")
+  /// Credit or debit note: the invoice date, frozen for printing (Rule 53(1A))
+  sourceDate    DateTime?      @map("source_date") @db.Date
   notes         String?
   terms         String?
   sourceType    String?        @map("source_type") // quotation | appointment | invoice | sales_order
@@ -1414,26 +1425,31 @@ model SalesDocument {
 }
 
 model SalesDocumentLine {
-  id             String  @id @default(uuid(7)) @db.Uuid
-  tenantId       String  @map("tenant_id") @db.Uuid
-  documentId     String  @map("document_id") @db.Uuid
-  itemId         String? @map("item_id") @db.Uuid
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  documentId     String   @map("document_id") @db.Uuid
+  itemId         String?  @map("item_id") @db.Uuid
   description    String
-  hsnSac         String? @map("hsn_sac") @db.VarChar(10)
-  unit           String  @default("pcs")
-  quantity       Decimal @db.Decimal(18, 3)
-  unitPricePaise BigInt  @map("unit_price_paise")
-  discountPaise  BigInt  @default(0) @map("discount_paise")
-  taxablePaise   BigInt  @map("taxable_paise")
-  gstRateBp      Int     @map("gst_rate_bp")
-  cgstPaise      BigInt  @default(0) @map("cgst_paise")
-  sgstPaise      BigInt  @default(0) @map("sgst_paise")
-  igstPaise      BigInt  @default(0) @map("igst_paise")
-  totalPaise     BigInt  @map("total_paise")
-  position       Int     @default(0)
+  hsnSac         String?  @map("hsn_sac") @db.VarChar(10)
+  unit           String   @default("pcs")
+  quantity       Decimal  @db.Decimal(18, 3)
+  unitPricePaise BigInt   @map("unit_price_paise")
+  discountPaise  BigInt   @default(0) @map("discount_paise")
+  taxablePaise   BigInt   @map("taxable_paise")
+  gstRateBp      Int      @map("gst_rate_bp")
+  cgstPaise      BigInt   @default(0) @map("cgst_paise")
+  sgstPaise      BigInt   @default(0) @map("sgst_paise")
+  igstPaise      BigInt   @default(0) @map("igst_paise")
+  totalPaise     BigInt   @map("total_paise")
+  position       Int      @default(0)
   /// Given free on top of quantity; carries no price or tax
-  freeQuantity   Decimal @default(0) @map("free_quantity") @db.Decimal(18, 3)
-  sourceLineId   String? @map("source_line_id") @db.Uuid // credit note: the invoice line it credits; invoice: the order line it bills
+  freeQuantity   Decimal  @default(0) @map("free_quantity") @db.Decimal(18, 3)
+  sourceLineId   String?  @map("source_line_id") @db.Uuid // credit note: the invoice line it credits; invoice: the order line it bills
+  /// Batch chosen on the bill; none means earliest expiry first
+  batchId        String?  @map("batch_id") @db.Uuid
+  serials        String[] @default([])
+  /// The batches the stock came from, frozen for printing
+  batches        Json?
 
   document SalesDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
@@ -1720,22 +1736,25 @@ model StockLocation {
 
 /// One opening, stock in, adjustment, transfer or count, with its lines as typed
 model StockEntry {
-  id           String   @id @default(uuid(7)) @db.Uuid
-  tenantId     String   @map("tenant_id") @db.Uuid
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
   /// opening | stock_in | adjustment | transfer | count
-  kind         String   @db.VarChar(20)
-  locationId   String   @map("location_id") @db.Uuid
-  toLocationId String?  @map("to_location_id") @db.Uuid
-  entryDate    DateTime @map("entry_date") @db.Date
+  kind         String    @db.VarChar(20)
+  locationId   String    @map("location_id") @db.Uuid
+  toLocationId String?   @map("to_location_id") @db.Uuid
+  entryDate    DateTime  @map("entry_date") @db.Date
   party        String?
   reference    String?
   /// Adjustment: damage | loss | found | sample | other
-  reason       String?  @db.VarChar(20)
+  reason       String?   @db.VarChar(20)
   note         String?
-  lines        Json     @default("[]")
-  valuePaise   BigInt   @default(0) @map("value_paise")
-  createdBy    String?  @map("created_by") @db.Uuid
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  lines        Json      @default("[]")
+  valuePaise   BigInt    @default(0) @map("value_paise")
+  /// posted | in_transit | received
+  status       String    @default("posted") @db.VarChar(12)
+  receivedAt   DateTime? @map("received_at") @db.Timestamptz
+  createdBy    String?   @map("created_by") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   @@index([tenantId, entryDate])
   @@map("stock_entries")
@@ -1760,6 +1779,8 @@ model StockMove {
   sourceId     String   @map("source_id") @db.Uuid
   sourceLineId String?  @map("source_line_id") @db.Uuid
   reversesId   String?  @unique @map("reverses_id") @db.Uuid
+  batchId      String?  @map("batch_id") @db.Uuid
+  serials      String[] @default([])
   createdBy    String?  @map("created_by") @db.Uuid
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
 
@@ -1781,4 +1802,61 @@ model StockBalance {
   @@id([itemId, locationId])
   @@index([tenantId])
   @@map("stock_balances")
+}
+
+model StockBatch {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  tenantId   String    @map("tenant_id") @db.Uuid
+  itemId     String    @map("item_id") @db.Uuid
+  number     String    @db.VarChar(40)
+  mfgDate    DateTime? @map("mfg_date") @db.Date
+  expiryDate DateTime? @map("expiry_date") @db.Date
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([itemId, number])
+  @@index([tenantId, expiryDate])
+  @@map("stock_batches")
+}
+
+model StockBatchBalance {
+  tenantId   String  @map("tenant_id") @db.Uuid
+  batchId    String  @map("batch_id") @db.Uuid
+  locationId String  @map("location_id") @db.Uuid
+  quantity   Decimal @default(0) @db.Decimal(18, 3)
+
+  @@id([batchId, locationId])
+  @@index([tenantId])
+  @@map("stock_batch_balances")
+}
+
+/// One unit of a serial-tracked item
+model StockSerial {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  itemId     String   @map("item_id") @db.Uuid
+  serial     String   @db.VarChar(40)
+  /// in_stock | sold | transit | gone
+  status     String   @db.VarChar(12)
+  locationId String?  @map("location_id") @db.Uuid
+  updatedAt  DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@unique([itemId, serial])
+  @@index([tenantId, serial])
+  @@map("stock_serials")
+}
+
+/// What is left of one receipt: FIFO cost and stock ageing
+model StockLayer {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  itemId       String   @map("item_id") @db.Uuid
+  locationId   String   @map("location_id") @db.Uuid
+  receivedOn   DateTime @map("received_on") @db.Date
+  qtyRemaining Decimal  @map("qty_remaining") @db.Decimal(18, 3)
+  ratePaise    BigInt   @map("rate_paise")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([itemId, locationId, receivedOn])
+  @@index([tenantId])
+  @@map("stock_layers")
 }

@@ -223,6 +223,10 @@ export interface WorkspacePreferences {
     adjustmentApprovalPaise: number;
     /** How many days back a stock entry may be dated */
     backdateDays: number;
+    /** Cost method, chosen before the first stock entry: moving average or first in, first out */
+    valuation: 'average' | 'fifo';
+    /** Batches expiring within this many days show as near expiry */
+    nearExpiryDays: number;
   };
   branding: {
     brandColor: string;
@@ -239,7 +243,7 @@ export const DEFAULT_PREFERENCES: WorkspacePreferences = {
   documents: { invoicePrefix: 'INV/{FY}/', quotationPrefix: 'QT/{FY}/', receiptPrefix: 'RCT/{FY}/', creditNotePrefix: 'CN/{FY}/', salesOrderPrefix: 'SO/{FY}/', deliveryChallanPrefix: 'DC/{FY}/', debitNotePrefix: 'DN/{FY}/', template: 'classic', paper: 'a4', terms: '', quotationTerms: '', showHsnSummary: true, showSignatory: true },
   payments: { bankHolder: '', bankAccount: '', ifsc: '', upiId: '', showUpiQr: false },
   taxes: { composition: false, compositionRateBp: null, pricesIncludeTax: true, roundOff: false, defaultGstRateBp: 1800, hsnDigits: 4, reverseCharge: false, eInvoicing: false },
-  inventory: { blockNegative: false, adjustmentApprovalPaise: 500_000, backdateDays: 7 },
+  inventory: { blockNegative: false, adjustmentApprovalPaise: 500_000, backdateDays: 7, valuation: 'average', nearExpiryDays: 30 },
   branding: { brandColor: '#2450D8', preset: 'default', theme: 'system', font: 'inter', density: 'comfortable' },
 };
 

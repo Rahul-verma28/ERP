@@ -12,7 +12,7 @@ import { validateCustom } from '../config/service';
 import { optionalText, zHsnOrSac } from '../../kernel/zodRules';
 import { consumer } from '../events/outbox';
 import { audit } from '../audit/service';
-import { stockByItem } from '../inventory/service';
+import { reservedByItem, stockByItem } from '../inventory/service';
 import { templateByKey } from '../../contracts/templates';
 
 // Product & Service Catalogue (CAT-01, CAT-02) — master data shared by billing, CRM, bookings.
@@ -40,10 +40,27 @@ const ItemInput = z.object({
   /** Inventory: sales and returns move this item's stock */
   trackStock: z.boolean().optional(),
   reorderLevel: z.number().min(0, 'Enter 0 or more').max(1e9).optional().nullable(),
+  /** none | batch (batch number and expiry) | serial (one number per piece) */
+  tracking: z.enum(['none', 'batch', 'serial']).optional(),
+  altUnit: z.string().trim().max(20).optional().nullable(),
+  altFactor: z.number().gt(1, 'More than 1').max(1e6).optional().nullable(),
+  barcode: z.string().trim().max(48).regex(/^[\x20-\x7E]+$/, 'Letters, digits and symbols only').optional().nullable().or(z.literal('').transform(() => null)),
+  variantGroup: z.string().trim().max(160).optional().nullable(),
+  attributes: z.record(z.string().max(40)).optional(),
   custom: z.record(z.unknown()).optional(),
 });
 
 const ItemPatch = ItemInput.partial().extend({ version: z.number().int() });
+
+/** Second unit both ways or neither; a barcode used once per business */
+async function checkStockFields(tenantId: string, body: { altUnit?: string | null; altFactor?: number | null; barcode?: string | null }, itemId?: string) {
+  if (!!body.altUnit !== !!body.altFactor && (body.altUnit !== undefined || body.altFactor !== undefined)) {
+    throw new AppError('VALIDATION_FAILED', 'Give the second unit and how many base units it holds.', { fields: { altFactor: 'Both needed' } });
+  }
+  if (body.barcode && (await db().item.findFirst({ where: { tenantId, barcode: body.barcode, ...(itemId ? { id: { not: itemId } } : {}) }, select: { name: true } }))) {
+    throw new AppError('VALIDATION_FAILED', 'Another item already has this barcode.', { fields: { barcode: 'Already used' } });
+  }
+}
 
 const ItemList = ListQuery.extend({
   type: z.enum(['product', 'service']).optional(),
@@ -54,7 +71,12 @@ const ItemList = ListQuery.extend({
 async function serialize(ctx: TenantCtx, rows: Record<string, unknown>[]) {
   // Tracked items carry how many are in stock, all godowns together
   const stock = await stockByItem(ctx.tenantId, rows.filter((r) => r.trackStock).map((r) => r.id as string));
-  const withStock = rows.map((r) => (r.trackStock ? { ...r, stockQty: stock.get(r.id as string) ?? 0, reorderLevel: r.reorderLevel === null ? null : Number(r.reorderLevel) } : r));
+  const reserved = rows.some((r) => r.trackStock) ? await reservedByItem(ctx.tenantId) : new Map<string, number>();
+  const withStock = rows.map((r) => ({
+    ...r,
+    altFactor: r.altFactor == null ? null : Number(r.altFactor),
+    ...(r.trackStock ? { stockQty: stock.get(r.id as string) ?? 0, reservedQty: reserved.get(r.id as string) ?? 0, reorderLevel: r.reorderLevel === null ? null : Number(r.reorderLevel) } : {}),
+  }));
   return stripHidden(ctx, 'item', withStock, HIDDEN);
 }
 
@@ -70,7 +92,7 @@ router.get('/items', requirePermission('catalog.item.view'), validate(ItemList, 
     type: q.type,
     categoryId: q.categoryId,
     isActive: q.active === 'all' ? undefined : q.active === 'true',
-    ...(q.q ? { OR: [{ name: { contains: q.q, mode: 'insensitive' } }, { sku: { contains: q.q, mode: 'insensitive' } }, { hsnSac: { startsWith: q.q } }] } : {}),
+    ...(q.q ? { OR: [{ name: { contains: q.q, mode: 'insensitive' } }, { sku: { contains: q.q, mode: 'insensitive' } }, { hsnSac: { startsWith: q.q } }, { barcode: q.q }] } : {}),
   };
   const rows = await db().item.findMany({ where, ...pageArgs(q) });
   const p = page(rows, q.limit);
@@ -88,6 +110,8 @@ router.post('/items', requirePermission('catalog.item.create'), validate(ItemInp
   const body = req.body as z.infer<typeof ItemInput>;
   await assertRecordLimit(ctx, 'items', () => db().item.count(), 'products and services');
   await checkCategory(body.categoryId);
+  await checkStockFields(ctx.tenantId, body);
+  if (body.type === 'service') Object.assign(body, { trackStock: false, tracking: 'none' });
   if (body.costPricePaise != null && !(await canWriteField(ctx, 'item', 'cost_price'))) delete body.costPricePaise;
   const custom = await validateCustom(ctx.tenantId, 'item', body.custom);
   const item = await db().item.create({
@@ -95,6 +119,37 @@ router.post('/items', requirePermission('catalog.item.create'), validate(ItemInp
   });
   await markOnboarding(ctx, 'firstItem');
   res.status(201).json((await serialize(ctx, [item]))[0]);
+}));
+
+// Variants: one item per combination of the values given, e.g. Size S, M, L × Colour Red, Blue
+const VariantInput = z.object({ attributes: z.record(z.array(z.string().trim().min(1).max(40)).min(1).max(20)).refine((a) => Object.keys(a).length >= 1 && Object.keys(a).length <= 3, 'Use 1 to 3 attributes') });
+router.post('/items/:id/variants', requirePermission('catalog.item.create'), validate(IdParam, 'params'), validate(VariantInput), tx(async (req, res) => {
+  const ctx = req.ctx!;
+  const base = await db().item.findUnique({ where: { id: String(req.params.id) } });
+  if (!base) throw notFound('Item');
+  if (base.type !== 'product') throw new AppError('VALIDATION_FAILED', 'Only products have variants.');
+  const attrs = (req.body as z.infer<typeof VariantInput>).attributes;
+  let combos: Record<string, string>[] = [{}];
+  for (const [k, values] of Object.entries(attrs)) combos = combos.flatMap((c) => [...new Set(values)].map((v) => ({ ...c, [k]: v })));
+  if (combos.length > 100) throw new AppError('VALIDATION_FAILED', 'That makes more than 100 variants. Use fewer values.');
+  const group = base.variantGroup ?? base.name;
+  const existing = new Set((await db().item.findMany({ where: { variantGroup: group }, select: { name: true } })).map((i) => i.name.toLowerCase()));
+  await assertRecordLimit(ctx, 'items', () => db().item.count(), 'products and services');
+  const created = [];
+  for (const combo of combos) {
+    const name = `${group} - ${Object.values(combo).join(' / ')}`.slice(0, 160);
+    if (existing.has(name.toLowerCase())) continue;
+    created.push(await db().item.create({
+      data: {
+        tenantId: ctx.tenantId, type: 'product', name, categoryId: base.categoryId, unit: base.unit, pricePaise: base.pricePaise, costPricePaise: base.costPricePaise,
+        gstRateBp: base.gstRateBp, hsnSac: base.hsnSac, description: base.description, trackStock: base.trackStock, reorderLevel: base.reorderLevel, tracking: base.tracking,
+        altUnit: base.altUnit, altFactor: base.altFactor, variantGroup: group, attributes: combo, createdBy: ctx.userId,
+      },
+    }));
+  }
+  if (!base.variantGroup) await db().item.update({ where: { id: base.id }, data: { variantGroup: group } });
+  await audit({ action: 'catalog.item.create', entity: 'item', entityId: base.id, after: { variants: created.length, group } });
+  res.status(201).json({ created: created.length, data: await serialize(ctx, created) });
 }));
 
 router.patch('/items/:id', requirePermission('catalog.item.edit'), validate(IdParam, 'params'), validate(ItemPatch), tx(async (req, res) => {
@@ -107,7 +162,11 @@ router.patch('/items/:id', requirePermission('catalog.item.edit'), validate(IdPa
   if (body.trackStock === false && item.trackStock && (await stockByItem(ctx.tenantId, [item.id])).get(item.id)) {
     throw new AppError('CONFLICT', 'This item still has stock. Bring it to zero with an adjustment before you stop tracking it.', { fields: { trackStock: 'Stock is not zero' } });
   }
-  if ((body.type ?? item.type) === 'service') body.trackStock = false;
+  if ((body.type ?? item.type) === 'service') Object.assign(body, { trackStock: false, tracking: 'none' });
+  await checkStockFields(ctx.tenantId, { altUnit: body.altUnit === undefined ? item.altUnit : body.altUnit, altFactor: body.altFactor === undefined ? (item.altFactor === null ? null : Number(item.altFactor)) : body.altFactor, barcode: body.barcode }, item.id);
+  if (body.tracking && body.tracking !== item.tracking && (await stockByItem(ctx.tenantId, [item.id])).get(item.id)) {
+    throw new AppError('CONFLICT', 'Batch or serial tracking can change only while the item has no stock.', { fields: { tracking: 'Stock is not zero' } });
+  }
   if (body.costPricePaise !== undefined && !(await canWriteField(ctx, 'item', 'cost_price'))) delete body.costPricePaise;
   const custom = body.custom ? await validateCustom(ctx.tenantId, 'item', body.custom, item.custom as Record<string, unknown>) : undefined;
   const updated = await db().item.update({

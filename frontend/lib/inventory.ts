@@ -9,13 +9,26 @@ export interface StockLocation {
   itemsInStock: number
 }
 
+export type Tracking = "none" | "batch" | "serial"
+
 export interface StockRow {
   id: string
   name: string
   sku: string | null
   unit: string
   isActive: boolean
+  tracking: Tracking
+  altUnit: string | null
+  altFactor: number | null
   quantity: number
+  /** Held for open sales orders */
+  reserved: number
+  /** In batches past their expiry */
+  expired: number
+  /** In stock, less held and expired */
+  available: number
+  /** Sent from a godown and not yet received */
+  inTransit: number
   valuePaise: number
   averagePaise: number
   reorderLevel: number | null
@@ -44,6 +57,7 @@ export const REASONS = [
 export interface StockEntry {
   id: string
   kind: EntryKind
+  status: "posted" | "in_transit" | "received"
   location: string
   toLocation: string | null
   entryDate: string
@@ -53,8 +67,24 @@ export interface StockEntry {
   note: string | null
   valuePaise: number
   createdAt: string
+  receivedAt: string | null
   lineCount?: number
-  lines: { itemId: string; name: string; quantity?: number; ratePaise?: number | null; system?: number; counted?: number; difference?: number }[]
+  lines: {
+    itemId: string
+    name: string
+    quantity?: number
+    unit?: string
+    baseQuantity?: number
+    ratePaise?: number | null
+    serials?: string[]
+    batches?: { id?: string; number: string; expiry?: string | null; quantity: number }[]
+    batch?: string | null
+    system?: number
+    counted?: number
+    difference?: number
+  }[]
 }
+
+export interface BatchRow { id: string; number: string; mfgDate: string | null; expiryDate: string | null; quantity: number; expired: boolean }
 
 export const qty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/0+$/, ""))

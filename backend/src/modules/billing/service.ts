@@ -33,6 +33,10 @@ export const LineInput = z.object({
   sourceLineId: z.string().uuid().optional().nullable(),
   /** Given free on top of quantity: no price and no tax */
   freeQuantity: z.number().min(0).max(1e7).optional(),
+  /** Inventory: the batch to sell from; none means earliest expiry first */
+  batchId: z.string().uuid().optional().nullable(),
+  /** Inventory: serial numbers of the pieces sold */
+  serials: z.array(z.string().trim().min(1).max(40)).max(1000).optional(),
 }).superRefine((l, c) => {
   if (l.discountPaise > Math.round(l.quantity * l.unitPricePaise)) c.addIssue({ code: z.ZodIssueCode.custom, path: ['discountPaise'], message: "Discount can't be more than the line amount" });
 });
@@ -160,6 +164,7 @@ async function prepare(ctx: TenantCtx, input: DocInput, existing?: SalesDocument
       tenantId: ctx.tenantId, itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit,
       quantity: (Number(l.quantityMilli) / 1000).toFixed(3), unitPricePaise: BigInt(l.unitPricePaise), discountPaise: BigInt(l.discountPaise ?? 0),
       taxablePaise: l.taxablePaise, gstRateBp: l.gstRateBp, cgstPaise: l.cgstPaise, sgstPaise: l.sgstPaise, igstPaise: l.igstPaise, totalPaise: l.totalPaise, position, sourceLineId: l.sourceLineId ?? null, freeQuantity: (l.freeQuantity ?? 0).toFixed(3),
+      batchId: l.batchId ?? null, serials: [...new Set(l.serials ?? [])],
     })),
   };
 }
@@ -268,7 +273,7 @@ export async function issueInvoice(ctx: TenantCtx, id: string, opts: { skipCredi
     terms: doc.terms,
     roundOff: doc.roundOffPaise !== 0n,
     shipTo: doc.shipTo as DocInput['shipTo'],
-    lines: doc.lines.map((l) => ({ itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: Number(l.unitPricePaise), discountPaise: Number(l.discountPaise), gstRateBp: l.gstRateBp, sourceLineId: l.sourceLineId, freeQuantity: Number(l.freeQuantity) })),
+    lines: doc.lines.map((l) => ({ itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: Number(l.unitPricePaise), discountPaise: Number(l.discountPaise), gstRateBp: l.gstRateBp, sourceLineId: l.sourceLineId, freeQuantity: Number(l.freeQuantity), batchId: l.batchId, serials: l.serials })),
   };
   const { doc: fresh, lines } = await prepare(ctx, input, doc);
   if (!opts.skipCreditLimit) await checkCreditLimit(doc.contactId, fresh.totalPaise);
@@ -290,7 +295,12 @@ export async function issueInvoice(ctx: TenantCtx, id: string, opts: { skipCredi
     // Settings › Documents › Print, frozen with the invoice like everything else here
     showHsnSummary: prefs.documents.showHsnSummary, showSignatory: prefs.documents.showSignatory, paper: prefs.documents.paper,
     // Decided here and frozen: which document this is, whatever the business becomes later
-    billOfSupply: !tenant.gstin || prefs.taxes.composition, composition: !!tenant.gstin && prefs.taxes.composition,
+    // Rule 49 CGST Rules: a registered business on composition, or selling only exempt or nil-rated
+    // goods, issues a bill of supply. A business not registered under GST is outside GST and issues a
+    // plain invoice with no GST words on it.
+    billOfSupply: !!tenant.gstin && (prefs.taxes.composition || lines.every((l) => l.gstRateBp === 0)),
+    composition: !!tenant.gstin && prefs.taxes.composition,
+    unregistered: !tenant.gstin,
   };
   await db().salesDocumentLine.deleteMany({ where: { documentId: id } });
   await db().salesDocument.update({
@@ -543,7 +553,7 @@ export async function publicDocument(token: string) {
   if (!doc || doc.status === 'draft') throw notFound('Document');
   return {
     kind: doc.kind, number: doc.number, status: doc.status, issueDate: doc.issueDate, dueDate: doc.dueDate, buyer: doc.buyer, seller: doc.seller,
-    creditedPaise: doc.creditedPaise, noteType: doc.noteType, sourceNumber: doc.sourceNumber, shipTo: doc.shipTo,
+    creditedPaise: doc.creditedPaise, noteType: doc.noteType, sourceNumber: doc.sourceNumber, sourceDate: doc.sourceDate, shipTo: doc.shipTo,
     ewayBillNo: doc.ewayBillNo, ewayBillDate: doc.ewayBillDate, irn: doc.irn, irnAckNo: doc.irnAckNo, irnAckDate: doc.irnAckDate,
     placeOfSupply: doc.placeOfSupply, subtotalPaise: doc.subtotalPaise, discountPaise: doc.discountPaise, taxablePaise: doc.taxablePaise,
     cgstPaise: doc.cgstPaise, sgstPaise: doc.sgstPaise, igstPaise: doc.igstPaise, roundOffPaise: doc.roundOffPaise, totalPaise: doc.totalPaise, paidPaise: doc.paidPaise,

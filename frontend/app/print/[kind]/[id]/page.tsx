@@ -19,7 +19,7 @@ function Receipt({ doc, width }: { doc: SalesDoc; width: "80mm" | "58mm" }) {
     <div className="mx-auto bg-white p-2 font-mono text-[11px] leading-tight text-black" style={{ width }}>
       <p className="text-center text-sm font-bold">{s?.legalName || s?.name}</p>
       {s?.gstin && <p className="text-center">GSTIN {s.gstin}</p>}
-      <p className="my-1 border-y border-dashed border-black py-1 text-center">{doc.kind === "invoice" ? (doc.seller?.billOfSupply ? "BILL OF SUPPLY" : "TAX INVOICE") : doc.kind === "credit_note" ? "CREDIT NOTE" : doc.kind === "debit_note" ? "DEBIT NOTE" : doc.kind === "sales_order" ? "SALES ORDER" : doc.kind === "delivery_challan" ? "DELIVERY CHALLAN" : doc.noteType === "proforma" ? "PROFORMA INVOICE" : "QUOTATION"} {doc.number}<br />{formatDate(doc.issueDate)}</p>
+      <p className="my-1 border-y border-dashed border-black py-1 text-center">{doc.kind === "invoice" ? (doc.seller?.unregistered || (doc.seller && !doc.seller.gstin) ? "INVOICE" : doc.seller?.billOfSupply ? "BILL OF SUPPLY" : "TAX INVOICE") : doc.kind === "credit_note" ? "CREDIT NOTE" : doc.kind === "debit_note" ? "DEBIT NOTE" : doc.kind === "sales_order" ? "SALES ORDER" : doc.kind === "delivery_challan" ? "DELIVERY CHALLAN" : doc.noteType === "proforma" ? "PROFORMA INVOICE" : "QUOTATION"} {doc.number}<br />{formatDate(doc.issueDate)}</p>
       <p>To: {doc.buyer.name}</p>
       {doc.sourceNumber && <p>Against: {doc.sourceNumber}</p>}
       <table className="my-1 w-full">
@@ -33,8 +33,8 @@ function Receipt({ doc, width }: { doc: SalesDoc; width: "80mm" | "58mm" }) {
         </tbody>
       </table>
       <div className="border-t border-dashed border-black pt-1">
-        {!doc.seller?.billOfSupply && <p className="flex justify-between"><span>Taxable</span><span>{formatPaise(doc.taxablePaise)}</span></p>}
-        {doc.seller?.billOfSupply ? null : doc.igstPaise ? <p className="flex justify-between"><span>IGST</span><span>{formatPaise(doc.igstPaise)}</span></p> : (
+        {!doc.seller?.billOfSupply && !doc.seller?.unregistered && <p className="flex justify-between"><span>Taxable</span><span>{formatPaise(doc.taxablePaise)}</span></p>}
+        {doc.seller?.billOfSupply || doc.seller?.unregistered ? null : doc.igstPaise ? <p className="flex justify-between"><span>IGST</span><span>{formatPaise(doc.igstPaise)}</span></p> : (
           <>
             <p className="flex justify-between"><span>CGST</span><span>{formatPaise(doc.cgstPaise)}</span></p>
             <p className="flex justify-between"><span>SGST</span><span>{formatPaise(doc.sgstPaise)}</span></p>

@@ -20,6 +20,12 @@ export interface DocLine {
   sourceLineId?: string | null
   /** Given free on top of quantity: no price and no tax */
   freeQuantity?: number | string
+  /** Inventory: the batch chosen to sell from; none means earliest expiry first */
+  batchId?: string | null
+  /** Inventory: serial numbers of the pieces */
+  serials?: string[]
+  /** The batches the stock came from, frozen when the bill was issued */
+  batches?: { number: string; expiry: string | null; quantity: number }[] | null
 }
 
 export type DocKind = "invoice" | "quotation" | "sales_order" | "delivery_challan"
@@ -58,8 +64,10 @@ export interface Seller {
   showHsnSummary?: boolean
   showSignatory?: boolean
   paper?: "a4" | "80mm" | "58mm"
-  /** Frozen at issue: not registered, or on the composition scheme */
+  /** Frozen at issue: on composition, or selling only exempt goods (Rule 49) */
   billOfSupply?: boolean
+  /** Frozen at issue: the business had no GSTIN, so a plain invoice without GST */
+  unregistered?: boolean
   composition?: boolean
 }
 
@@ -86,6 +94,7 @@ export interface SalesDoc {
   creditedPaise?: number
   noteType?: string | null
   sourceNumber?: string | null
+  sourceDate?: string | null
   shipTo?: ShipTo | null
   ewayBillNo?: string | null
   ewayBillDate?: string | null

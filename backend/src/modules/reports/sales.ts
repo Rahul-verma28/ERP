@@ -118,11 +118,12 @@ export async function gstReport(ctx: TenantCtx, p: Period) {
   const b2cMap = new Map<string, { placeOfSupply: string | null; gstRateBp: number } & ReturnType<typeof taxes>>();
   const creditNotes = [];
   const hsnMap = new Map<string, { hsnSac: string | null; gstRateBp: number; unit: string; quantity: number } & ReturnType<typeof taxes>>();
-  const totals = { ...taxes(), totalPaise: 0n, roundOffPaise: 0n, invoices: 0, creditNotes: 0, debitNotes: 0, billOfSupplyPaise: 0n };
+  const totals = { ...taxes(), totalPaise: 0n, roundOffPaise: 0n, invoices: 0, creditNotes: 0, debitNotes: 0, billOfSupplyPaise: 0n, stockWrittenOffPaise: 0n };
 
   for (const d of docs) {
     // A bill of supply carries no GST and is not part of these sheets; only its total is shown
-    if ((d.seller as { billOfSupply?: boolean } | null)?.billOfSupply) {
+    const seller = d.seller as { billOfSupply?: boolean; unregistered?: boolean } | null;
+    if (seller?.billOfSupply || seller?.unregistered) {
       totals.billOfSupplyPaise += (d.kind === 'credit_note' ? -1n : 1n) * d.totalPaise;
       continue;
     }
@@ -164,6 +165,14 @@ export async function gstReport(ctx: TenantCtx, p: Period) {
       hsnMap.set(key, row);
     }
   }
+  // Section 17(5)(h): goods lost, stolen, destroyed, written off or given as free samples need the
+  // input tax credit on them reversed. Their cost is listed here for the CA; the tax on it is theirs to work out.
+  const writtenOff = await db().$queryRaw<{ value: unknown }[]>`
+    SELECT SUM(-m.value_paise) AS value FROM stock_moves m LEFT JOIN stock_entries e ON e.id = m.source_id
+    WHERE m.tenant_id = ${ctx.tenantId}::uuid AND m.source_type = 'stock_entry' AND m.reverses_id IS NULL AND m.quantity < 0
+      AND m.kind IN ('adjustment', 'count') AND (m.kind = 'count' OR e.reason IN ('damage', 'loss', 'sample', 'expired'))
+      AND m.move_date >= ${dateOnly(p.from)} AND m.move_date <= ${dateOnly(p.to)}`;
+  totals.stockWrittenOffPaise = BigInt(String(writtenOff[0]?.value ?? 0));
   return {
     b2b,
     b2c: [...b2cMap.values()],

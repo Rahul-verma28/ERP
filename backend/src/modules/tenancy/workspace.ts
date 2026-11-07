@@ -173,6 +173,8 @@ export const PREFERENCE_SCHEMAS = {
     blockNegative: z.boolean(),
     adjustmentApprovalPaise: z.number().int().min(0, 'Enter 0 or more').max(10_000_000_000),
     backdateDays: z.number().int().min(0, 'Enter 0 to 31').max(31, 'Enter 0 to 31'),
+    valuation: z.enum(['average', 'fifo']),
+    nearExpiryDays: z.number().int().min(1, 'Enter 1 to 365').max(365, 'Enter 1 to 365'),
   }),
   branding: z.object({
     brandColor: z.string().superRefine((v, c) => {
@@ -211,6 +213,10 @@ export async function updatePreferences<S extends PreferenceSection>(tenantId: s
   const current = await getTenant(tenantId);
   const merged = { ...withDefaults(current.preferences)[section], ...((input && typeof input === 'object' ? input : {}) as object) };
   const parsed = PREFERENCE_SCHEMAS[section].safeParse(merged);
+  // The cost method is chosen once: changing it after stock has moved would mix two costings
+  if (section === 'inventory' && parsed.success && (parsed.data as { valuation: string }).valuation !== withDefaults(current.preferences).inventory.valuation && (await db().stockMove.count({ where: { tenantId } }))) {
+    throw new AppError('CONFLICT', 'The cost method is fixed once stock has moved.', { fields: { valuation: 'Fixed after the first stock entry' } });
+  }
   if (!parsed.success) {
     const fields: Record<string, string> = {};
     for (const issue of parsed.error.issues) fields[issue.path.join('.') || '_'] = issue.message;

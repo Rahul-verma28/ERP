@@ -35,6 +35,7 @@ export interface ViewDoc {
   creditedPaise?: number
   /** Credit note: the invoice it is against */
   sourceNumber?: string | null
+  sourceDate?: string | null
   notes: string | null
   terms: string | null
   lines: DocLine[]
@@ -46,8 +47,10 @@ const addr = (a?: Record<string, string> | null) => (a ? [a.line1, a.line2, a.ci
 export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc; fallbackSeller?: Seller; className?: string }) {
   const seller = doc.seller ?? fallbackSeller
   const intra = doc.igstPaise === 0
-  const billOfSupply = (!!seller?.billOfSupply && doc.status !== "draft") || (["delivery_challan", "quotation", "sales_order"].includes(doc.kind) && doc.cgstPaise + doc.sgstPaise + doc.igstPaise === 0)
-  const title = doc.kind === "sales_order" ? "Sales Order" : doc.kind === "delivery_challan" ? "Delivery Challan" : doc.kind === "debit_note" ? "Debit Note" : doc.kind === "credit_note" ? "Credit Note" : doc.kind === "quotation" ? (doc.noteType === "proforma" ? "Proforma Invoice" : "Quotation") : billOfSupply ? "Bill of Supply" : doc.status === "draft" ? "Draft invoice" : doc.buyer.gstin ? "Tax Invoice" : "Tax Invoice (B2C)"
+  // Not registered under GST: a plain invoice with no GST words; composition or exempt-only: bill of supply
+  const unregistered = doc.kind === "invoice" && doc.status !== "draft" && !!seller && (seller.unregistered || !seller.gstin)
+  const billOfSupply = (!!seller?.billOfSupply && doc.status !== "draft") || unregistered || (["delivery_challan", "quotation", "sales_order"].includes(doc.kind) && doc.cgstPaise + doc.sgstPaise + doc.igstPaise === 0)
+  const title = doc.kind === "sales_order" ? "Sales Order" : doc.kind === "delivery_challan" ? "Delivery Challan" : doc.kind === "debit_note" ? "Debit Note" : doc.kind === "credit_note" ? "Credit Note" : doc.kind === "quotation" ? (doc.noteType === "proforma" ? "Proforma Invoice" : "Quotation") : unregistered ? "Invoice" : billOfSupply ? "Bill of Supply" : doc.status === "draft" ? "Draft invoice" : doc.buyer.gstin ? "Tax Invoice" : "Tax Invoice (B2C)"
   const balance = doc.totalPaise - doc.paidPaise
   const credited = doc.creditedPaise ?? 0
   const hsnSummary = Object.values(
@@ -78,7 +81,7 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
           <p className="text-xl font-semibold tracking-tight uppercase">{title}</p>
           <p className="mt-1 font-mono">{doc.number ?? "—"}</p>
           <p className="text-neutral-600">Date: {formatDate(doc.issueDate)}</p>
-          {doc.sourceNumber && <p className="text-neutral-600">Against invoice: <span className="font-mono">{doc.sourceNumber}</span></p>}
+          {doc.sourceNumber && <p className="text-neutral-600">Against invoice: <span className="font-mono">{doc.sourceNumber}</span>{doc.sourceDate && ` dated ${formatDate(doc.sourceDate)}`}</p>}
           {doc.dueDate && <p className="text-neutral-600">{doc.kind === "invoice" ? "Due" : doc.kind === "sales_order" || doc.kind === "delivery_challan" ? "Deliver by" : "Valid until"}: {formatDate(doc.dueDate)}</p>}
           {doc.ewayBillNo && <p className="text-neutral-600">E-way bill: <span className="font-mono">{doc.ewayBillNo}</span>{doc.ewayBillDate && ` · ${formatDate(doc.ewayBillDate)}`}</p>}
           {doc.status === "cancelled" && <p className="mt-1 font-semibold text-red-600">CANCELLED</p>}
@@ -132,7 +135,11 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
             {doc.lines.map((l, i) => (
               <tr key={l.id ?? i} className="border-b border-neutral-100 align-top">
                 <td className="py-2 pr-2 text-neutral-500">{i + 1}</td>
-                <td className="py-2 pr-2">{l.description}</td>
+                <td className="py-2 pr-2">
+                  {l.description}
+                  {l.batches?.length ? <span className="block text-xs text-neutral-500">{l.batches.map((b) => `Batch ${b.number}${b.expiry ? ` · Exp ${b.expiry.slice(5, 7)}/${b.expiry.slice(2, 4)}` : ""}${l.batches!.length > 1 ? ` (${b.quantity})` : ""}`).join(", ")}</span> : null}
+                  {l.serials?.length ? <span className="block text-xs text-neutral-500">S/N: {l.serials.join(", ")}</span> : null}
+                </td>
                 <td className="py-2 pr-2 font-mono text-xs">{l.hsnSac ?? "—"}</td>
                 <td className="py-2 pr-2 text-right tabular-nums">{Number(l.quantity)} {l.unit}{Number(l.freeQuantity) > 0 && <span className="block text-xs text-neutral-500">+ {Number(l.freeQuantity)} free</span>}</td>
                 <td className="py-2 pr-2 text-right tabular-nums">{formatPaise(l.unitPricePaise)}</td>

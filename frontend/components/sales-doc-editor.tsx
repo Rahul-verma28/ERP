@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { ConfirmDialog, MoneyInput } from "@/components/common"
+import { LineStockFields } from "@/components/stock-line"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { ContactPicker, ItemPicker, type ContactOption } from "@/components/pickers"
 import { api, ApiError, errorMessage } from "@/lib/api"
@@ -82,7 +83,7 @@ export function SalesDocEditor({ kind, doc, initialContact, cash = false }: { ki
     roundOff,
     shipTo: shipOpen ? { name: shipTo.name || null, line1: shipTo.line1 || null, city: shipTo.city || null, pincode: shipTo.pincode || null, stateCode: shipTo.stateCode || null } : null,
     ...(kind === "quotation" ? { proforma } : {}),
-    lines: lines.map((l) => ({ itemId: l.itemId, description: l.description, hsnSac: l.hsnSac || null, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: l.unitPricePaise, discountPaise: l.discountPaise || 0, gstRateBp: l.gstRateBp, sourceLineId: l.sourceLineId ?? null, freeQuantity: Number(l.freeQuantity) || 0 })),
+    lines: lines.map((l) => ({ itemId: l.itemId, description: l.description, hsnSac: l.hsnSac || null, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: l.unitPricePaise, discountPaise: l.discountPaise || 0, gstRateBp: l.gstRateBp, sourceLineId: l.sourceLineId ?? null, freeQuantity: Number(l.freeQuantity) || 0, batchId: l.batchId ?? null, serials: l.serials ?? [] })),
   })
 
   /** Someone who may approve chose to go over the customer's credit limit. */
@@ -161,7 +162,9 @@ export function SalesDocEditor({ kind, doc, initialContact, cash = false }: { ki
           </div>
           {noTax && workspace.data && (kind === "invoice" || kind === "quotation") && (
             <p className="rounded-2xl bg-muted p-3 text-sm text-muted-foreground sm:col-span-2 lg:col-span-4">
-              Your business charges no GST here, so this goes out as a bill of supply. If you are GST registered, add your GSTIN in Settings or turn off the composition scheme in Taxes.
+              {me?.tenant?.gstin
+                ? "You are on the composition scheme, so this goes out as a bill of supply with no GST. Change it in Settings › Taxes."
+                : "Your business has no GSTIN, so this goes out as a plain invoice with no GST. If you are GST registered, add your GSTIN in Settings."}
             </p>
           )}
           {!sellerState && kind === "invoice" && (
@@ -192,9 +195,9 @@ export function SalesDocEditor({ kind, doc, initialContact, cash = false }: { ki
               <div key={i} className="grid gap-2 rounded-3xl border p-3 lg:grid-cols-[1fr_5rem_8rem_7rem_6rem_7rem_2rem] lg:items-start lg:rounded-none lg:border-0 lg:border-b lg:p-1 lg:pb-3">
                 <div className="grid gap-1">
                   <Input value={l.description} onChange={(e) => update(i, { description: e.target.value })} placeholder="Description" aria-label="Description" aria-invalid={!!errors[`lines.${i}.description`]} />
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <Input value={l.hsnSac ?? ""} onChange={(e) => update(i, { hsnSac: e.target.value.replace(/\D/g, "") || null })} placeholder="HSN/SAC" maxLength={8} className="h-8 w-28 text-xs" aria-label="HSN/SAC" />
-                    <Input value={l.unit} onChange={(e) => update(i, { unit: e.target.value })} className="h-8 w-20 text-xs" aria-label="Unit" />
+                    <LineStockFields line={l} onChange={(p) => update(i, p)} sale={kind !== "quotation"} />
                     <Input inputMode="decimal" value={l.freeQuantity ? String(l.freeQuantity) : ""} onChange={(e) => update(i, { freeQuantity: e.target.value.replace(/[^\d.]/g, "") })} placeholder="Free qty" className="h-8 w-20 text-xs" aria-label="Free quantity" />
                   </div>
                 </div>

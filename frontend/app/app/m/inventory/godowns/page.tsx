@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { MoneyInput, Spinner } from "@/components/common"
-import { Field, FormError } from "@/components/form"
+import { Field, FormError, NativeSelect } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
@@ -56,19 +56,19 @@ function GodownDialog({ godown, onClose, onSaved }: { godown: StockLocation | nu
 
 function StockRules() {
   const { can } = useAuth()
-  const ws = useApi<{ preferences: { inventory: { blockNegative: boolean; adjustmentApprovalPaise: number; backdateDays: number } } }>(can("tenant.settings.view") ? "/tenant/workspace" : null)
-  const [form, setForm] = React.useState<{ blockNegative: boolean; adjustmentApprovalPaise: number | null; backdateDays: string } | null>(null)
+  const ws = useApi<{ preferences: { inventory: { blockNegative: boolean; adjustmentApprovalPaise: number; backdateDays: number; valuation: "average" | "fifo"; nearExpiryDays: number } } }>(can("tenant.settings.view") ? "/tenant/workspace" : null)
+  const [form, setForm] = React.useState<{ blockNegative: boolean; adjustmentApprovalPaise: number | null; backdateDays: string; valuation: "average" | "fifo"; nearExpiryDays: string } | null>(null)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [busy, setBusy] = React.useState(false)
   const current = ws.data?.preferences.inventory
-  const v = form ?? (current ? { blockNegative: current.blockNegative, adjustmentApprovalPaise: current.adjustmentApprovalPaise, backdateDays: String(current.backdateDays) } : null)
+  const v = form ?? (current ? { blockNegative: current.blockNegative, adjustmentApprovalPaise: current.adjustmentApprovalPaise, backdateDays: String(current.backdateDays), valuation: current.valuation, nearExpiryDays: String(current.nearExpiryDays) } : null)
   if (!can("tenant.settings.view") || !v) return null
   const editable = can("tenant.settings.edit")
   async function save() {
     setBusy(true)
     setErrors({})
     try {
-      await api.put("/tenant/preferences/inventory", { blockNegative: v!.blockNegative, adjustmentApprovalPaise: v!.adjustmentApprovalPaise ?? 0, backdateDays: Number(v!.backdateDays || 0) })
+      await api.put("/tenant/preferences/inventory", { blockNegative: v!.blockNegative, adjustmentApprovalPaise: v!.adjustmentApprovalPaise ?? 0, backdateDays: Number(v!.backdateDays || 0), valuation: v!.valuation, nearExpiryDays: Number(v!.nearExpiryDays || 30) })
       toast.success("Stock rules saved")
       setForm(null)
       await ws.reload()
@@ -93,6 +93,15 @@ function StockRules() {
           </Field>
           <Field label="Entries can go back (days)" hint="0 to 31" error={errors.backdateDays}>
             <Input inputMode="numeric" value={v.backdateDays} onChange={(e) => setForm({ ...v, backdateDays: e.target.value.replace(/\D/g, "").slice(0, 2) })} disabled={!editable} />
+          </Field>
+          <Field label="Cost method" hint="Chosen once, before the first stock entry. Ask your CA." error={errors.valuation}>
+            <NativeSelect value={v.valuation} onChange={(e) => setForm({ ...v, valuation: e.target.value as "average" | "fifo" })} disabled={!editable} aria-label="Cost method">
+              <option value="average">Moving average</option>
+              <option value="fifo">First in, first out (FIFO)</option>
+            </NativeSelect>
+          </Field>
+          <Field label="Near expiry (days)" hint="Batches expiring within this show as near expiry" error={errors.nearExpiryDays}>
+            <Input inputMode="numeric" value={v.nearExpiryDays} onChange={(e) => setForm({ ...v, nearExpiryDays: e.target.value.replace(/\D/g, "").slice(0, 3) })} disabled={!editable} />
           </Field>
         </div>
         {editable && form && <div className="flex justify-end"><Button disabled={busy} onClick={save}>{busy ? "Saving…" : "Save rules"}</Button></div>}

@@ -81,7 +81,7 @@ interface GstReport {
   b2c: ({ placeOfSupply: string | null } & GstAmounts)[]
   creditNotes: (GstHead & GstAmounts & { invoiceNumber: string | null; noteType: string | null })[]
   hsn: ({ hsnSac: string | null; unit: string; quantity: number } & GstAmounts)[]
-  totals: Omit<GstAmounts, "gstRateBp"> & { totalPaise: number; roundOffPaise: number; invoices: number; creditNotes: number; debitNotes: number; billOfSupplyPaise: number }
+  totals: Omit<GstAmounts, "gstRateBp"> & { totalPaise: number; roundOffPaise: number; invoices: number; creditNotes: number; debitNotes: number; billOfSupplyPaise: number; stockWrittenOffPaise: number }
 }
 
 const stateName = (code: string | null) => GST_STATES.find(([c]) => c === code)?.[1] ?? code ?? "—"
@@ -189,7 +189,7 @@ function GstSheet({ query }: { query: string }) {
   const { data, error } = useApi<GstReport>(`/reports/gst?${query}`)
   if (!data) return <Loading error={error} />
   const t = data.totals
-  const figures = [["Invoices", t.invoices], ["Credit notes", t.creditNotes], ["Debit notes", t.debitNotes], ["Taxable", formatPaise(t.taxablePaise)], ["CGST", formatPaise(t.cgstPaise)], ["SGST", formatPaise(t.sgstPaise)], ["IGST", formatPaise(t.igstPaise)], ["Round off", formatPaise(t.roundOffPaise)], ["Total", formatPaise(t.totalPaise)], ...(t.billOfSupplyPaise ? [["Bills of supply (not in these sheets)", formatPaise(t.billOfSupplyPaise)]] : [])] as (readonly [string, string | number])[]
+  const figures = [["Invoices", t.invoices], ["Credit notes", t.creditNotes], ["Debit notes", t.debitNotes], ["Taxable", formatPaise(t.taxablePaise)], ["CGST", formatPaise(t.cgstPaise)], ["SGST", formatPaise(t.sgstPaise)], ["IGST", formatPaise(t.igstPaise)], ["Round off", formatPaise(t.roundOffPaise)], ["Total", formatPaise(t.totalPaise)], ...(t.billOfSupplyPaise ? [["Bills without GST (not in these sheets)", formatPaise(t.billOfSupplyPaise)]] : []), ...(t.stockWrittenOffPaise ? [["Stock written off at cost: ITC to reverse, Sec 17(5)(h)", formatPaise(t.stockWrittenOffPaise)]] : [])] as (readonly [string, string | number])[]
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-amber-100 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100">

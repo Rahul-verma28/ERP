@@ -386,6 +386,23 @@ The client allows selling with a few complete modules, so this replaces the budg
 - [x] Track stock and low-stock level on the item, stock shown in the item list and bill item picker, low-stock tab and dashboard alert — checked in the browser
 - [x] Fix: every tenant request now answers only after its transaction commits (a timed-out commit used to show success for rolled-back work); dev transaction limit 45 s for the far database
 - [ ] Later batches: batch and expiry, serial numbers, box/piece units, reservations, barcode labels, in-transit, landed cost with Purchase; valuation method to confirm with the CA
+### Inventory (batch 2, approved 2026-11-07, after comparing 7 ERPs: 12 of 35 features were done)
+- [x] Batch and expiry: batch on stock in, opening and adjustments; bills sell earliest expiry first or a chosen batch; expired stock left out of available; batch printed on the bill; returns go back to the same batch; near-expiry report; count batch by batch — tests; stock in, FEFO bill and print checked in the browser
+- [x] Serial / IMEI numbers: needed to sell, no duplicates, freed on cancel and return, find a serial from the stock page — tests only
+- [x] Second unit (box of 10): stock in and bills in either unit, stock kept in pieces, stock shown as boxes + pieces — tests; stock in by box checked in the browser
+- [x] Barcode on items: scan into bills and stock entries, search by barcode, A4 label sheet (Code 128) — scan and labels checked in the browser; labels not yet read by a real scanner
+- [x] Item variants: make one item per size/colour combination — tests none, dialog not checked in the browser
+- [x] Transfer on the way: send now, receive later at the other godown; on-the-way column and entries tab — tests only
+- [x] Held for orders: open sales orders hold stock until challan or invoice; available = in stock − held − expired — tests only
+- [x] Stock as on a past date; ageing by receipt date with slow and dead stock — tests; both pages checked in the browser
+- [x] Import opening stock and counts from Excel (CSV) with a row-by-row check — count import checked in the browser
+- [x] Cost method: moving average or FIFO, chosen once before the first stock entry; layers keep FIFO cost and ageing — tests; CA to confirm the method
+- [ ] With Purchase: reorder to purchase order, GRN, landed cost, quality inspection. Later on demand: kits, rack and bin, putaway, pick-pack-ship, batch recall, manufacturing, job work
+### Tax and product decisions (settled 2026-11-07 by Claude as asked; a practising CA to glance before go-live)
+- [x] Unregistered business prints a plain Invoice, outside GST and the GST sheet; bill of supply only for registered composition or all-exempt bills (Rule 49)
+- [x] Credit and debit notes print the original invoice date (Rule 53(1A)); GST credit notes refused after 30 Nov following the invoice's April–March year (Sec 34(2))
+- [x] GST sheet lists stock written off (damage, loss, sample, expired, count losses) at cost for ITC reversal (Sec 17(5)(h))
+- [x] Valuation: moving average default, FIFO allowed, fixed once stock moves (AS 2, ICDS II). Purchase stays inside the Inventory module key
 
 ## Phase 2 — Operations (weeks 5–8)
 Exit gate: stock and accounts update from sales and purchases.

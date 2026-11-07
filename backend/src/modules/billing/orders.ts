@@ -79,10 +79,15 @@ export async function invoiceFromChallan(ctx: TenantCtx, id: string) {
     {
       contactId: challan.contactId, buyer: challan.contactId ? undefined : (challan.buyer as unknown as DocInput['buyer']), branchId: challan.branchId, notes: challan.notes, terms: challan.terms,
       shipTo: challan.shipTo as DocInput['shipTo'], roundOff: challan.roundOffPaise !== 0n,
-      lines: challan.lines.map((l) => ({ sourceLineId: l.id, itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: Number(l.unitPricePaise), discountPaise: Number(l.discountPaise), gstRateBp: l.gstRateBp, freeQuantity: Number(l.freeQuantity) })),
+      lines: challan.lines.map((l) => ({ sourceLineId: l.id, itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: Number(l.unitPricePaise), discountPaise: Number(l.discountPaise), gstRateBp: l.gstRateBp, freeQuantity: Number(l.freeQuantity), batchId: l.batchId, serials: l.serials })),
     },
     { sourceType: 'delivery_challan', sourceId: challan.id },
   );
+  // The challan took the stock out: its batches print on the invoice too
+  for (const [i, l] of invoice.lines.entries()) {
+    const from = challan.lines[i];
+    if (from?.batches) await db().salesDocumentLine.update({ where: { id: l.id }, data: { batches: from.batches as object } });
+  }
   await db().salesDocument.update({ where: { id }, data: { status: 'converted', version: { increment: 1 } } });
   await audit({ action: 'sales.delivery.invoice', entity: 'delivery_challan', entityId: id, after: { number: challan.number, invoiceId: invoice.id } });
   return invoice;

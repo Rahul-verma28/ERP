@@ -15,6 +15,7 @@ import { ConfirmDialog, EmptyState, MoneyInput, Spinner, StatusBadge } from "@/c
 import { DataList, HeaderLink, periodFilter, type Column } from "@/components/data-list"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { SalesDocView } from "@/components/sales-doc-view"
+import { parseSerials } from "@/components/stock-line"
 import { EInvoiceButton } from "@/components/gst-files"
 import { todayInIndia } from "@contracts/validation"
 import { api, ApiError, errorMessage } from "@/lib/api"
@@ -97,6 +98,8 @@ interface OpenLine {
   gstRateBp: number
   quantityLeft: number
   taxableLeftPaise: number
+  /** Serial numbers sold on this line */
+  serials?: string[]
 }
 
 /** The same sum the server does; the server's figure is the one that counts. */
@@ -118,6 +121,7 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
   const [notes, setNotes] = React.useState("")
   const [quantities, setQuantities] = React.useState<Record<string, string>>({})
   const [amounts, setAmounts] = React.useState<Record<string, number | null>>({})
+  const [serialsBack, setSerialsBack] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
 
@@ -147,7 +151,7 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
         type,
         issueDate,
         notes: notes.trim() || null,
-        lines: chosen.map((l) => (type === "return" ? { sourceLineId: l.id, quantity: value(l) } : { sourceLineId: l.id, taxablePaise: value(l) })),
+        lines: chosen.map((l) => (type === "return" ? { sourceLineId: l.id, quantity: value(l), ...(serialsBack[l.id] ? { serials: parseSerials(serialsBack[l.id]) } : {}) } : { sourceLineId: l.id, taxablePaise: value(l) })),
       })
       toast.success("Credit note issued")
       router.replace(`/app/m/billing/credit-notes/${note.id}`)
@@ -193,7 +197,12 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
                     <td className="py-2 pr-3">
                       <div className="ml-auto w-32">
                         {type === "return"
-                          ? <Input type="number" min="0" max={l.quantityLeft} step="any" className="text-right" aria-label={`Return quantity for ${l.description}`} disabled={l.quantityLeft <= 0} value={quantities[l.id] ?? ""} onChange={(e) => setQuantities({ ...quantities, [l.id]: e.target.value })} />
+                          ? <>
+                              <Input type="number" min="0" max={l.quantityLeft} step="any" className="text-right" aria-label={`Return quantity for ${l.description}`} disabled={l.quantityLeft <= 0} value={quantities[l.id] ?? ""} onChange={(e) => setQuantities({ ...quantities, [l.id]: e.target.value })} />
+                              {!!l.serials?.length && Number(quantities[l.id] || 0) > 0 && (
+                                <Input className="mt-1 h-8 text-xs" placeholder={`Which: ${l.serials.join(", ")}`} aria-label={`Serial numbers returned for ${l.description}`} value={serialsBack[l.id] ?? ""} onChange={(e) => setSerialsBack({ ...serialsBack, [l.id]: e.target.value })} />
+                              )}
+                            </>
                           : <MoneyInput value={amounts[l.id] ?? null} onChange={(v) => setAmounts({ ...amounts, [l.id]: v })} />}
                       </div>
                     </td>
