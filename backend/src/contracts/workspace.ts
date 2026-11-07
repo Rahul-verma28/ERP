@@ -216,6 +216,14 @@ export interface WorkspacePreferences {
     /** Turnover above the e-invoice limit: show e-invoice JSON on B2B bills */
     eInvoicing: boolean;
   };
+  inventory: {
+    /** Stop a sale or issue that takes stock below zero */
+    blockNegative: boolean;
+    /** Adjustments and counts worth more than this need inventory.stock_adjustment.approve */
+    adjustmentApprovalPaise: number;
+    /** How many days back a stock entry may be dated */
+    backdateDays: number;
+  };
   branding: {
     brandColor: string;
     /** THEME_PRESETS key */
@@ -231,6 +239,7 @@ export const DEFAULT_PREFERENCES: WorkspacePreferences = {
   documents: { invoicePrefix: 'INV/{FY}/', quotationPrefix: 'QT/{FY}/', receiptPrefix: 'RCT/{FY}/', creditNotePrefix: 'CN/{FY}/', salesOrderPrefix: 'SO/{FY}/', deliveryChallanPrefix: 'DC/{FY}/', debitNotePrefix: 'DN/{FY}/', template: 'classic', paper: 'a4', terms: '', quotationTerms: '', showHsnSummary: true, showSignatory: true },
   payments: { bankHolder: '', bankAccount: '', ifsc: '', upiId: '', showUpiQr: false },
   taxes: { composition: false, compositionRateBp: null, pricesIncludeTax: true, roundOff: false, defaultGstRateBp: 1800, hsnDigits: 4, reverseCharge: false, eInvoicing: false },
+  inventory: { blockNegative: false, adjustmentApprovalPaise: 500_000, backdateDays: 7 },
   branding: { brandColor: '#2450D8', preset: 'default', theme: 'system', font: 'inter', density: 'comfortable' },
 };
 
@@ -244,6 +253,7 @@ export function withDefaults(stored: unknown, profile?: unknown): WorkspacePrefe
     documents: { ...DEFAULT_PREFERENCES.documents, ...(s.documents ?? {}) },
     payments: { ...DEFAULT_PREFERENCES.payments, ...(s.payments ?? {}) },
     taxes: { ...DEFAULT_PREFERENCES.taxes, ...(s.taxes ?? {}) },
+    inventory: { ...DEFAULT_PREFERENCES.inventory, ...(s.inventory ?? {}) },
     branding: { ...DEFAULT_PREFERENCES.branding, ...(s.branding ?? {}) },
   } as WorkspacePreferences;
 }

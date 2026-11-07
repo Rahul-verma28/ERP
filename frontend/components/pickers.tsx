@@ -28,6 +28,9 @@ export interface ItemOption {
   gstRateBp: number
   hsnSac: string | null
   durationMin?: number | null
+  costPricePaise?: number | null
+  /** Set when Inventory tracks the item: in stock, all godowns */
+  stockQty?: number
 }
 
 /** Accessible search-as-you-type combobox over an API list endpoint. */
@@ -181,16 +184,16 @@ export function ContactPicker({ value, onChange, id, allowCreate = true }: { val
   )
 }
 
-export function ItemPicker({ onPick, id, allowCreate = false, defaultGstRateBp = 1800 }: { onPick: (i: ItemOption) => void; id?: string; allowCreate?: boolean; defaultGstRateBp?: number }) {
+export function ItemPicker({ onPick, id, allowCreate = false, defaultGstRateBp = 1800, placeholder = "Search products & services, or type to add a custom line" }: { onPick: (i: ItemOption) => void; id?: string; allowCreate?: boolean; defaultGstRateBp?: number; placeholder?: string }) {
   return (
     <Combobox<ItemOption>
       id={id}
       path="/items"
       label="Add item"
-      placeholder="Search products & services, or type to add a custom line"
+      placeholder={placeholder}
       value={null}
       onChange={(v) => v && onPick(v)}
-      render={(i) => ({ title: i.name, subtitle: `${formatPaise(i.pricePaise)} · GST ${i.gstRateBp / 100}%${i.hsnSac ? ` · ${i.hsnSac}` : ""}` })}
+      render={(i) => ({ title: i.name, subtitle: `${formatPaise(i.pricePaise)} · GST ${i.gstRateBp / 100}%${i.hsnSac ? ` · ${i.hsnSac}` : ""}${i.stockQty !== undefined ? ` · ${i.stockQty} ${i.unit} in stock` : ""}` })}
       footer={
         allowCreate
           ? (query, close) =>

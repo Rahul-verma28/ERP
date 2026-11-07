@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { postDocumentStock, reverseSource } from '../inventory/engine';
 import { db } from '../../kernel/db';
 import { AppError } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
@@ -134,6 +135,8 @@ export async function createCreditNote(ctx: TenantCtx, invoiceId: string, input:
   if (applied > 0n) await db().advanceAdjustment.create({ data: { tenantId: ctx.tenantId, creditNoteId: note.id, documentId: doc.id, amountPaise: applied, createdBy: ctx.userId } });
   await setPaid(doc, doc.paidPaise + applied, doc.creditedPaise + applied);
   await audit({ action: 'billing.credit_note.issue', entity: 'credit_note', entityId: note.id, after: { number, invoice: doc.number, type: input.type, totalPaise: totals.totalPaise } });
+  // Goods returned come back into stock
+  await postDocumentStock(ctx, note.id);
   await publish('credit_note.issued', { documentId: note.id, invoiceId: doc.id, type: input.type });
   return getDocument(ctx, note.id, 'credit_note');
 }
@@ -155,6 +158,7 @@ export async function cancelCreditNote(ctx: TenantCtx, id: string, reason: strin
   await setPaid(invoice, invoice.paidPaise - back, invoice.creditedPaise - back);
   const { count } = await db().salesDocument.updateMany({ where: { id, version: note.version }, data: { status: 'cancelled', paidPaise: 0n, cancelledAt: new Date(), cancelReason: reason, version: { increment: 1 } } });
   if (!count) throw new AppError('VERSION_CONFLICT', 'This credit note was changed by someone else. Reload and try again.');
+  await reverseSource(ctx, id);
   await audit({ action: 'billing.credit_note.cancel', entity: 'credit_note', entityId: id, before: { status: note.status }, after: { reason } });
   await publish('credit_note.cancelled', { documentId: id, invoiceId: invoice.id, type: note.noteType });
   return getDocument(ctx, id, 'credit_note');

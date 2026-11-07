@@ -36,6 +36,9 @@ interface Item {
   durationMin: number | null
   description: string | null
   isActive: boolean
+  trackStock?: boolean
+  reorderLevel?: number | null
+  stockQty?: number
   custom: Record<string, unknown>
   version: number
 }
@@ -45,7 +48,7 @@ interface Category {
   name: string
 }
 
-const EMPTY = { type: "product" as Item["type"], name: "", sku: "", categoryId: "", unit: "pcs", pricePaise: null as number | null, costPricePaise: null as number | null, gstRateBp: 1800, hsnSac: "", durationMin: "", description: "", custom: {} as Record<string, unknown> }
+const EMPTY = { type: "product" as Item["type"], name: "", sku: "", categoryId: "", unit: "pcs", pricePaise: null as number | null, costPricePaise: null as number | null, gstRateBp: 1800, hsnSac: "", durationMin: "", description: "", trackStock: false, reorderLevel: "", custom: {} as Record<string, unknown> }
 
 function ItemDialog({ item, categories, onClose, onSaved }: { item: Item | null; categories: Category[]; onClose: () => void; onSaved: () => void }) {
   const { can, me } = useAuth()
@@ -53,7 +56,7 @@ function ItemDialog({ item, categories, onClose, onSaved }: { item: Item | null;
   const canCost = me?.fieldAccess?.["item.cost_price"] === "write"
   const [form, setForm] = React.useState(() =>
     item
-      ? { ...EMPTY, ...item, sku: item.sku ?? "", categoryId: item.categoryId ?? "", hsnSac: item.hsnSac ?? "", durationMin: item.durationMin ? String(item.durationMin) : "", description: item.description ?? "", costPricePaise: item.costPricePaise ?? null }
+      ? { ...EMPTY, ...item, sku: item.sku ?? "", categoryId: item.categoryId ?? "", hsnSac: item.hsnSac ?? "", durationMin: item.durationMin ? String(item.durationMin) : "", description: item.description ?? "", costPricePaise: item.costPricePaise ?? null, trackStock: !!item.trackStock, reorderLevel: item.reorderLevel != null ? String(item.reorderLevel) : "" }
       : EMPTY
   )
   const [errors, setErrors] = React.useState<Record<string, string>>({})
@@ -80,6 +83,7 @@ function ItemDialog({ item, categories, onClose, onSaved }: { item: Item | null;
       hsnSac: form.hsnSac || null,
       durationMin: form.type === "service" && form.durationMin ? Number(form.durationMin) : null,
       description: form.description || null,
+      ...(form.type === "product" ? { trackStock: form.trackStock, reorderLevel: form.trackStock && form.reorderLevel !== "" ? Number(form.reorderLevel) : null } : { trackStock: false }),
       custom: form.custom,
     }
     try {
@@ -150,6 +154,19 @@ function ItemDialog({ item, categories, onClose, onSaved }: { item: Item | null;
               </Field>
             )}
           </div>
+          {form.type === "product" && can("inventory.stock.view") && (
+            <div className="grid gap-3 rounded-2xl bg-muted/60 p-3 sm:grid-cols-2 sm:items-end">
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-1" checked={form.trackStock} disabled={!editable} onChange={(e) => set("trackStock", e.target.checked)} />
+                <span><span className="font-medium">Track stock</span><span className="block text-xs text-muted-foreground">{item?.trackStock ? `${item.stockQty ?? 0} ${item.unit} in stock. ` : ""}Bills take stock out. Add opening stock in Inventory.</span></span>
+              </label>
+              {form.trackStock && (
+                <Field label="Low-stock level" hint="Alert at or below this" error={errors.reorderLevel}>
+                  <Input inputMode="decimal" value={form.reorderLevel} onChange={(e) => set("reorderLevel", e.target.value.replace(/[^\d.]/g, ""))} disabled={!editable} />
+                </Field>
+              )}
+            </div>
+          )}
           <datalist id="units">{["pcs", "kg", "g", "l", "ml", "m", "box", "pack", "hour", "service", "month"].map((u) => <option key={u} value={u} />)}</datalist>
           <Field label="Description">
             <Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={2} disabled={!editable} />
@@ -231,6 +248,7 @@ export default function CatalogPage() {
                   <TableHead>Type</TableHead>
                   <TableHead>HSN/SAC</TableHead>
                   <TableHead className="text-right">GST</TableHead>
+                  {can("inventory.stock.view") && <TableHead className="text-right">Stock</TableHead>}
                   {showCost && <TableHead className="text-right">Cost</TableHead>}
                   <TableHead className="pr-6 text-right">Price</TableHead>
                 </TableRow>
@@ -245,6 +263,7 @@ export default function CatalogPage() {
                     <TableCell className="capitalize">{i.type}</TableCell>
                     <TableCell className="font-mono text-xs">{i.hsnSac ?? "—"}</TableCell>
                     <TableCell className="text-right">{i.gstRateBp / 100}%</TableCell>
+                    {can("inventory.stock.view") && <TableCell className={"text-right tabular-nums" + ((i.stockQty ?? 0) < 0 ? " text-destructive" : "")}>{i.trackStock ? `${i.stockQty ?? 0} ${i.unit}` : "—"}</TableCell>}
                     {showCost && <TableCell className="text-right tabular-nums text-muted-foreground">{i.costPricePaise != null ? formatPaise(i.costPricePaise) : "—"}</TableCell>}
                     <TableCell className="pr-6 text-right font-medium tabular-nums">{formatPaise(i.pricePaise)}</TableCell>
                   </TableRow>

@@ -10,6 +10,7 @@ import financeRoutes from '../modules/finance/routes';
 import taskRoutes from '../modules/tasks/routes';
 import bookingRoutes from '../modules/bookings/routes';
 import reportRoutes from '../modules/reports/routes';
+import inventoryRoutes from '../modules/inventory/routes';
 import consoleRoutes from '../modules/console/routes';
 import { publicPayments, tenantPayments } from '../modules/platformBilling/routes';
 
@@ -41,5 +42,6 @@ router.use('/', financeRoutes);
 router.use('/', taskRoutes);
 router.use('/', bookingRoutes);
 router.use('/', reportRoutes);
+router.use('/', inventoryRoutes);
 
 export default router;

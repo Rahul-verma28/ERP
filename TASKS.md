@@ -378,6 +378,15 @@ The client allows selling with a few complete modules, so this replaces the budg
 - [x] Dues and reminders by hand: who owes money after advances, WhatsApp, SMS and email with amount, bill links and UPI ID, last reminder noted — code and tests done 2026-11-06, checked in the browser
 - [x] UPI pay button on the share page with the amount filled in; the business still records the payment — code done 2026-11-06, checked in the browser
 
+### Inventory (batch 1, approved 2026-11-06)
+- [x] Stock ledger: append-only moves, running balance per item and godown, moving average cost — code and tests done 2026-11-06, checked in the browser
+- [x] Godowns: default godown made on first use, add, rename, make default, close only when empty; stock rules (block negative, approval limit, backdate days) — checked in the browser
+- [x] Opening stock, stock in (until Purchase), adjustments with reason and approval limit, transfers at cost, stock count posting differences — opening, stock in, transfer and count checked in the browser; adjustment by tests
+- [x] Sales move stock: issued invoice (free qty too), challan (its invoice moves nothing), challan edit, goods-returned credit note at sale cost, cancel puts it back; services and untracked items never move — tests; cash bill checked in the browser
+- [x] Track stock and low-stock level on the item, stock shown in the item list and bill item picker, low-stock tab and dashboard alert — checked in the browser
+- [x] Fix: every tenant request now answers only after its transaction commits (a timed-out commit used to show success for rolled-back work); dev transaction limit 45 s for the far database
+- [ ] Later batches: batch and expiry, serial numbers, box/piece units, reservations, barcode labels, in-transit, landed cost with Purchase; valuation method to confirm with the CA
+
 ## Phase 2 — Operations (weeks 5–8)
 Exit gate: stock and accounts update from sales and purchases.
 Can run in parallel once Platform v2 Step 2 is merged. From the Maglo reference, add: reporting manager + teams, permission matrix UI, Contact vs Lead (re-enquiry count), configurable pipeline stages, round-robin assignment, follow-up screen, quotation statuses + proforma, one shared list-page component.

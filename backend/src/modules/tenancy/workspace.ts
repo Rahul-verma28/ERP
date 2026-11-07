@@ -169,6 +169,11 @@ export const PREFERENCE_SCHEMAS = {
     .superRefine((t, c) => {
       if (t.composition && !t.compositionRateBp) c.addIssue({ code: z.ZodIssueCode.custom, path: ['compositionRateBp'], message: 'Choose your composition rate' });
     }),
+  inventory: z.object({
+    blockNegative: z.boolean(),
+    adjustmentApprovalPaise: z.number().int().min(0, 'Enter 0 or more').max(10_000_000_000),
+    backdateDays: z.number().int().min(0, 'Enter 0 to 31').max(31, 'Enter 0 to 31'),
+  }),
   branding: z.object({
     brandColor: z.string().superRefine((v, c) => {
       const message = brandColorError(v);

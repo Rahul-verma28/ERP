@@ -5,6 +5,7 @@ import type { TenantCtx } from '../../kernel/context';
 import { divRound } from '../../kernel/gst';
 import { audit } from '../audit/service';
 import { createDocument, getDocument, refreshOrderStatus, type DocInput } from './service';
+import { reverseSource } from '../inventory/engine';
 
 // Sales orders: take the order now, invoice it later, in one go or in parts.
 
@@ -94,6 +95,7 @@ export async function cancelChallan(ctx: TenantCtx, id: string, reason: string) 
   if (challan.status === 'converted') throw new AppError('CONFLICT', 'This challan is invoiced. Cancel or delete the invoice first.');
   await db().salesDocument.update({ where: { id }, data: { status: 'cancelled', cancelledAt: new Date(), cancelReason: reason, version: { increment: 1 } } });
   if (challan.sourceType === 'sales_order' && challan.sourceId) await refreshOrderStatus(challan.sourceId);
+  await reverseSource(ctx, id);
   await audit({ action: 'sales.delivery.cancel', entity: 'delivery_challan', entityId: id, after: { reason } });
   return getDocument(ctx, id, 'delivery_challan');
 }

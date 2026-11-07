@@ -218,32 +218,32 @@ enum EntitlementStatus {
 // ─────────────────────── Identity & tenancy ───────────────────────
 
 model User {
-  id               String     @id @default(uuid(7)) @db.Uuid
-  name             String
-  email            String     @unique // stored lower-cased
-  mobile           String     @unique @db.VarChar(15) // E.164
-  passwordHash     String?    @map("password_hash")
-  emailVerifiedAt  DateTime?  @map("email_verified_at") @db.Timestamptz
-  mobileVerifiedAt DateTime?  @map("mobile_verified_at") @db.Timestamptz
-  mfaEnabled       Boolean    @default(false) @map("mfa_enabled")
-  status           UserStatus @default(active)
-  failedLogins     Int        @default(0) @map("failed_logins")
-  lockedUntil      DateTime?  @map("locked_until") @db.Timestamptz
-  lastTenantId     String?    @map("last_tenant_id") @db.Uuid
-  lastLoginAt      DateTime?  @map("last_login_at") @db.Timestamptz
+  id                String     @id @default(uuid(7)) @db.Uuid
+  name              String
+  email             String     @unique // stored lower-cased
+  mobile            String     @unique @db.VarChar(15) // E.164
+  passwordHash      String?    @map("password_hash")
+  emailVerifiedAt   DateTime?  @map("email_verified_at") @db.Timestamptz
+  mobileVerifiedAt  DateTime?  @map("mobile_verified_at") @db.Timestamptz
+  mfaEnabled        Boolean    @default(false) @map("mfa_enabled")
+  status            UserStatus @default(active)
+  failedLogins      Int        @default(0) @map("failed_logins")
+  lockedUntil       DateTime?  @map("locked_until") @db.Timestamptz
+  lastTenantId      String?    @map("last_tenant_id") @db.Uuid
+  lastLoginAt       DateTime?  @map("last_login_at") @db.Timestamptz
   /// Personal theme, font, density, start page, date format (contracts/account.ts)
-  preferences      Json       @default("{}")
-  passwordChangedAt DateTime? @map("password_changed_at") @db.Timestamptz
-  createdAt        DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  preferences       Json       @default("{}")
+  passwordChangedAt DateTime?  @map("password_changed_at") @db.Timestamptz
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz
 
-  sessions       UserSession[]
-  mfa            UserMfa?
-  trustedDevices UserTrustedDevice[]
+  sessions        UserSession[]
+  mfa             UserMfa?
+  trustedDevices  UserTrustedDevice[]
   passwordHistory UserPasswordHistory[]
-  memberships    TenantMember[]
-  platformMember PlatformMember?
-  accessLinks    AccessLink[]
+  memberships     TenantMember[]
+  platformMember  PlatformMember?
+  accessLinks     AccessLink[]
 
   @@map("users")
 }
@@ -476,33 +476,33 @@ enum PlatformPaymentMethod {
 
 /// Platform table: what AHEAD sells to a client (plan + add-ons + users), priced and taxed once.
 model PlatformOrder {
-  id               String              @id @default(uuid(7)) @db.Uuid
-  tenantId         String              @map("tenant_id") @db.Uuid
-  kind             String              @default("fresh") // fresh | renewal | upgrade
-  status           PlatformOrderStatus @default(awaiting_payment)
-  planId           String              @map("plan_id") @db.Uuid
-  cycle            BillingCycle
-  items            Json // [{ itemType, itemRef, priceId, quantity, unitPaise, amountPaise, description }]
-  listPaise        BigInt              @map("list_paise")
-  discountBp       Int                 @default(0) @map("discount_bp") // sales discount, basis points
-  couponCode       String?             @map("coupon_code")
-  discountPaise    BigInt              @default(0) @map("discount_paise") // sales discount + coupon
-  taxablePaise     BigInt              @map("taxable_paise")
-  cgstPaise        BigInt              @default(0) @map("cgst_paise")
-  sgstPaise        BigInt              @default(0) @map("sgst_paise")
-  igstPaise        BigInt              @default(0) @map("igst_paise")
-  totalPaise       BigInt              @map("total_paise")
-  billTo           Json                @map("bill_to") // name, gstin, stateCode, address at order time
-  createdBy        String              @map("created_by") @db.Uuid
-  approvedBy       String?             @map("approved_by") @db.Uuid
-  approvedAt       DateTime?           @map("approved_at") @db.Timestamptz
-  cancelledReason  String?             @map("cancelled_reason")
-  expiresAt        DateTime            @map("expires_at") @db.Timestamptz
-  paidAt           DateTime?           @map("paid_at") @db.Timestamptz
-  paymentLinkId    String?             @unique @map("payment_link_id")
-  paymentLinkUrl   String?             @map("payment_link_url")
-  paymentLinkAt    DateTime?           @map("payment_link_at") @db.Timestamptz
-  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  id              String              @id @default(uuid(7)) @db.Uuid
+  tenantId        String              @map("tenant_id") @db.Uuid
+  kind            String              @default("fresh") // fresh | renewal | upgrade
+  status          PlatformOrderStatus @default(awaiting_payment)
+  planId          String              @map("plan_id") @db.Uuid
+  cycle           BillingCycle
+  items           Json // [{ itemType, itemRef, priceId, quantity, unitPaise, amountPaise, description }]
+  listPaise       BigInt              @map("list_paise")
+  discountBp      Int                 @default(0) @map("discount_bp") // sales discount, basis points
+  couponCode      String?             @map("coupon_code")
+  discountPaise   BigInt              @default(0) @map("discount_paise") // sales discount + coupon
+  taxablePaise    BigInt              @map("taxable_paise")
+  cgstPaise       BigInt              @default(0) @map("cgst_paise")
+  sgstPaise       BigInt              @default(0) @map("sgst_paise")
+  igstPaise       BigInt              @default(0) @map("igst_paise")
+  totalPaise      BigInt              @map("total_paise")
+  billTo          Json                @map("bill_to") // name, gstin, stateCode, address at order time
+  createdBy       String              @map("created_by") @db.Uuid
+  approvedBy      String?             @map("approved_by") @db.Uuid
+  approvedAt      DateTime?           @map("approved_at") @db.Timestamptz
+  cancelledReason String?             @map("cancelled_reason")
+  expiresAt       DateTime            @map("expires_at") @db.Timestamptz
+  paidAt          DateTime?           @map("paid_at") @db.Timestamptz
+  paymentLinkId   String?             @unique @map("payment_link_id")
+  paymentLinkUrl  String?             @map("payment_link_url")
+  paymentLinkAt   DateTime?           @map("payment_link_at") @db.Timestamptz
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz
 
   payments PlatformPayment[]
   invoice  PlatformInvoice?
@@ -1233,6 +1233,10 @@ model Item {
   description    String?
   imageUrl       String?      @map("image_url")
   isActive       Boolean      @default(true) @map("is_active")
+  /// Inventory counts this item: sales and returns move its stock
+  trackStock     Boolean      @default(false) @map("track_stock")
+  /// Low-stock alert below this quantity
+  reorderLevel   Decimal?     @map("reorder_level") @db.Decimal(18, 3)
   custom         Json         @default("{}")
   source         RecordSource @default(tenant)
   createdBy      String?      @map("created_by") @db.Uuid
@@ -1247,36 +1251,36 @@ model Item {
 // ── CRM (CRM-01..04) ──
 
 model Contact {
-  id          String      @id @default(uuid(7)) @db.Uuid
-  tenantId    String      @map("tenant_id") @db.Uuid
-  branchId    String?     @map("branch_id") @db.Uuid
-  type        ContactType @default(customer)
-  name        String
-  companyName String?     @map("company_name")
-  phone       String?     @db.VarChar(15)
-  email       String?
-  gstin       String?     @db.VarChar(15)
-  stateCode   String?     @map("state_code") @db.Char(2)
-  address     Json?
-  leadStatus  LeadStatus? @map("lead_status")
-  leadSource  String?     @map("lead_source")
-  ownerId     String?     @map("owner_id") @db.Uuid
-  isActive    Boolean     @default(true) @map("is_active")
-  notes       String?
-  custom      Json        @default("{}")
+  id               String      @id @default(uuid(7)) @db.Uuid
+  tenantId         String      @map("tenant_id") @db.Uuid
+  branchId         String?     @map("branch_id") @db.Uuid
+  type             ContactType @default(customer)
+  name             String
+  companyName      String?     @map("company_name")
+  phone            String?     @db.VarChar(15)
+  email            String?
+  gstin            String?     @db.VarChar(15)
+  stateCode        String?     @map("state_code") @db.Char(2)
+  address          Json?
+  leadStatus       LeadStatus? @map("lead_status")
+  leadSource       String?     @map("lead_source")
+  ownerId          String?     @map("owner_id") @db.Uuid
+  isActive         Boolean     @default(true) @map("is_active")
+  notes            String?
+  custom           Json        @default("{}")
   /// Created by "Try with sample data"; removed together from Settings › Data
-  isSample    Boolean     @default(false) @map("is_sample")
+  isSample         Boolean     @default(false) @map("is_sample")
   /// Empty = no limit
-  creditLimitPaise BigInt? @map("credit_limit_paise")
-  lastRemindedAt   DateTime? @map("last_reminded_at") @db.Timestamptz
+  creditLimitPaise BigInt?     @map("credit_limit_paise")
+  lastRemindedAt   DateTime?   @map("last_reminded_at") @db.Timestamptz
   /// whatsapp | sms | email
-  lastReminderVia  String?   @map("last_reminder_via") @db.VarChar(10)
-  priceListId String?     @map("price_list_id") @db.Uuid
-  createdBy   String?     @map("created_by") @db.Uuid
-  convertedAt DateTime?   @map("converted_at") @db.Timestamptz
-  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz
-  version     Int         @default(1)
+  lastReminderVia  String?     @map("last_reminder_via") @db.VarChar(10)
+  priceListId      String?     @map("price_list_id") @db.Uuid
+  createdBy        String?     @map("created_by") @db.Uuid
+  convertedAt      DateTime?   @map("converted_at") @db.Timestamptz
+  createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+  version          Int         @default(1)
 
   @@index([tenantId, type, name])
   @@index([tenantId, phone])
@@ -1479,8 +1483,8 @@ model AdvanceAdjustment {
   payment    Payment?           @relation(fields: [paymentId], references: [id])
   creditNote SalesDocument?     @relation("AdjustmentCredit", fields: [creditNoteId], references: [id])
   document   SalesDocument      @relation("AdjustedInvoice", fields: [documentId], references: [id])
-  reverses AdvanceAdjustment? @relation("AdjustmentReversal", fields: [reversesId], references: [id])
-  reversal AdvanceAdjustment? @relation("AdjustmentReversal")
+  reverses   AdvanceAdjustment? @relation("AdjustmentReversal", fields: [reversesId], references: [id])
+  reversal   AdvanceAdjustment? @relation("AdjustmentReversal")
 
   @@index([tenantId, paymentId])
   @@index([tenantId, documentId])
@@ -1698,4 +1702,83 @@ model ConsoleNote {
 
   @@index([tenantId, createdAt(sort: Desc)], map: "console_notes_tenant_idx")
   @@map("console_notes")
+}
+
+/// A godown, store or van where stock is kept
+model StockLocation {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  isDefault Boolean  @default(false) @map("is_default")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([tenantId, name])
+  @@map("stock_locations")
+}
+
+/// One opening, stock in, adjustment, transfer or count, with its lines as typed
+model StockEntry {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  /// opening | stock_in | adjustment | transfer | count
+  kind         String   @db.VarChar(20)
+  locationId   String   @map("location_id") @db.Uuid
+  toLocationId String?  @map("to_location_id") @db.Uuid
+  entryDate    DateTime @map("entry_date") @db.Date
+  party        String?
+  reference    String?
+  /// Adjustment: damage | loss | found | sample | other
+  reason       String?  @db.VarChar(20)
+  note         String?
+  lines        Json     @default("[]")
+  valuePaise   BigInt   @default(0) @map("value_paise")
+  createdBy    String?  @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, entryDate])
+  @@map("stock_entries")
+}
+
+/// The stock ledger: append-only. Positive quantity comes in, negative goes out.
+model StockMove {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  itemId       String   @map("item_id") @db.Uuid
+  locationId   String   @map("location_id") @db.Uuid
+  moveDate     DateTime @map("move_date") @db.Date
+  /// opening | stock_in | sale | sale_return | adjustment | transfer_in | transfer_out | count
+  kind         String   @db.VarChar(20)
+  quantity     Decimal  @db.Decimal(18, 3)
+  ratePaise    BigInt   @map("rate_paise")
+  valuePaise   BigInt   @map("value_paise")
+  /// Stock at this location after the move
+  balanceQty   Decimal  @map("balance_qty") @db.Decimal(18, 3)
+  /// stock_entry | invoice | delivery_challan | credit_note
+  sourceType   String   @map("source_type") @db.VarChar(20)
+  sourceId     String   @map("source_id") @db.Uuid
+  sourceLineId String?  @map("source_line_id") @db.Uuid
+  reversesId   String?  @unique @map("reverses_id") @db.Uuid
+  createdBy    String?  @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, itemId, locationId, createdAt])
+  @@index([tenantId, sourceId])
+  @@map("stock_moves")
+}
+
+/// Running stock per item and godown, kept with the ledger in one transaction
+model StockBalance {
+  tenantId      String   @map("tenant_id") @db.Uuid
+  itemId        String   @map("item_id") @db.Uuid
+  locationId    String   @map("location_id") @db.Uuid
+  quantity      Decimal  @default(0) @db.Decimal(18, 3)
+  valuePaise    BigInt   @default(0) @map("value_paise")
+  lastRatePaise BigInt   @default(0) @map("last_rate_paise")
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@id([itemId, locationId])
+  @@index([tenantId])
+  @@map("stock_balances")
 }

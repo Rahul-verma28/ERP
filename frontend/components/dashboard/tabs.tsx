@@ -90,7 +90,7 @@ const overview: Record<string, WidgetDef> = {
   inbox: {
     span: WIDE,
     render: (d, c) => {
-      const KIND: Record<string, [string, string]> = { overdue: ["Overdue", tones.red], followup: ["Follow-up", tones.blue], task: ["Task", tones.grey], setup: ["Setup", tones.grey] }
+      const KIND: Record<string, [string, string]> = { overdue: ["Overdue", tones.red], followup: ["Follow-up", tones.blue], task: ["Task", tones.grey], setup: ["Setup", tones.grey], low_stock: ["Stock", tones.amber] }
       return (
         <Widget title={ok(d) ? `Needs you · ${d.count}` : "Needs you"} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.items.length && "You're all caught up — nothing needs you right now."}>
           {ok(d) && (

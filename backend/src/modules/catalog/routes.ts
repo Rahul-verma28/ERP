@@ -12,6 +12,7 @@ import { validateCustom } from '../config/service';
 import { optionalText, zHsnOrSac } from '../../kernel/zodRules';
 import { consumer } from '../events/outbox';
 import { audit } from '../audit/service';
+import { stockByItem } from '../inventory/service';
 import { templateByKey } from '../../contracts/templates';
 
 // Product & Service Catalogue (CAT-01, CAT-02) — master data shared by billing, CRM, bookings.
@@ -36,6 +37,9 @@ const ItemInput = z.object({
   description: z.string().trim().max(2000).optional().nullable(),
   imageUrl: z.string().url().max(500).optional().nullable().or(z.literal('').transform(() => null)),
   isActive: z.boolean().optional(),
+  /** Inventory: sales and returns move this item's stock */
+  trackStock: z.boolean().optional(),
+  reorderLevel: z.number().min(0, 'Enter 0 or more').max(1e9).optional().nullable(),
   custom: z.record(z.unknown()).optional(),
 });
 
@@ -48,7 +52,10 @@ const ItemList = ListQuery.extend({
 });
 
 async function serialize(ctx: TenantCtx, rows: Record<string, unknown>[]) {
-  return stripHidden(ctx, 'item', rows, HIDDEN);
+  // Tracked items carry how many are in stock, all godowns together
+  const stock = await stockByItem(ctx.tenantId, rows.filter((r) => r.trackStock).map((r) => r.id as string));
+  const withStock = rows.map((r) => (r.trackStock ? { ...r, stockQty: stock.get(r.id as string) ?? 0, reorderLevel: r.reorderLevel === null ? null : Number(r.reorderLevel) } : r));
+  return stripHidden(ctx, 'item', withStock, HIDDEN);
 }
 
 async function checkCategory(categoryId?: string | null) {
@@ -97,6 +104,10 @@ router.patch('/items/:id', requirePermission('catalog.item.edit'), validate(IdPa
   if (!item) throw notFound('Item');
   assertVersion(item.version, version, 'item');
   await checkCategory(body.categoryId);
+  if (body.trackStock === false && item.trackStock && (await stockByItem(ctx.tenantId, [item.id])).get(item.id)) {
+    throw new AppError('CONFLICT', 'This item still has stock. Bring it to zero with an adjustment before you stop tracking it.', { fields: { trackStock: 'Stock is not zero' } });
+  }
+  if ((body.type ?? item.type) === 'service') body.trackStock = false;
   if (body.costPricePaise !== undefined && !(await canWriteField(ctx, 'item', 'cost_price'))) delete body.costPricePaise;
   const custom = body.custom ? await validateCustom(ctx.tenantId, 'item', body.custom, item.custom as Record<string, unknown>) : undefined;
   const updated = await db().item.update({

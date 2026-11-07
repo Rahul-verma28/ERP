@@ -14,6 +14,7 @@ import { publish } from '../events/outbox';
 import { optionalText, zEmail, zGstin, zHsnOrSac, zPhone, zStateCode } from '../../kernel/zodRules';
 import { gstinStateMismatch } from '../../contracts/validation';
 import { withDefaults, type WorkspaceProfile } from '../../contracts/workspace';
+import { postDocumentStock, reverseSource } from '../inventory/engine';
 
 // Sales documents: quotations (SAL-01) and GST tax invoices (BIL-01..04) share one engine.
 
@@ -193,6 +194,8 @@ export async function createDocument(ctx: TenantCtx, kind: 'invoice' | 'quotatio
     },
   });
   if (kind === 'invoice' && opts.issue) return issueInvoice(ctx, created.id, { skipCreditLimit: opts.skipCreditLimit });
+  // A challan goes out with the goods, so stock leaves now
+  if (kind === 'delivery_challan') await postDocumentStock(ctx, created.id);
   return getDocument(ctx, created.id, kind);
 }
 
@@ -212,6 +215,11 @@ export async function updateDocument(ctx: TenantCtx, id: string, kind: SalesDocK
     data: { ...doc, version: { increment: 1 }, lines: { create: lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) } },
   });
   if (existing.sourceType === 'sales_order' && existing.sourceId) await refreshOrderStatus(existing.sourceId);
+  // An edited challan: put the old quantities back, take the new ones out
+  if (kind === 'delivery_challan') {
+    await reverseSource(ctx, id);
+    await postDocumentStock(ctx, id);
+  }
   return getDocument(ctx, id, kind);
 }
 
@@ -293,6 +301,7 @@ export async function issueInvoice(ctx: TenantCtx, id: string, opts: { skipCredi
       lines: { create: lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) },
     },
   });
+  await postDocumentStock(ctx, id);
   await markOnboarding(ctx, 'firstInvoice');
   await audit({ action: 'billing.invoice.issue', entity: 'invoice', entityId: id, after: { number, totalPaise: fresh.totalPaise } });
   await publish('invoice.issued', { documentId: id });
@@ -310,6 +319,7 @@ export async function cancelInvoice(ctx: TenantCtx, id: string, reason: string) 
   await db().salesDocument.update({ where: { id }, data: { status: 'cancelled', cancelledAt: new Date(), cancelReason: reason, version: { increment: 1 } } });
   if (doc.sourceType === 'sales_order' && doc.sourceId) await refreshOrderStatus(doc.sourceId);
   if (doc.sourceType === 'delivery_challan' && doc.sourceId) await reopenChallan(doc.sourceId);
+  await reverseSource(ctx, id);
   await audit({ action: 'billing.invoice.cancel', entity: 'invoice', entityId: id, before: { status: doc.status }, after: { reason } });
   return getDocument(ctx, id, 'invoice');
 }

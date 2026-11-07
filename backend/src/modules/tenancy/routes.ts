@@ -144,7 +144,7 @@ router.patch('/tenant/profile', requirePermission('tenant.settings.edit'), valid
 router.put(
   '/tenant/preferences/:section',
   requirePermission('tenant.settings.edit'),
-  validate(z.object({ section: z.enum(['documents', 'payments', 'taxes', 'branding']) }), 'params'),
+  validate(z.object({ section: z.enum(['documents', 'payments', 'taxes', 'inventory', 'branding']) }), 'params'),
   tx(async (req, res) => {
     res.json(await workspace.updatePreferences(req.ctx!.tenantId, req.params.section as workspace.PreferenceSection, req.body));
   }),

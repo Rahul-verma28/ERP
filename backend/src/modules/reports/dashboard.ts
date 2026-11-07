@@ -1,4 +1,5 @@
 import type { PermissionScope, Prisma } from '@prisma/client';
+import { stockSummary } from '../inventory/service';
 import { db, prisma, withTenant } from '../../kernel/db';
 import type { TenantCtx } from '../../kernel/context';
 import { scopeWhere } from '../../kernel/query';
@@ -161,6 +162,7 @@ export async function overview(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
   const appt = s('bookings.appointment.view');
   const fu = s('crm.activity.view');
   const task = s('tasks.task.view');
+  const stock = s('inventory.stock.view');
   const today = todayIST();
   const out: Record<string, unknown> = {};
 
@@ -203,6 +205,10 @@ export async function overview(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
       items.push({ kind: 'overdue', id: d.id, title: `${d.number} · ${buyerName(d.buyer)}`, detail: `${days} day${days === 1 ? '' : 's'} overdue`, href: `/app/m/billing/${d.id}`, action: 'remind', amountPaise: n(d.totalPaise) - n(d.paidPaise), days });
     }
     for (const f of followups) items.push({ kind: 'followup', id: f.id, title: f.title || 'Follow up', detail: `${cname.get(f.contactId) ?? 'Contact'}${f.dueAt && f.dueAt < istStart(today) ? ' · overdue' : ' · today'}`, href: `/app/m/crm/${f.contactId}`, action: 'done' });
+    if (stock) {
+      const low = (await stockSummary(stock, { low: 'true' })).data.length;
+      if (low) items.push({ kind: 'low_stock', id: 'low-stock', title: `${low} item${low === 1 ? '' : 's'} low on stock`, detail: 'At or below the low-stock level', href: '/app/m/inventory?low=1', action: 'open' });
+    }
     for (const t of tasks) items.push({ kind: 'task', id: t.id, title: t.title, detail: t.dueAt && t.dueAt < istStart(today) ? 'overdue · you' : 'due today · you', href: `/app/m/tasks/${t.id}`, action: 'done' });
     if (tenant.ownerUserId === ctx.userId) {
       for (const step of readSetupSteps(tenant.onboarding)) items.push({ kind: 'setup', id: step.key, title: step.label, detail: 'Setup step left', href: `/app/setup?step=${step.key}`, action: 'open' });

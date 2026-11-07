@@ -14,7 +14,9 @@ export const prisma = createPrismaClient(isDev ? ['warn', 'error'] : ['error']);
 type Store = { tx: Prisma.TransactionClient; ctx: Ctx; after: (() => void)[] };
 const als = new AsyncLocalStorage<Store>();
 
-const TX_OPTIONS = { timeout: 15_000, maxWait: 10_000, isolationLevel: 'ReadCommitted' } as const;
+// A development database far away takes ~300 ms a query, so a long request (a cash bill with
+// stock) needs more room there; production keeps the tight limit.
+const TX_OPTIONS = { timeout: isDev ? 45_000 : 15_000, maxWait: 10_000, isolationLevel: 'ReadCommitted' } as const;
 
 /** Transaction client for the current unit of work. Fails closed outside one. */
 export const db = (): Prisma.TransactionClient => {

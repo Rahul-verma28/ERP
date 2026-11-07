@@ -123,9 +123,24 @@ export const consoleTx = (handler: Handler) => async (req: Request, res: Respons
 /** Explicit marker for routes that are intentionally unauthenticated. */
 export const publicRoute = (_req: Request, _res: Response, next: NextFunction) => next();
 
-/** Run the handler inside the request's tenant transaction (RLS-scoped). */
+/**
+ * Run the handler inside the request's tenant transaction (RLS-scoped). The JSON answer is held
+ * until the transaction commits: if the commit fails (a timeout, a conflict), the caller gets the
+ * error instead of a success for work that was rolled back.
+ */
 export const tx = (handler: Handler) => async (req: Request, res: Response) => {
   if (!req.ctx) throw new AppError('UNAUTHENTICATED', 'Please sign in.');
-  await withTenant(req.ctx, () => handler(req, res));
+  const send = res.json.bind(res);
+  let held: { body: unknown } | null = null;
+  res.json = ((body: unknown) => {
+    held = { body };
+    return res;
+  }) as Response['json'];
+  try {
+    await withTenant(req.ctx, () => handler(req, res));
+  } finally {
+    res.json = send;
+  }
+  if (held) send((held as { body: unknown }).body);
 };
 

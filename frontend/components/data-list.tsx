@@ -183,6 +183,7 @@ export function DataList<T extends { id: string }>({
   searchPlaceholder = "Search…",
   filters = [],
   presets = [],
+  defaultPreset,
   countsPath,
   rowHref,
   bulkActions = [],
@@ -198,6 +199,8 @@ export function DataList<T extends { id: string }>({
   searchPlaceholder?: string
   filters?: FilterDef[]
   presets?: ViewPreset[]
+  /** The preset tab to open on, e.g. from a link; default the first */
+  defaultPreset?: string
   /** Endpoint returning { [countKey]: number } for the preset tabs */
   countsPath?: string
   rowHref?: (row: T) => string
@@ -221,7 +224,7 @@ export function DataList<T extends { id: string }>({
 
   const [search, setSearch] = React.useState("")
   const q = useDebounced(search.trim())
-  const [preset, setPreset] = React.useState(presets[0]?.key ?? "")
+  const [preset, setPreset] = React.useState(defaultPreset ?? presets[0]?.key ?? "")
   const [filterValues, setFilterValues] = React.useState<Record<string, string>>({})
   const [activeView, setActiveView] = React.useState<string | null>(null)
   const [sort, setSort] = React.useState<{ key: string; dir: 1 | -1 } | null>(null)
