@@ -106,9 +106,16 @@ const STATUS_STYLE: Record<string, string> = {
   medium: "bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-100",
   high: "bg-orange-100 text-orange-950 dark:bg-orange-950 dark:text-orange-100",
   urgent: "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-100",
+  open: "bg-blue-100 text-blue-900 dark:bg-blue-950 dark:text-blue-100",
+  part_received: "bg-orange-100 text-orange-950 dark:bg-orange-950 dark:text-orange-100",
+  received: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100",
+  billed: "bg-violet-100 text-violet-900 dark:bg-violet-950 dark:text-violet-100",
+  closed: "bg-muted text-muted-foreground",
+  unpaid: "bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-100",
+  part_paid: "bg-orange-100 text-orange-950 dark:bg-orange-950 dark:text-orange-100",
 }
 
-const STATUS_LABEL: Record<string, string> = { partially_paid: "Partly paid", in_progress: "In progress", no_show: "No-show", todo: "To do" }
+const STATUS_LABEL: Record<string, string> = { partially_paid: "Partly paid", in_progress: "In progress", no_show: "No-show", todo: "To do", part_received: "Part received", part_paid: "Part paid" }
 
 export function StatusBadge({ status }: { status: string }) {
   return (

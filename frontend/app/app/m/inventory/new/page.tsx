@@ -45,7 +45,7 @@ type Line = {
 
 const HINT: Record<Kind, string> = {
   opening: "What you have on the day you start. Each item gets opening stock once per godown.",
-  stock_in: "Goods that came in, with what they cost. Use this until Purchase is set up.",
+  stock_in: "Goods that came in without a purchase bill, such as from another shop of yours. For supplier goods, use Purchase.",
   adjustment: "Damage, loss, samples, expired stock or stock found. Needs a reason.",
   transfer: "Move stock from one godown to another. Cost moves with it.",
 }

@@ -166,7 +166,7 @@ export async function stockByItem(tenantId: string, itemIds: string[]) {
 
 export const LedgerQuery = z.object({ locationId: z.string().uuid().optional(), from: DateStr.optional(), to: DateStr.optional() });
 
-const SOURCE_LABEL: Record<string, string> = { opening: 'Opening stock', stock_in: 'Stock in', sale: 'Sale', sale_return: 'Return', adjustment: 'Adjustment', transfer_in: 'Transfer in', transfer_out: 'Transfer out', count: 'Stock count' };
+const SOURCE_LABEL: Record<string, string> = { purchase: 'Purchase', purchase_return: 'Purchase return', opening: 'Opening stock', stock_in: 'Stock in', sale: 'Sale', sale_return: 'Return', adjustment: 'Adjustment', transfer_in: 'Transfer in', transfer_out: 'Transfer out', count: 'Stock count' };
 
 /** Every move of one item, newest last, with the document it came from. */
 export async function itemLedger(ctx: TenantCtx, itemId: string, query: z.infer<typeof LedgerQuery>) {
@@ -180,7 +180,9 @@ export async function itemLedger(ctx: TenantCtx, itemId: string, query: z.infer<
     orderBy: { createdAt: 'asc' },
     take: 2000,
   });
-  const docIds = [...new Set(moves.filter((m) => m.sourceType !== 'stock_entry').map((m) => m.sourceId))];
+  const docIds = [...new Set(moves.filter((m) => m.sourceType !== 'stock_entry' && m.sourceType !== 'purchase').map((m) => m.sourceId))];
+  const purchaseIds = [...new Set(moves.filter((m) => m.sourceType === 'purchase').map((m) => m.sourceId))];
+  const purchases = purchaseIds.length ? await db().purchaseDocument.findMany({ where: { id: { in: purchaseIds } }, select: { id: true, number: true, kind: true, supplier: true } }) : [];
   const entryIds = [...new Set(moves.filter((m) => m.sourceType === 'stock_entry').map((m) => m.sourceId))];
   const batchIds = [...new Set(moves.map((m) => m.batchId).filter(Boolean))] as string[];
   const [docs, entries, locations, batches, balances] = await Promise.all([
@@ -198,14 +200,14 @@ export async function itemLedger(ctx: TenantCtx, itemId: string, query: z.infer<
     quantity: fromMilli(qty), reserved, valuePaise: value, averagePaise: qty > 0n ? (value * 1000n) / qty : 0n,
     byLocation: balances.map((b) => ({ locationId: b.locationId, location: locations.find((l) => l.id === b.locationId)?.name ?? '—', quantity: fromMilli(milli(b.quantity)), valuePaise: b.valuePaise })),
     rows: moves.map((m) => {
-      const doc = docs.find((d) => d.id === m.sourceId);
+      const doc = docs.find((d) => d.id === m.sourceId) ?? purchases.find((d) => d.id === m.sourceId);
       const entry = entries.find((e) => e.id === m.sourceId);
       return {
         id: m.id, date: m.moveDate, kind: m.kind, label: m.reversesId ? `${SOURCE_LABEL[m.kind] ?? m.kind} undone` : SOURCE_LABEL[m.kind] ?? m.kind,
         location: locations.find((l) => l.id === m.locationId)?.name ?? '—', quantity: fromMilli(milli(m.quantity)), ratePaise: m.ratePaise, valuePaise: m.valuePaise,
         balance: fromMilli(milli(m.balanceQty)), sourceType: m.sourceType, sourceId: m.sourceId, reversal: !!m.reversesId,
         batch: batches.find((b) => b.id === m.batchId)?.number ?? null, serials: m.serials,
-        document: doc ? { number: doc.number, kind: doc.kind, party: (doc.buyer as { name?: string })?.name ?? null } : entry ? { number: null, kind: entry.kind, party: entry.party ?? entry.reason ?? null } : null,
+        document: doc ? { number: doc.number, kind: doc.kind, party: ((('buyer' in doc ? doc.buyer : doc.supplier) as { name?: string }) ?? {}).name ?? null } : entry ? { number: null, kind: entry.kind, party: entry.party ?? entry.reason ?? null } : null,
       };
     }),
   };
@@ -314,6 +316,14 @@ async function needsApproval(ctx: TenantCtx, valuePaise: bigint, limit: number) 
   if (!perms.has('inventory.stock_adjustment.approve')) {
     throw new AppError('PERMISSION_DENIED', `This changes stock worth more than ₹${(limit / 100).toLocaleString('en-IN')}. Ask a stock manager to post it.`, { approval: true });
   }
+}
+
+/** The batch of an item with this number, made if new; dates fill in when given. */
+export async function ensureBatch(ctx: TenantCtx, itemId: string, number: string, mfgDate?: Date | null, expiryDate?: Date | null) {
+  const found = await db().stockBatch.findUnique({ where: { itemId_number: { itemId, number } } });
+  const data = { ...(mfgDate ? { mfgDate } : {}), ...(expiryDate ? { expiryDate } : {}) };
+  if (found) return Object.keys(data).length ? db().stockBatch.update({ where: { id: found.id }, data }) : found;
+  return db().stockBatch.create({ data: { tenantId: ctx.tenantId, itemId, number, ...data } });
 }
 
 /** The batch stock comes into: found by number, made if new. Dates fill in when given. */

@@ -184,6 +184,39 @@ export function ContactPicker({ value, onChange, id, allowCreate = true }: { val
   )
 }
 
+/** Suppliers (Purchase); a new one can be added by name from the search */
+export function SupplierPicker({ value, onChange, id, allowCreate = true }: { value: ContactOption | null; onChange: (c: ContactOption | null) => void; id?: string; allowCreate?: boolean }) {
+  return (
+    <Combobox<ContactOption>
+      id={id}
+      path="/suppliers"
+      label="Supplier"
+      placeholder="Search suppliers by name, phone or GSTIN"
+      value={value}
+      onChange={onChange}
+      render={(c) => ({ title: c.companyName || c.name, subtitle: [c.companyName ? c.name : null, c.phone, c.gstin].filter(Boolean).join(" · ") || undefined })}
+      footer={
+        allowCreate
+          ? (query, close) =>
+              query.trim().length >= 2 && (
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  className="mt-1 w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-primary hover:bg-muted"
+                  onClick={async () => {
+                    onChange(await api.post<ContactOption>("/suppliers", { name: query.trim() }))
+                    close()
+                  }}
+                >
+                  + Add &ldquo;{query.trim()}&rdquo; as a new supplier
+                </button>
+              )
+          : undefined
+      }
+    />
+  )
+}
+
 export function ItemPicker({ onPick, id, allowCreate = false, defaultGstRateBp = 1800, placeholder = "Search products & services, or type to add a custom line" }: { onPick: (i: ItemOption) => void; id?: string; allowCreate?: boolean; defaultGstRateBp?: number; placeholder?: string }) {
   return (
     <Combobox<ItemOption>

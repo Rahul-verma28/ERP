@@ -25,7 +25,7 @@ interface Ledger {
   }[]
 }
 
-const DOC_HREF: Record<string, string> = { invoice: "/app/m/billing/", delivery_challan: "/app/m/sales/challans/", credit_note: "/app/m/billing/credit-notes/", stock_entry: "/app/m/inventory/entries/" }
+const DOC_HREF: Record<string, string> = { invoice: "/app/m/billing/", delivery_challan: "/app/m/sales/challans/", credit_note: "/app/m/billing/credit-notes/", stock_entry: "/app/m/inventory/entries/", purchase: "/app/m/purchase/" }
 
 export default function ItemStockPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params)

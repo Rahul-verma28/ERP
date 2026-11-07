@@ -1106,6 +1106,7 @@ enum ItemType {
 enum ContactType {
   lead
   customer
+  supplier
 
   @@map("contact_type")
 }
@@ -1217,41 +1218,43 @@ model ItemCategory {
 }
 
 model Item {
-  id             String       @id @default(uuid(7)) @db.Uuid
-  tenantId       String       @map("tenant_id") @db.Uuid
-  type           ItemType     @default(product)
-  name           String
-  sku            String?
-  categoryId     String?      @map("category_id") @db.Uuid
-  unit           String       @default("pcs")
-  pricePaise     BigInt       @default(0) @map("price_paise")
-  costPricePaise BigInt?      @map("cost_price_paise")
-  gstRateBp      Int          @default(1800) @map("gst_rate_bp") // 1800 = 18%
-  hsnSac         String?      @map("hsn_sac") @db.VarChar(10)
-  durationMin    Int?         @map("duration_min")
-  skill          String?
-  description    String?
-  imageUrl       String?      @map("image_url")
-  isActive       Boolean      @default(true) @map("is_active")
+  id                  String       @id @default(uuid(7)) @db.Uuid
+  tenantId            String       @map("tenant_id") @db.Uuid
+  type                ItemType     @default(product)
+  name                String
+  sku                 String?
+  categoryId          String?      @map("category_id") @db.Uuid
+  unit                String       @default("pcs")
+  pricePaise          BigInt       @default(0) @map("price_paise")
+  costPricePaise      BigInt?      @map("cost_price_paise")
+  gstRateBp           Int          @default(1800) @map("gst_rate_bp") // 1800 = 18%
+  hsnSac              String?      @map("hsn_sac") @db.VarChar(10)
+  durationMin         Int?         @map("duration_min")
+  skill               String?
+  description         String?
+  imageUrl            String?      @map("image_url")
+  isActive            Boolean      @default(true) @map("is_active")
   /// Inventory counts this item: sales and returns move its stock
-  trackStock     Boolean      @default(false) @map("track_stock")
+  trackStock          Boolean      @default(false) @map("track_stock")
   /// Low-stock alert below this quantity
-  reorderLevel   Decimal?     @map("reorder_level") @db.Decimal(18, 3)
+  reorderLevel        Decimal?     @map("reorder_level") @db.Decimal(18, 3)
   /// none | batch | serial
-  tracking       String       @default("none") @db.VarChar(10)
+  tracking            String       @default("none") @db.VarChar(10)
   /// A second unit, e.g. box = 12 pcs: altFactor base units in one altUnit
-  altUnit        String?      @map("alt_unit") @db.VarChar(20)
-  altFactor      Decimal?     @map("alt_factor") @db.Decimal(18, 3)
-  barcode        String?      @db.VarChar(48)
+  altUnit             String?      @map("alt_unit") @db.VarChar(20)
+  altFactor           Decimal?     @map("alt_factor") @db.Decimal(18, 3)
+  barcode             String?      @db.VarChar(48)
   /// Items made as variants of one product share this name
-  variantGroup   String?      @map("variant_group") @db.VarChar(160)
-  attributes     Json         @default("{}")
-  custom         Json         @default("{}")
-  source         RecordSource @default(tenant)
-  createdBy      String?      @map("created_by") @db.Uuid
-  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime     @updatedAt @map("updated_at") @db.Timestamptz
-  version        Int          @default(1)
+  variantGroup        String?      @map("variant_group") @db.VarChar(160)
+  attributes          Json         @default("{}")
+  /// Purchase: who this item is usually bought from (low stock to purchase order)
+  preferredSupplierId String?      @map("preferred_supplier_id") @db.Uuid
+  custom              Json         @default("{}")
+  source              RecordSource @default(tenant)
+  createdBy           String?      @map("created_by") @db.Uuid
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime     @updatedAt @map("updated_at") @db.Timestamptz
+  version             Int          @default(1)
 
   @@index([tenantId, name])
   @@map("items")
@@ -1285,6 +1288,8 @@ model Contact {
   /// whatsapp | sms | email
   lastReminderVia  String?     @map("last_reminder_via") @db.VarChar(10)
   priceListId      String?     @map("price_list_id") @db.Uuid
+  /// Supplier: days given to pay a bill
+  paymentDays      Int?        @map("payment_days")
   createdBy        String?     @map("created_by") @db.Uuid
   convertedAt      DateTime?   @map("converted_at") @db.Timestamptz
   createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz
@@ -1859,4 +1864,109 @@ model StockLayer {
   @@index([itemId, locationId, receivedOn])
   @@index([tenantId])
   @@map("stock_layers")
+}
+
+/// Purchase order, goods receipt (GRN), purchase bill or purchase return
+model PurchaseDocument {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  branchId      String?   @map("branch_id") @db.Uuid
+  /// purchase_order | goods_receipt | purchase_bill | purchase_return
+  kind          String    @db.VarChar(16)
+  /// PO: open | part_received | received | cancelled. GRN: received | billed | cancelled.
+  /// Bill: unpaid | part_paid | paid | cancelled. Return: issued | cancelled.
+  status        String    @db.VarChar(16)
+  number        String
+  fy            String
+  contactId     String    @map("contact_id") @db.Uuid
+  supplier      Json      @default("{}")
+  supplierRef   String?   @map("supplier_ref") @db.VarChar(40)
+  supplierDate  DateTime? @map("supplier_date") @db.Date
+  issueDate     DateTime  @map("issue_date") @db.Date
+  dueDate       DateTime? @map("due_date") @db.Date
+  placeOfSupply String?   @map("place_of_supply") @db.Char(2)
+  reverseCharge Boolean   @default(false) @map("reverse_charge")
+  locationId    String?   @map("location_id") @db.Uuid
+  subtotalPaise BigInt    @default(0) @map("subtotal_paise")
+  discountPaise BigInt    @default(0) @map("discount_paise")
+  taxablePaise  BigInt    @default(0) @map("taxable_paise")
+  cgstPaise     BigInt    @default(0) @map("cgst_paise")
+  sgstPaise     BigInt    @default(0) @map("sgst_paise")
+  igstPaise     BigInt    @default(0) @map("igst_paise")
+  chargesPaise  BigInt    @default(0) @map("charges_paise")
+  chargesGstBp  Int       @default(0) @map("charges_gst_bp")
+  roundOffPaise BigInt    @default(0) @map("round_off_paise")
+  totalPaise    BigInt    @default(0) @map("total_paise")
+  paidPaise     BigInt    @default(0) @map("paid_paise")
+  returnedPaise BigInt    @default(0) @map("returned_paise")
+  sourceType    String?   @map("source_type") @db.VarChar(16)
+  sourceId      String?   @map("source_id") @db.Uuid
+  sourceNumber  String?   @map("source_number")
+  notes         String?
+  cancelReason  String?   @map("cancel_reason")
+  cancelledAt   DateTime? @map("cancelled_at") @db.Timestamptz
+  createdBy     String?   @map("created_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  version       Int       @default(1)
+
+  lines PurchaseDocumentLine[]
+
+  @@unique([tenantId, kind, number])
+  @@index([tenantId, kind, status, issueDate])
+  @@index([tenantId, contactId])
+  @@index([tenantId, sourceId])
+  @@map("purchase_documents")
+}
+
+model PurchaseDocumentLine {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  documentId     String    @map("document_id") @db.Uuid
+  itemId         String?   @map("item_id") @db.Uuid
+  description    String
+  hsnSac         String?   @map("hsn_sac") @db.VarChar(10)
+  unit           String    @default("pcs")
+  quantity       Decimal   @db.Decimal(18, 3)
+  unitPricePaise BigInt    @map("unit_price_paise")
+  discountPaise  BigInt    @default(0) @map("discount_paise")
+  taxablePaise   BigInt    @map("taxable_paise")
+  gstRateBp      Int       @map("gst_rate_bp")
+  cgstPaise      BigInt    @default(0) @map("cgst_paise")
+  sgstPaise      BigInt    @default(0) @map("sgst_paise")
+  igstPaise      BigInt    @default(0) @map("igst_paise")
+  totalPaise     BigInt    @map("total_paise")
+  landedPaise    BigInt    @default(0) @map("landed_paise")
+  position       Int       @default(0)
+  sourceLineId   String?   @map("source_line_id") @db.Uuid
+  batchNo        String?   @map("batch_no") @db.VarChar(40)
+  mfgDate        DateTime? @map("mfg_date") @db.Date
+  expiryDate     DateTime? @map("expiry_date") @db.Date
+  serials        String[]  @default([])
+
+  document PurchaseDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, documentId])
+  @@index([tenantId, sourceLineId])
+  @@map("purchase_document_lines")
+}
+
+/// Money paid to a supplier against a purchase bill; corrected by an opposite row, never edited
+model SupplierPayment {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  contactId   String   @map("contact_id") @db.Uuid
+  documentId  String   @map("document_id") @db.Uuid
+  number      String
+  amountPaise BigInt   @map("amount_paise")
+  method      String   @db.VarChar(10)
+  reference   String?
+  paidOn      DateTime @map("paid_on") @db.Date
+  reversesId  String?  @unique @map("reverses_id") @db.Uuid
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, contactId])
+  @@index([tenantId, documentId])
+  @@map("supplier_payments")
 }

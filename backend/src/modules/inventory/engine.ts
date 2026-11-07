@@ -16,7 +16,7 @@ const dec = (m: bigint) => new Prisma.Decimal(fromMilli(m).toFixed(3));
 const valueOf = (rate: bigint, qtyMilli: bigint) => (rate * qtyMilli + (qtyMilli >= 0n ? 500n : -500n)) / 1000n;
 const abs = (n: bigint) => (n < 0n ? -n : n);
 
-export type MoveKind = 'opening' | 'stock_in' | 'sale' | 'sale_return' | 'adjustment' | 'transfer_in' | 'transfer_out' | 'count';
+export type MoveKind = 'opening' | 'stock_in' | 'sale' | 'sale_return' | 'adjustment' | 'transfer_in' | 'transfer_out' | 'count' | 'purchase' | 'purchase_return';
 export type Rules = WorkspacePreferences['inventory'];
 
 export interface MoveInput {
@@ -28,7 +28,7 @@ export interface MoveInput {
   qtyMilli: bigint;
   /** Receipts: cost per base unit. Issues ignore it unless they undo a receipt */
   ratePaise?: bigint;
-  sourceType: 'stock_entry' | 'invoice' | 'delivery_challan' | 'credit_note';
+  sourceType: 'stock_entry' | 'invoice' | 'delivery_challan' | 'credit_note' | 'purchase';
   sourceId: string;
   sourceLineId?: string | null;
   reversesId?: string | null;
@@ -111,7 +111,7 @@ async function moveSerials(ctx: TenantCtx, m: MoveInput, itemName: string) {
     }
     return;
   }
-  const status = m.kind === 'sale' ? 'sold' : m.kind === 'transfer_out' ? 'transit' : 'gone';
+  const status = m.kind === 'sale' ? 'sold' : m.kind === 'transfer_out' ? 'transit' : m.kind === 'purchase_return' ? 'returned' : 'gone';
   for (const s of serials) {
     const row = byNo.get(s);
     if (!row || row.status !== 'in_stock' || row.locationId !== m.locationId) throw new AppError('CONFLICT', `Serial ${s} of ${itemName} is not in stock here.`, { serial: s });

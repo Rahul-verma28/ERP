@@ -1,0 +1,107 @@
+// Purchase types shared by the purchase pages.
+
+export type PurchaseKind = "purchase_order" | "goods_receipt" | "purchase_bill" | "purchase_return"
+
+export const KIND_LABEL: Record<PurchaseKind, string> = {
+  purchase_order: "Purchase order",
+  goods_receipt: "Goods receipt",
+  purchase_bill: "Purchase bill",
+  purchase_return: "Purchase return",
+}
+export const KIND_PLURAL: Record<PurchaseKind, string> = {
+  purchase_order: "Purchase orders",
+  goods_receipt: "Goods receipts",
+  purchase_bill: "Purchase bills",
+  purchase_return: "Purchase returns",
+}
+/** Where each kind's list lives */
+export const KIND_PATH: Record<PurchaseKind, string> = {
+  purchase_order: "/app/m/purchase/orders",
+  goods_receipt: "/app/m/purchase/grn",
+  purchase_bill: "/app/m/purchase",
+  purchase_return: "/app/m/purchase/returns",
+}
+export const STATUS_TEXT: Record<string, string> = {
+  open: "Open", part_received: "Part received", received: "Received", closed: "Closed", billed: "Billed",
+  unpaid: "Unpaid", part_paid: "Part paid", paid: "Paid", issued: "Issued", cancelled: "Cancelled",
+}
+
+export interface Supplier {
+  id: string
+  name: string
+  companyName: string | null
+  phone: string | null
+  email: string | null
+  gstin: string | null
+  stateCode: string | null
+  address: Record<string, string> | null
+  notes: string | null
+  paymentDays: number | null
+  isActive: boolean
+  balancePaise: number
+  version: number
+}
+
+export interface PurchaseLine {
+  id: string
+  itemId: string | null
+  description: string
+  hsnSac: string | null
+  unit: string
+  quantity: number
+  doneQuantity: number
+  unitPricePaise: number
+  discountPaise: number
+  taxablePaise: number
+  gstRateBp: number
+  cgstPaise: number
+  sgstPaise: number
+  igstPaise: number
+  totalPaise: number
+  landedPaise: number
+  batchNo: string | null
+  mfgDate: string | null
+  expiryDate: string | null
+  serials: string[]
+  sourceLineId: string | null
+}
+
+export interface PurchaseDoc {
+  id: string
+  kind: PurchaseKind
+  status: string
+  number: string
+  contactId: string
+  supplier: { name: string; gstin: string | null; phone: string | null; stateCode: string | null }
+  supplierRef: string | null
+  supplierDate: string | null
+  issueDate: string
+  dueDate: string | null
+  reverseCharge: boolean
+  locationId: string | null
+  location?: { id: string; name: string } | null
+  subtotalPaise: number
+  discountPaise: number
+  taxablePaise: number
+  cgstPaise: number
+  sgstPaise: number
+  igstPaise: number
+  chargesPaise: number
+  chargesGstBp: number
+  roundOffPaise: number
+  totalPaise: number
+  paidPaise: number
+  returnedPaise: number
+  balancePaise: number
+  overdue?: boolean
+  sourceType: string | null
+  sourceId: string | null
+  sourceNumber: string | null
+  notes: string | null
+  cancelReason: string | null
+  version: number
+  createdAt: string
+  lines: PurchaseLine[]
+  children?: { id: string; kind: PurchaseKind; number: string; status: string; issueDate: string; totalPaise: number }[]
+  payments?: { id: string; number: string; amountPaise: number; method: string; reference: string | null; paidOn: string; reversesId: string | null; reversed: boolean }[]
+}

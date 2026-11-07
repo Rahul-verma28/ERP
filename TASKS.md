@@ -397,12 +397,25 @@ The client allows selling with a few complete modules, so this replaces the budg
 - [x] Stock as on a past date; ageing by receipt date with slow and dead stock — tests; both pages checked in the browser
 - [x] Import opening stock and counts from Excel (CSV) with a row-by-row check — count import checked in the browser
 - [x] Cost method: moving average or FIFO, chosen once before the first stock entry; layers keep FIFO cost and ageing — tests; CA to confirm the method
-- [ ] With Purchase: reorder to purchase order, GRN, landed cost, quality inspection. Later on demand: kits, rack and bin, putaway, pick-pack-ship, batch recall, manufacturing, job work
+- [x] With Purchase: reorder to purchase order, GRN, landed cost (built in Purchase batch 1)
+- [ ] Quality inspection. Later on demand: kits, rack and bin, putaway, pick-pack-ship, batch recall, manufacturing, job work
 ### Tax and product decisions (settled 2026-11-07 by Claude as asked; a practising CA to glance before go-live)
 - [x] Unregistered business prints a plain Invoice, outside GST and the GST sheet; bill of supply only for registered composition or all-exempt bills (Rule 49)
 - [x] Credit and debit notes print the original invoice date (Rule 53(1A)); GST credit notes refused after 30 Nov following the invoice's April–March year (Sec 34(2))
 - [x] GST sheet lists stock written off (damage, loss, sample, expired, count losses) at cost for ITC reversal (Sec 17(5)(h))
 - [x] Valuation: moving average default, FIFO allowed, fixed once stock moves (AS 2, ICDS II). Purchase stays inside the Inventory module key
+### Purchase (batch 1, built 2026-11-08 after comparing 7 ERPs; 17 of 26 features)
+- [x] Suppliers: GSTIN with state, payment days, what you owe each, ledger with running balance — added in the browser
+- [x] Purchase order → goods receipt (GRN) → bill; bill direct or from an order; no receipt beyond the order; short-close; edit until goods come — tests; PO, GRN and bill made in the browser
+- [x] Stock comes in on a GRN or a direct bill (batch, expiry, serials, second unit); a bill from a GRN moves no stock — tests; checked in the stock ledger in the browser
+- [x] Landed cost: freight and other charges spread over the goods by value; GST is part of cost when no ITC (no GSTIN or composition) — tests; seen in the browser
+- [x] Tax: CGST+SGST or IGST from the supplier's state; unregistered supplier charges none; reverse charge (supplier paid the value, tax to government) — tests
+- [x] Supplier bill no. and date required, unique per supplier; due date from payment days — tests; browser
+- [x] Payments to suppliers (PAY/ series), reversal, no cash over ₹10,000 a day to one supplier (Sec 40A(3)) — tests; payment made in the browser
+- [x] Purchase return (debit note to supplier) against a bill: out of the same batch at the cost it came in, lowers what you owe — tests; browser
+- [x] Reports: payables by age, purchase register, ITC register (RCM, 180-day Rule 37, Sec 16(4) last date), pending orders — all four seen in the browser
+- [x] Low stock list → one purchase order per usual supplier at last purchase price; first purchase sets the usual supplier — tests only
+- [ ] Batch 2: TDS on purchases (194Q/194C), GSTR-2B match, RFQ and supplier quotes, material request, PO approval, recurring bills, supplier price list, attach the bill photo, revalue stock when a GRN's bill price differs, print/send PO
 
 ## Phase 2 — Operations (weeks 5–8)
 Exit gate: stock and accounts update from sales and purchases.

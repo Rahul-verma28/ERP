@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Bell, Check, ChevronsUpDown, CreditCard, Lock, LogOut, Menu, Settings, ShieldCheck, UserRound, X } from "lucide-react"
+import { Bell, Check, ChevronsUpDown, CreditCard, Lock, LogOut, Menu, Settings, ShieldCheck, ShoppingCart, UserRound, X } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -69,13 +69,24 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         // Locked modules are shown to admins as an upgrade prompt; hidden for everyone else
         if (!visible && !(isAdmin && ent?.status === "inactive")) return null
         const label = m.termKey ? term(m.termKey, m.label) : m.label
-        return (
+        const link = (
           <NavLink key={m.key} href={`/app/m/${m.key}`} active={pathname.startsWith(`/app/m/${m.key}`)} onClick={onNavigate}>
             <m.icon className="size-4" />
             <span className="flex-1 truncate">{label}</span>
             {ent?.status === "inactive" && <Lock className="size-3.5 text-muted-foreground" aria-label="Not in your plan" />}
             {ent?.status === "read_only" && <Badge variant="outline" className="h-5 px-1.5 text-[10px]">Read-only</Badge>}
           </NavLink>
+        )
+        if (m.key !== "inventory" || ent?.status === "inactive" || !(can("inventory.supplier_bill.view") || can("inventory.purchase_order.view") || can("inventory.receipt.view"))) return link
+        // Purchase is part of Inventory but has its own place in the menu
+        return (
+          <React.Fragment key={m.key}>
+            {link}
+            <NavLink href={can("inventory.supplier_bill.view") ? "/app/m/purchase" : can("inventory.purchase_order.view") ? "/app/m/purchase/orders" : "/app/m/purchase/grn"} active={pathname.startsWith("/app/m/purchase")} onClick={onNavigate}>
+              <ShoppingCart className="size-4" />
+              <span className="flex-1 truncate">Purchase</span>
+            </NavLink>
+          </React.Fragment>
         )
       })}
       <div className="mt-auto grid gap-1 pt-4">

@@ -125,6 +125,11 @@ export const PREFERENCE_SCHEMAS = {
     salesOrderPrefix: Prefix,
     deliveryChallanPrefix: Prefix,
     debitNotePrefix: Prefix,
+    purchaseOrderPrefix: Prefix,
+    goodsReceiptPrefix: Prefix,
+    purchaseBillPrefix: Prefix,
+    purchaseReturnPrefix: Prefix,
+    supplierPaymentPrefix: Prefix,
     template: z.enum(['classic', 'modern', 'compact']),
     paper: z.enum(['a4', '80mm', '58mm']),
     terms: z.string().trim().max(2000, 'Keep terms under 2,000 characters'),
@@ -259,6 +264,11 @@ const SERIES = [
   { docType: 'sales_order', label: 'Sales order', prefixKey: 'salesOrderPrefix' },
   { docType: 'delivery_challan', label: 'Delivery challan', prefixKey: 'deliveryChallanPrefix' },
   { docType: 'debit_note', label: 'Debit note', prefixKey: 'debitNotePrefix' },
+  { docType: 'purchase_order', label: 'Purchase order', prefixKey: 'purchaseOrderPrefix' },
+  { docType: 'goods_receipt', label: 'Goods receipt (GRN)', prefixKey: 'goodsReceiptPrefix' },
+  { docType: 'purchase_bill', label: 'Purchase bill', prefixKey: 'purchaseBillPrefix' },
+  { docType: 'purchase_return', label: 'Purchase return', prefixKey: 'purchaseReturnPrefix' },
+  { docType: 'supplier_payment', label: 'Payment to supplier', prefixKey: 'supplierPaymentPrefix' },
 ] as const;
 export type SeriesType = (typeof SERIES)[number]['docType'];
 
@@ -266,6 +276,14 @@ export type SeriesType = (typeof SERIES)[number]['docType'];
 async function lastIssued(docType: SeriesType, fy: string, usedPrefix: string) {
   if (docType === 'receipt') {
     const p = await db().payment.findFirst({ where: { number: { startsWith: usedPrefix }, reversesId: null }, orderBy: { createdAt: 'desc' }, select: { number: true } });
+    return p?.number ?? null;
+  }
+  if (docType === 'supplier_payment') {
+    const p = await db().supplierPayment.findFirst({ where: { number: { startsWith: usedPrefix }, reversesId: null }, orderBy: { createdAt: 'desc' }, select: { number: true } });
+    return p?.number ?? null;
+  }
+  if (docType === 'purchase_order' || docType === 'goods_receipt' || docType === 'purchase_bill' || docType === 'purchase_return') {
+    const p = await db().purchaseDocument.findFirst({ where: { kind: docType, fy }, orderBy: { createdAt: 'desc' }, select: { number: true } });
     return p?.number ?? null;
   }
   const d = await db().salesDocument.findFirst({
