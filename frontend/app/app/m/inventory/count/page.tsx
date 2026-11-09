@@ -56,9 +56,9 @@ export default function StockCountPage() {
   const router = useRouter()
   const { can } = useAuth()
   const locations = useApi<{ data: StockLocation[] }>("/stock-locations")
-  const godowns = (locations.data?.data ?? []).filter((l) => l.isActive)
+  const warehouses = (locations.data?.data ?? []).filter((l) => l.isActive)
   const [locationId, setLocationId] = React.useState("")
-  const at = locationId || godowns.find((g) => g.isDefault)?.id || godowns[0]?.id || ""
+  const at = locationId || warehouses.find((g) => g.isDefault)?.id || warehouses[0]?.id || ""
   const stock = useApi<{ data: StockRow[] }>(at ? `/stock?locationId=${at}` : null)
   const [counted, setCounted] = React.useState<Counts>({})
   const [blind, setBlind] = React.useState(false)
@@ -102,10 +102,10 @@ export default function StockCountPage() {
       <Card>
         <CardContent className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-[14rem_1fr_auto] sm:items-end">
-            {godowns.length > 1 ? (
-              <Field label="Godown">
-                <NativeSelect value={at} onChange={(e) => { setLocationId(e.target.value); setCounted({}) }} aria-label="Godown">
-                  {godowns.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            {warehouses.length > 1 ? (
+              <Field label="Warehouse">
+                <NativeSelect value={at} onChange={(e) => { setLocationId(e.target.value); setCounted({}) }} aria-label="Warehouse">
+                  {warehouses.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </NativeSelect>
               </Field>
             ) : <span />}

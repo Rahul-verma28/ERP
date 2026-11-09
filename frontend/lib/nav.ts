@@ -50,8 +50,6 @@ export interface SubNav {
   href: string
   /** Hidden without this permission */
   permission?: string
-  /** Shown only when the business has turned on Purchase Orders */
-  needsPurchaseOrders?: boolean
 }
 
 /** Sub-modules shown under a module in the menu. The longest matching link is the active one. */
@@ -73,11 +71,10 @@ export const MODULE_SUBS: Partial<Record<ModuleKey, SubNav[]>> = {
   ],
   inventory: [
     { label: "Stock", href: "/app/m/inventory", permission: "inventory.stock.view" },
+    { label: "Warehouses", href: "/app/m/inventory/warehouses", permission: "inventory.warehouse.view" },
+    { label: "Transfers", href: "/app/m/inventory/transfers", permission: "inventory.stock.view" },
     { label: "Stock Entries", href: "/app/m/inventory/entries", permission: "inventory.stock.view" },
-    { label: "Godowns", href: "/app/m/inventory/godowns", permission: "inventory.warehouse.view" },
-    { label: "Stock Count", href: "/app/m/inventory/count", permission: "inventory.stock_count.create" },
-    { label: "Near Expiry", href: "/app/m/inventory/expiry", permission: "inventory.stock.view" },
-    { label: "Stock Ageing", href: "/app/m/inventory/ageing", permission: "inventory.stock.view" },
+    { label: "Reports", href: "/app/m/inventory/reports", permission: "inventory.stock.view" },
   ],
 }
 
@@ -87,12 +84,9 @@ export const PURCHASE_NAV = {
   icon: ShoppingCart,
   subs: [
     { label: "Purchase Invoices", href: "/app/m/purchase", permission: "inventory.supplier_bill.view" },
-    { label: "Purchase Orders", href: "/app/m/purchase/orders", permission: "inventory.purchase_order.view", needsPurchaseOrders: true },
-    { label: "Goods Receipts", href: "/app/m/purchase/grn", permission: "inventory.receipt.view", needsPurchaseOrders: true },
     { label: "Purchase Returns", href: "/app/m/purchase/returns", permission: "inventory.supplier_bill.view" },
     { label: "Suppliers", href: "/app/m/purchase/suppliers", permission: "inventory.supplier.view" },
-    { label: "Low Stock", href: "/app/m/purchase/reorder", permission: "inventory.purchase_order.view" },
-    { label: "Purchase Reports", href: "/app/m/purchase/reports", permission: "inventory.supplier_bill.view" },
+    { label: "Reports", href: "/app/m/purchase/reports", permission: "inventory.supplier_bill.view" },
   ] as SubNav[],
 }
 

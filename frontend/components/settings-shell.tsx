@@ -45,6 +45,7 @@ export const SETTINGS_GROUPS: { label: string; items: SettingsItem[] }[] = [
     label: "Workspace",
     items: [
       { key: "notifications", label: "Notifications", href: "/app/settings/notifications", permission: "tenant.settings.view" },
+      { key: "inventory", label: "Inventory", href: "/app/settings/inventory", permission: "tenant.settings.view" },
       { key: "customization", label: "Customization", href: "/app/settings/customization", permission: "tenant.config.view" },
       { key: "data", label: "Data", href: "/app/settings/data", permission: "tenant.settings.view" },
       { key: "audit", label: "Audit log", href: "/app/settings/audit", permission: "tenant.audit.view" },
@@ -259,10 +260,8 @@ function useHashHighlight() {
 
 /** Pages from before Phase 2 that don't draw their own title */
 const TITLED: Record<string, [string, string]> = {
-  "/app/settings/team": ["Manage Users", "Everyone who works in this business, their role and how they sign in."],
-  "/app/settings/branches": ["Branches", "Locations with their own GSTIN, address and invoice series."],
+  "/app/settings/inventory": ["Inventory", "How stock behaves in this business, and whether you use purchase orders."],
   "/app/settings/customization": ["Customization", "Your industry's words and extra fields on records."],
-  "/app/settings/audit": ["Audit log", "Who changed what, and when."],
 }
 
 /** Wide pages (X4–X6) use the full width with a "Settings ›" breadcrumb instead of the side menu */

@@ -6,16 +6,13 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { CalendarClock, Download, Upload, UserPlus, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { PageHeader } from "@/components/app-shell"
-import { EmptyState, LoadMore, SearchInput, Spinner, StatusBadge } from "@/components/common"
-import { NativeSelect } from "@/components/form"
+import { EmptyState, Spinner, StatusBadge } from "@/components/common"
+import { DataList, type Column } from "@/components/data-list"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
-import { useDebounced, useList } from "@/lib/use-list"
 import { downloadCsv, parseCsv, rowsToContacts } from "@/lib/csv"
 import { formatDate, formatDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -121,11 +118,8 @@ export default function CrmPage() {
   const router = useRouter()
   const { can, term } = useAuth()
   const [tab, setTab] = React.useState<Tab>(can("crm.contact.view") ? "customers" : "leads")
-  const [search, setSearch] = React.useState("")
-  const [status, setStatus] = React.useState("")
-  const q = useDebounced(search)
+  const [version, setVersion] = React.useState(0)
   const kind = tab === "leads" ? "lead" : "customer"
-  const list = useList<Contact>(tab === "leads" ? "/leads" : "/contacts", tab === "follow-ups" ? { q: "__none__" } : { q, status: tab === "leads" ? status : undefined })
   const [dialog, setDialog] = React.useState<"new" | "import" | null>(null)
   const customers = term("entity.contact.plural", "Customers")
   const leads = term("entity.lead.plural", "Leads")
@@ -136,76 +130,51 @@ export default function CrmPage() {
     { key: "follow-ups", label: "Follow-ups", show: can("crm.activity.view") },
   ]
 
+  const createPerm = can(`crm.${kind === "lead" ? "lead" : "contact"}.create`)
+  const noun = kind === "lead" ? term("entity.lead.singular", "lead").toLowerCase() : term("entity.contact.singular", "customer").toLowerCase()
+  const add = createPerm ? <Button onClick={() => setDialog("new")}><UserPlus /> Add {noun}</Button> : undefined
+  const columns: Column<Contact>[] = [
+    { key: "name", header: "Name", hideable: false, sort: (c) => c.name, csv: (c) => c.name, cell: (c) => <span><span className="font-medium">{c.name}</span>{c.companyName && <span className="block text-xs text-muted-foreground">{c.companyName}</span>}</span> },
+    { key: "phone", header: "Phone", csv: (c) => c.phone ?? "", cell: (c) => <span className="tabular-nums">{c.phone ?? "—"}</span> },
+    { key: "email", header: "Email", csv: (c) => c.email ?? "", cell: (c) => c.email ?? "—" },
+    kind === "lead"
+      ? { key: "status", header: "Status", csv: (c) => c.leadStatus ?? "", cell: (c) => (c.leadStatus ? <StatusBadge status={c.leadStatus} /> : "—") }
+      : { key: "gstin", header: "GSTIN", csv: (c) => c.gstin ?? "", cell: (c) => <span className="font-mono text-xs">{c.gstin ?? "—"}</span> },
+    { key: "added", header: "Added", sort: (c) => c.createdAt, csv: (c) => c.createdAt.slice(0, 10), cell: (c) => <span className="text-sm text-muted-foreground">{formatDate(c.createdAt)}</span> },
+  ]
+  const heading = tab === "leads" ? leads : tab === "follow-ups" ? "Follow-ups" : customers
+
   return (
-    <>
-      <PageHeader
-        title="CRM"
-        description={`${customers}, ${leads.toLowerCase()} and every call, note and follow-up in one place.`}
-        actions={
-          tab !== "follow-ups" && (
-            <>
-              {can(`crm.${kind === "lead" ? "lead" : "contact"}.create`) && <Button variant="outline" onClick={() => setDialog("import")}><Upload /> Import</Button>}
-              {can(`crm.${kind === "lead" ? "lead" : "contact"}.create`) && <Button onClick={() => setDialog("new")}><UserPlus /> Add {kind === "lead" ? term("entity.lead.singular", "lead").toLowerCase() : term("entity.contact.singular", "customer").toLowerCase()}</Button>}
-            </>
-          )
-        }
-      />
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="inline-flex rounded-full bg-muted p-1 text-sm" role="tablist">
-          {tabs.filter((t) => t.show).map((t) => (
-            <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className={cn("rounded-full px-3 py-1", tab === t.key && "bg-background font-medium shadow-sm")}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-        {tab !== "follow-ups" && <SearchInput value={search} onChange={setSearch} placeholder="Search name, phone, email" className="w-full sm:w-72" />}
-        {tab === "leads" && (
-          <NativeSelect className="w-40" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Lead status">
-            <option value="">Open leads</option>
-            {["new", "contacted", "qualified", "lost", "converted"].map((s) => <option key={s} value={s} className="capitalize">{s}</option>)}
-          </NativeSelect>
-        )}
+    <div className="grid gap-4">
+      <div className="flex w-fit gap-1 rounded-xl border p-1 text-sm" role="tablist" aria-label="CRM">
+        {tabs.filter((t) => t.show).map((t) => (
+          <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className={cn("rounded-lg px-3 py-1.5 font-medium text-muted-foreground", tab === t.key && "bg-primary text-primary-foreground")}>
+            {t.label}
+          </button>
+        ))}
       </div>
-      <Card>
-        <CardContent className="overflow-x-auto p-0">
-          {tab === "follow-ups" ? (
-            <FollowUps />
-          ) : list.loading ? (
-            <div className="grid place-items-center py-14"><Spinner /></div>
-          ) : list.rows.length === 0 ? (
-            <EmptyState icon={Users} title={search ? "No matches" : `No ${(kind === "lead" ? leads : customers).toLowerCase()} yet`} description="Add one, or import your existing list from a spreadsheet." />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-6">Name</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead className="hidden md:table-cell">Email</TableHead>
-                  {kind === "lead" ? <TableHead>Status</TableHead> : <TableHead className="hidden md:table-cell">GSTIN</TableHead>}
-                  <TableHead className="hidden pr-6 sm:table-cell">Added</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {list.rows.map((c) => (
-                  <TableRow key={c.id} className="cursor-pointer" onClick={() => router.push(`/app/m/crm/${c.id}`)}>
-                    <TableCell className="pl-6">
-                      <Link href={`/app/m/crm/${c.id}`} className="font-medium hover:underline" onClick={(e) => e.stopPropagation()}>{c.name}</Link>
-                      {c.companyName && <div className="text-xs text-muted-foreground">{c.companyName}</div>}
-                    </TableCell>
-                    <TableCell className="tabular-nums">{c.phone ?? "—"}</TableCell>
-                    <TableCell className="hidden md:table-cell">{c.email ?? "—"}</TableCell>
-                    {kind === "lead" ? <TableCell>{c.leadStatus && <StatusBadge status={c.leadStatus} />}</TableCell> : <TableCell className="hidden font-mono text-xs md:table-cell">{c.gstin ?? "—"}</TableCell>}
-                    <TableCell className="hidden pr-6 text-sm text-muted-foreground sm:table-cell">{formatDate(c.createdAt)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-          {tab !== "follow-ups" && <LoadMore hasMore={list.hasMore} loading={list.loadingMore} onClick={list.loadMore} />}
-        </CardContent>
-      </Card>
+      {tab === "follow-ups" ? (
+        <div>
+          <PageHeader title={heading} description="Calls and visits you promised to make." />
+          <div className="ui-surface overflow-hidden"><FollowUps /></div>
+        </div>
+      ) : (
+        <DataList<Contact>
+          key={tab}
+          id={`crm-${tab}`}
+          path={tab === "leads" ? "/leads" : "/contacts"}
+          params={{ v: String(version) }}
+          header={{ title: heading, description: "Every call, note and follow-up in one place.", primary: add, actions: createPerm ? <Button variant="outline" onClick={() => setDialog("import")}><Upload /> Import</Button> : undefined }}
+          columns={columns}
+          searchPlaceholder="Search name, phone, email"
+          filters={tab === "leads" ? [{ key: "status", label: "Lead status", options: ["new", "contacted", "qualified", "lost", "converted"].map((v) => ({ value: v, label: v.charAt(0).toUpperCase() + v.slice(1) })) }] : []}
+          rowHref={(c) => `/app/m/crm/${c.id}`}
+          exportName={tab}
+          emptyState={<EmptyState icon={Users} title={`No ${heading.toLowerCase()} yet`} description="Add one, or import your existing list from a spreadsheet." action={add} />}
+        />
+      )}
       {dialog === "new" && <ContactDialog kind={kind} onClose={() => setDialog(null)} onSaved={(c) => router.push(`/app/m/crm/${c.id}`)} />}
-      {dialog === "import" && <ImportDialog kind={kind} onClose={() => setDialog(null)} onDone={() => void list.reload()} />}
-    </>
+      {dialog === "import" && <ImportDialog kind={kind} onClose={() => setDialog(null)} onDone={() => setVersion((v) => v + 1)} />}
+    </div>
   )
 }

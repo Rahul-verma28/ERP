@@ -29,7 +29,7 @@ export default function StockEntryPage({ params }: { params: Promise<{ id: strin
     setBusy(true)
     try {
       setData(await api.post<StockEntry>(`/stock/entries/${id}/receive`))
-      toast.success("Received. Stock is in the godown now.")
+      toast.success("Received. Stock is in the warehouse now.")
     } catch (err) {
       toast.error(errorMessage(err))
     } finally {

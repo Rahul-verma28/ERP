@@ -29,7 +29,7 @@ export interface ItemOption {
   hsnSac: string | null
   durationMin?: number | null
   costPricePaise?: number | null
-  /** Set when Inventory tracks the item: in stock, all godowns */
+  /** Set when Inventory tracks the item: in stock, all warehouses */
   stockQty?: number
 }
 

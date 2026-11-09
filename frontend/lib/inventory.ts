@@ -5,6 +5,11 @@ export interface StockLocation {
   name: string
   isDefault: boolean
   isActive: boolean
+  address: string | null
+  city: string | null
+  zipCode: string | null
+  phone: string | null
+  email: string | null
   valuePaise: number
   itemsInStock: number
 }
@@ -21,13 +26,14 @@ export interface StockRow {
   altUnit: string | null
   altFactor: number | null
   quantity: number
+  warehouses: { id: string; name: string; quantity: number }[]
   /** Held for open sales orders */
   reserved: number
   /** In batches past their expiry */
   expired: number
   /** In stock, less held and expired */
   available: number
-  /** Sent from a godown and not yet received */
+  /** Sent from a warehouse and not yet received */
   inTransit: number
   valuePaise: number
   averagePaise: number

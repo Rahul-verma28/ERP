@@ -3,29 +3,14 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3, Download, Plus, Rows3, X } from "lucide-react"
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Columns3, Download, LayoutGrid, List, ListFilter, MoreHorizontal } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { SearchSelect } from "@/components/search-select"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { SearchInput } from "@/components/common"
-import { Field } from "@/components/form"
 import { ErrorState, NoResults, TableSkeleton } from "@/components/page-states"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -35,11 +20,9 @@ import { useApi } from "@/lib/use-api"
 import { useDebounced } from "@/lib/use-list"
 import { cn } from "@/lib/utils"
 
-// Phase 0 list page (wireframe 0.2): header with Import / Export / New, preset tabs with
-// counts + personal saved views, search, filter chips, Columns and Density, selection with
-// a bulk bar ("Select all N matching"), CSV export of everything filtered, cursor pages
-// with "Showing 1–25 of N", keyboard and Ctrl+click, cards on phones, and distinct
-// first-use / no-results / loading / error states.
+// The one table of the product: search, icons for table or cards and columns, a Filters panel,
+// CSV export under the menu, numbered pages with rows per page, cards on phones, and distinct
+// first-use, no-results, loading and error states.
 
 export interface Column<T> {
   key: string
@@ -77,21 +60,14 @@ export interface BulkAction<T> {
   run: (rows: T[]) => void | Promise<void>
 }
 
-interface SavedView {
-  id: string
-  name: string
-  search: string
-  filters: Record<string, string>
-  preset: string
-}
-
 interface Page<T> {
   data: T[]
   nextCursor: string | null
   total?: number
 }
 
-const PAGE_SIZES = [25, 50, 100]
+const PAGE_SIZES = [10, 20, 50, 100] as const
+const DEFAULT_PAGE_SIZE = 20
 const SELECT_ALL_MAX = 5000
 
 const isoDay = (d: Date) => d.toISOString().slice(0, 10)
@@ -169,67 +145,113 @@ export interface ListHeader {
   breadcrumb?: string
   title: string
   description?: string
-  /** Buttons left of Export (e.g. Import) */
+  /** Buttons left of the main action */
   actions?: React.ReactNode
-  /** The main action, right of Export (e.g. + New invoice) */
+  /** The main action (e.g. + New invoice) */
   primary?: React.ReactNode
+  /** Less common actions, under the three-dot menu */
+  more?: { label: string; href: string }[]
 }
+
+export interface ListQuery {
+  params: Record<string, string>
+  limit: number
+  cursor?: string
+}
+export type ListLoader<T> = (query: ListQuery) => Promise<Page<T>>
+
+/** For short lists the API returns whole: search and pages happen in the browser. */
+export function localList<T>(get: () => Promise<T[]>, match: (row: T, q: string) => boolean): ListLoader<T> {
+  return async ({ params, limit, cursor }) => {
+    const q = (params.q ?? "").toLowerCase()
+    const all = (await get()).filter((r) => !q || match(r, q))
+    const start = Number(cursor ?? 0)
+    return { data: all.slice(start, start + limit), nextCursor: start + limit < all.length ? String(start + limit) : null, total: all.length }
+  }
+}
+
+/** 1 2 3 … 9: the first, the last and the ones around where you are */
+function pageNumbers(current: number, last: number): (number | "gap")[] {
+  if (last <= 7) return Array.from({ length: last }, (_, i) => i)
+  const near = [...new Set([0, current - 1, current, current + 1, last - 1])].filter((n) => n >= 0 && n < last).sort((a, b) => a - b)
+  return near.flatMap((n, i) => (i > 0 && n - near[i - 1] > 1 ? (["gap", n] as const) : [n]))
+}
+
+const pagerButton = "grid size-9 place-items-center rounded-xl text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4"
 
 export function DataList<T extends { id: string }>({
   id,
   path,
+  load,
   header,
   columns,
   searchPlaceholder = "Search…",
   filters = [],
   presets = [],
+  presetLabel = "Status",
   defaultPreset,
   countsPath,
   rowHref,
+  rowClick,
   bulkActions = [],
   exportName,
   emptyState,
   params: baseParams = {},
+  defaultFilters,
+  noSearch,
+  summary,
 }: {
   /** Stable id for stored preferences, e.g. "invoices" */
   id: string
-  path: string
+  /** The API list to read; or give `load` instead */
+  path?: string
+  load?: ListLoader<T>
   header: ListHeader
   columns: Column<T>[]
   searchPlaceholder?: string
   filters?: FilterDef[]
+  /** Fixed choices, offered as the first filter */
   presets?: ViewPreset[]
-  /** The preset tab to open on, e.g. from a link; default the first */
+  /** Name of that first filter */
+  presetLabel?: string
+  /** The choice to open on, e.g. from a link; default the first */
   defaultPreset?: string
-  /** Endpoint returning { [countKey]: number } for the preset tabs */
+  /** Endpoint returning { [countKey]: number } shown next to the preset choices */
   countsPath?: string
   rowHref?: (row: T) => string
+  /** Instead of rowHref: what opening a row does, e.g. an edit dialog */
+  rowClick?: (row: T) => void
   bulkActions?: BulkAction<T>[]
   /** File name stem for CSV export; omit to hide Export */
   exportName?: string
   /** Shown when there is no data at all (no search, no filters) */
   emptyState: React.ReactNode
   params?: Record<string, string | undefined>
+  /** Filters already on when the list opens, e.g. this month */
+  defaultFilters?: Record<string, string>
+  /** The list cannot be searched */
+  noSearch?: boolean
+  /** A figure from the response, shown beside the search box */
+  summary?: (response: Record<string, unknown>) => React.ReactNode
 }) {
   const router = useRouter()
   const { me } = useAuth()
   const counts = useApi<Record<string, number>>(countsPath ?? null)
   const storeKey = me ? `ahead:list:${id}:${me.user.id}` : null
-  const [prefs, setPrefs] = useStored<{ hidden: string[]; dense: boolean; pageSize: number; view?: "table" | "cards" }>(storeKey && `${storeKey}:prefs`, {
+  const [prefs, setPrefs] = useStored<{ hidden: string[]; pageSize: number; view?: "table" | "cards" }>(storeKey && `${storeKey}:prefs`, {
     hidden: columns.filter((c) => c.defaultHidden).map((c) => c.key),
-    dense: false,
-    pageSize: 25,
+    pageSize: DEFAULT_PAGE_SIZE,
   })
-  const [views, setViews] = useStored<SavedView[]>(storeKey && `${storeKey}:views`, [])
 
   const [search, setSearch] = React.useState("")
   const q = useDebounced(search.trim())
-  const [preset, setPreset] = React.useState(defaultPreset ?? presets[0]?.key ?? "")
-  const [filterValues, setFilterValues] = React.useState<Record<string, string>>({})
-  const [activeView, setActiveView] = React.useState<string | null>(null)
+  const firstPreset = presets[0]?.key ?? ""
+  const [preset, setPreset] = React.useState(defaultPreset ?? firstPreset)
+  const [filterValues, setFilterValues] = React.useState<Record<string, string>>(defaultFilters ?? {})
+  const [panelOpen, setPanelOpen] = React.useState(false)
+  const [draft, setDraft] = React.useState<{ preset: string; values: Record<string, string> }>({ preset: defaultPreset ?? firstPreset, values: defaultFilters ?? {} })
   const [sort, setSort] = React.useState<{ key: string; dir: 1 | -1 } | null>(null)
-  const [state, setState] = React.useState<{ key: string | null; rows: T[]; next: string | null; total: number | null; error: unknown }>({ key: null, rows: [], next: null, total: null, error: null })
-  const [saveOpen, setSaveOpen] = React.useState(false)
+  const [state, setState] = React.useState<{ key: string | null; rows: T[]; next: string | null; total: number | null; error: unknown; raw: Record<string, unknown> }>({ key: null, rows: [], next: null, total: null, error: null, raw: {} })
   const [reloadTick, setReloadTick] = React.useState(0)
   const [selectingAll, setSelectingAll] = React.useState(false)
 
@@ -238,7 +260,8 @@ export function DataList<T extends { id: string }>({
   const fromFilters = Object.fromEntries(Object.entries(filterValues).flatMap(([k, v]) => Object.entries(filters.find((f) => f.key === k)?.toParams?.(v) ?? { [k]: v })))
   for (const [k, v] of Object.entries({ ...baseParams, ...presetParams, ...fromFilters, q })) if (v) params[k] = v
   const paramsJson = JSON.stringify(params)
-  const paramsKey = paramsJson + prefs.pageSize
+  const pageSize = (PAGE_SIZES as readonly number[]).includes(prefs.pageSize) ? prefs.pageSize : DEFAULT_PAGE_SIZE
+  const paramsKey = paramsJson + pageSize
 
   // Cursor pages (cursors[i] loads page i) and the selection belong to one set of
   // filters: new filters start again at page 1 with nothing selected
@@ -248,23 +271,27 @@ export function DataList<T extends { id: string }>({
   const [selection, setSelection] = React.useState<{ key: string; rows: Map<string, T> }>({ key: paramsKey, rows: new Map() })
   const selected = selection.key === paramsKey ? selection.rows : new Map<string, T>()
   const setSelected = (fn: (s: Map<string, T>) => Map<string, T>) => setSelection({ key: paramsKey, rows: fn(selected) })
-  const setPageIndex = (index: number) => setPaging({ ...page, index })
 
+  const loadRef = React.useRef(load)
+  React.useEffect(() => {
+    loadRef.current = load
+  })
   const fetchPage = React.useCallback(
-    (cursor: string | undefined, limit: number, withTotal = false) => {
-      const search = new URLSearchParams({ ...(JSON.parse(paramsJson) as Record<string, string>), limit: String(limit), ...(cursor ? { cursor } : {}), ...(withTotal ? { withTotal: "1" } : {}) })
+    (cursor: string | undefined, limit: number, withTotal = false): Promise<Page<T>> => {
+      const current = JSON.parse(paramsJson) as Record<string, string>
+      if (loadRef.current) return loadRef.current({ params: current, limit, cursor })
+      const search = new URLSearchParams({ ...current, limit: String(limit), ...(cursor ? { cursor } : {}), ...(withTotal ? { withTotal: "1" } : {}) })
       return api.get<Page<T>>(`${path}?${search}`)
     },
     [paramsJson, path]
   )
 
   const cursor = page.cursors[pageIndex]
-  const pageSize = prefs.pageSize
   const loadKey = `${paramsKey}|${pageIndex}|${cursor ?? ""}|${reloadTick}`
   React.useEffect(() => {
     let cancelled = false
     fetchPage(cursor, pageSize, true)
-      .then((p) => !cancelled && setState({ key: loadKey, rows: p.data, next: p.nextCursor, total: p.total ?? null, error: null }))
+      .then((p) => !cancelled && setState({ key: loadKey, rows: p.data, next: p.nextCursor, total: p.total ?? null, error: null, raw: p as unknown as Record<string, unknown> }))
       .catch((error) => !cancelled && setState((s) => ({ ...s, key: loadKey, error })))
     return () => {
       cancelled = true
@@ -272,7 +299,8 @@ export function DataList<T extends { id: string }>({
   }, [fetchPage, cursor, pageSize, loadKey])
 
   const loading = state.key !== loadKey
-  const hasFilters = !!q || Object.keys(filterValues).length > 0
+  const activeFilters = Object.keys(filterValues).length + (preset !== firstPreset ? 1 : 0)
+  const hasFilters = !!q || activeFilters > 0
   const visibleColumns = columns.filter((c) => c.hideable === false || !prefs.hidden.includes(c.key))
   const sortCol = sort ? columns.find((c) => c.key === sort.key) : undefined
   const rows =
@@ -286,9 +314,13 @@ export function DataList<T extends { id: string }>({
   const total = state.total
   const from = pageIndex * pageSize + 1
   const to = pageIndex * pageSize + rows.length
+  const lastPage = total !== null ? Math.max(1, Math.ceil(total / pageSize)) : Math.max(page.cursors.length, pageIndex + 1 + (state.next ? 1 : 0))
+  const selectable = bulkActions.length > 0
 
+  const presetName = presets.find((p) => p.key === preset)?.label
   const filterLabels = [
     ...(q ? [`Search “${q}”`] : []),
+    ...(preset !== firstPreset && presetName ? [`${presetLabel}: ${presetName}`] : []),
     ...Object.entries(filterValues).map(([k, v]) => {
       const f = filters.find((x) => x.key === k)
       return `${f?.label ?? k}: ${f?.options.find((o) => o.value === v)?.label ?? v}`
@@ -298,20 +330,39 @@ export function DataList<T extends { id: string }>({
   const clearAll = () => {
     setSearch("")
     setFilterValues({})
-    setActiveView(null)
+    setPreset(firstPreset)
+    setDraft({ preset: firstPreset, values: {} })
   }
-  const goNext = () => {
-    if (!state.next) return
-    setPaging({ key: paramsKey, cursors: [...page.cursors.slice(0, pageIndex + 1), state.next], index: pageIndex + 1 })
+  const applyFilters = () => {
+    setPreset(draft.preset)
+    setFilterValues(Object.fromEntries(Object.entries(draft.values).filter(([, v]) => v)))
   }
+
+  /** Later pages are known only by walking there, so a jump reads the pages between */
+  const goTo = async (target: number) => {
+    const cursors = [...page.cursors]
+    if (state.next && cursors.length === pageIndex + 1) cursors.push(state.next)
+    try {
+      while (cursors.length <= target) {
+        const p = await fetchPage(cursors[cursors.length - 1], pageSize)
+        if (!p.nextCursor) break
+        cursors.push(p.nextCursor)
+      }
+      setPaging({ key: paramsKey, cursors, index: Math.min(target, cursors.length - 1) })
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Couldn't open that page")
+    }
+  }
+  const clickable = !!rowHref || !!rowClick
   const open = (row: T, e?: React.MouseEvent | React.KeyboardEvent) => {
+    if (rowClick) return rowClick(row)
     if (!rowHref) return
     const href = rowHref(row)
     if (e && (e.ctrlKey || e.metaKey)) window.open(href, "_blank", "noopener")
     else router.push(href)
   }
   const onRowKey = (e: React.KeyboardEvent<HTMLTableRowElement>, row: T) => {
-    if (e.key === "Enter") open(row, e)
+    if (e.key === "Enter" && e.target === e.currentTarget) open(row, e)
     else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault()
       const next = (e.key === "ArrowDown" ? e.currentTarget.nextElementSibling : e.currentTarget.previousElementSibling) as HTMLElement | null
@@ -374,314 +425,225 @@ export function DataList<T extends { id: string }>({
     }
   }
 
-  const applyView = (v: SavedView) => {
-    setSearch(v.search)
-    setFilterValues(v.filters)
-    if (v.preset) setPreset(v.preset)
-    setActiveView(v.id)
-  }
-  const tabClass = (on: boolean) => cn("shrink-0 rounded-[11px] px-3.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground", on && "bg-primary text-primary-foreground hover:text-primary-foreground")
   const cardsView = prefs.view === "cards"
+  const hasPanel = presets.length > 1 || filters.length > 0
+  const hideable = columns.filter((c) => c.hideable !== false)
+  const viewButton = (on: boolean) => cn("grid size-8 place-items-center rounded-[10px] text-muted-foreground transition-colors [&_svg]:size-4", on && "bg-primary text-primary-foreground")
 
   return (
     <div className="grid gap-4">
-      {/* Header: title left, Import · Export · New right */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           {header.breadcrumb && <p className="text-xs text-muted-foreground">{header.breadcrumb}</p>}
           <h1 className="text-[26px] leading-tight font-bold tracking-tight">{header.title}</h1>
           {header.description && <p className="mt-0.5 text-sm text-muted-foreground">{header.description}</p>}
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {header.actions}
-          {exportName && (
-            <Button variant="outline" onClick={() => void exportFiltered()}>
-              <Download /> Export
-            </Button>
-          )}
           {header.primary}
-        </div>
-      </div>
-
-      {/* Preset tabs with counts, saved views, + Save view */}
-      {(presets.length > 0 || views.length > 0) && (
-        <div className="ui-surface flex w-fit max-w-full gap-1 overflow-x-auto rounded-2xl p-1" role="tablist" aria-label="Views">
-          {presets.map((p) => {
-            const n = p.countKey && counts.data ? (counts.data[p.countKey] ?? 0) : undefined
-            return (
-              <button
-                key={p.key}
-                role="tab"
-                aria-selected={preset === p.key && !activeView}
-                onClick={() => {
-                  setPreset(p.key)
-                  setActiveView(null)
-                }}
-                className={tabClass(preset === p.key && !activeView)}
-              >
-                {p.label}
-                {n !== undefined && <span className="tabular-nums"> · {formatNumber(n)}</span>}
-              </button>
-            )
-          })}
-          {views.map((v) => (
-            <span key={v.id} className={cn("flex shrink-0 items-center gap-1", tabClass(activeView === v.id))}>
-              <button role="tab" aria-selected={activeView === v.id} onClick={() => applyView(v)}>
-                My view: {v.name}
-              </button>
-              <button aria-label={`Delete view ${v.name}`} className="rounded p-0.5 text-muted-foreground hover:text-foreground" onClick={() => setViews(views.filter((x) => x.id !== v.id))}>
-                <X className="size-3" />
-              </button>
-            </span>
-          ))}
-          <button className={tabClass(false)} onClick={() => setSaveOpen(true)}>
-            + Save view
-          </button>
-        </div>
-      )}
-
-      <div className="ui-surface ui-rise grid min-w-0 gap-3.5 p-4">
-      {/* Search · chips · + Filter · Clear all ………… Table or cards · Columns · Density */}
-      <div className="flex flex-wrap items-center gap-2">
-        <SearchInput value={search} onChange={setSearch} placeholder={searchPlaceholder} className="w-full sm:w-80" />
-        {Object.entries(filterValues).map(([k, v]) => {
-          const f = filters.find((x) => x.key === k)
-          return (
-            <span key={k} className="inline-flex h-7 items-center gap-1.5 rounded-full border border-primary/25 bg-accent pr-1 pl-2.5 text-xs font-semibold text-accent-foreground">
-              {f?.label}: {f?.options.find((o) => o.value === v)?.label ?? v}
-              <button
-                aria-label={`Remove ${f?.label} filter`}
-                className="rounded-full p-0.5 hover:bg-background"
-                onClick={() => {
-                  const { [k]: _removed, ...rest } = filterValues
-                  void _removed
-                  setFilterValues(rest)
-                  setActiveView(null)
-                }}
-              >
-                <X className="size-3" />
-              </button>
-            </span>
-          )
-        })}
-        {filters.length > 0 && (
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="sm" className="h-7 border-dashed" />}>
-              <Plus /> Filter
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-              {filters.map((f) => (
-                <DropdownMenuSub key={f.key}>
-                  <DropdownMenuSubTrigger>{f.label}</DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    <DropdownMenuRadioGroup
-                      value={filterValues[f.key] ?? ""}
-                      onValueChange={(val) => {
-                        setFilterValues({ ...filterValues, [f.key]: String(val) })
-                        setActiveView(null)
-                      }}
-                    >
-                      {f.options.map((o) => (
-                        <DropdownMenuRadioItem key={o.value} value={o.value}>
-                          {o.label}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-        {hasFilters && (
-          <button className="text-xs font-semibold text-primary hover:underline" onClick={clearAll}>
-            Clear all
-          </button>
-        )}
-        <div className="ml-auto flex flex-wrap gap-2">
-          <div className="hidden rounded-xl bg-muted p-0.5 md:flex" role="radiogroup" aria-label="Show as">
-            {(["table", "cards"] as const).map((v) => (
-              <button key={v} type="button" role="radio" aria-checked={(prefs.view ?? "table") === v} onClick={() => setPrefs({ ...prefs, view: v })} className={cn("rounded-[10px] px-3 py-1 text-[13px] font-medium capitalize text-muted-foreground transition-colors", (prefs.view ?? "table") === v && "bg-card text-foreground")}>
-                {v}
-              </button>
-            ))}
-          </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-              <Columns3 /> Columns
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuGroup>
-                <DropdownMenuLabel>Show columns</DropdownMenuLabel>
-                {columns
-                  .filter((c) => c.hideable !== false)
-                  .map((c) => (
-                    <DropdownMenuCheckboxItem
-                      key={c.key}
-                      checked={!prefs.hidden.includes(c.key)}
-                      onCheckedChange={(on) => setPrefs({ ...prefs, hidden: on ? prefs.hidden.filter((k) => k !== c.key) : [...prefs.hidden, c.key] })}
-                    >
-                      {c.header}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-              </DropdownMenuGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
-              <Rows3 /> Density
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-44">
-              <DropdownMenuRadioGroup value={prefs.dense ? "compact" : "comfortable"} onValueChange={(v) => setPrefs({ ...prefs, dense: v === "compact" })}>
-                <DropdownMenuRadioItem value="comfortable">Comfortable</DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="compact">Compact</DropdownMenuRadioItem>
-              </DropdownMenuRadioGroup>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </div>
-
-      {/* Bulk bar */}
-      {selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-foreground px-3.5 py-2.5 text-background">
-          <span className="text-sm font-semibold">{formatNumber(selected.size)} selected</span>
-          {total !== null && selected.size < total && (
-            <button className="text-xs text-background/75 hover:text-background hover:underline" onClick={() => void selectAllMatching()} disabled={selectingAll}>
-              {selectingAll ? "Selecting…" : `Select all ${formatNumber(total)} matching`}
-            </button>
+          {(exportName || header.more?.length) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger render={<Button variant="outline" size="icon" aria-label="More actions" title="More actions" />}>
+                <MoreHorizontal />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-44">
+                {header.more?.map((m) => <DropdownMenuItem key={m.href} onClick={() => router.push(m.href)}>{m.label}</DropdownMenuItem>)}
+                {exportName && (
+                  <DropdownMenuItem onClick={() => void exportFiltered()}>
+                    <Download className="size-4" /> Export CSV
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
-          <button className="text-xs text-background/75 hover:text-background hover:underline" onClick={() => setSelected(() => new Map())}>
-            Clear
-          </button>
-          <div className="ml-auto flex flex-wrap gap-2">
-            {bulkActions.map((a) => (
-              <Button key={a.label} size="sm" variant="outline" className="text-foreground" onClick={() => a.run([...selected.values()])}>
-                {a.label}
-              </Button>
-            ))}
-            {exportName && (
-              <Button size="sm" variant="outline" className="text-foreground" onClick={() => writeCsv([...selected.values()])}>
-                Export
+        </div>
+      </div>
+
+      <div className="ui-surface ui-rise min-w-0 overflow-hidden">
+        <div className="flex flex-wrap items-center gap-2 p-4">
+          {!noSearch && <SearchInput value={search} onChange={setSearch} placeholder={searchPlaceholder} className="w-full sm:w-80" />}
+          {summary?.(state.raw)}
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            <div className="hidden rounded-xl border p-0.5 md:flex" role="radiogroup" aria-label="Show as">
+              <button type="button" role="radio" aria-checked={!cardsView} aria-label="Table" title="Table" onClick={() => setPrefs({ ...prefs, view: "table" })} className={viewButton(!cardsView)}><List /></button>
+              <button type="button" role="radio" aria-checked={cardsView} aria-label="Cards" title="Cards" onClick={() => setPrefs({ ...prefs, view: "cards" })} className={viewButton(cardsView)}><LayoutGrid /></button>
+            </div>
+            {hideable.length > 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger render={<Button variant="outline" size="icon" aria-label="Columns" title="Columns" />}>
+                  <Columns3 />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel>Show columns</DropdownMenuLabel>
+                    {hideable.map((c) => (
+                      <DropdownMenuCheckboxItem key={c.key} checked={!prefs.hidden.includes(c.key)} onCheckedChange={(on) => setPrefs({ ...prefs, hidden: on ? prefs.hidden.filter((k) => k !== c.key) : [...prefs.hidden, c.key] })}>
+                        {c.header}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            {hasPanel && (
+              <Button variant="outline" aria-expanded={panelOpen} onClick={() => { setDraft({ preset, values: filterValues }); setPanelOpen(!panelOpen) }}>
+                <ListFilter /> Filters
+                {activeFilters > 0 && <span className="grid size-5 place-items-center rounded-full bg-primary text-[11px] text-primary-foreground tabular-nums">{activeFilters}</span>}
+                <ChevronDown className={cn("transition-transform", panelOpen && "rotate-180")} />
               </Button>
             )}
           </div>
         </div>
-      )}
 
-      <div className="min-w-0 overflow-hidden">
-        {loading && state.key === null ? (
-          <TableSkeleton columns={Math.min(visibleColumns.length, 6)} />
-        ) : state.error ? (
-          <ErrorState error={state.error} onRetry={() => setReloadTick((t) => t + 1)} />
-        ) : rows.length === 0 && !loading ? (
-          hasFilters ? <NoResults filters={filterLabels} onClear={clearAll} /> : emptyState
-        ) : (
-          <div className={cn("transition-opacity", loading && "pointer-events-none opacity-60")}>
-            <div className={cn("overflow-x-auto", cardsView ? "hidden" : "hidden md:block")}>
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-10 pl-4">
-                      <Checkbox checked={pageAllSelected} onCheckedChange={(on) => togglePage(!!on)} aria-label="Select all rows on this page" />
-                    </TableHead>
-                    {visibleColumns.map((c) => (
-                      <TableHead key={c.key} className={cn("text-xs font-semibold text-muted-foreground", c.align === "right" && "text-right", c.className)}>
-                        {c.sort ? (
-                          <button
-                            className={cn("inline-flex items-center gap-1 hover:text-foreground", c.align === "right" && "flex-row-reverse")}
-                            onClick={() => setSort(sort?.key === c.key ? (sort.dir === 1 ? { key: c.key, dir: -1 } : null) : { key: c.key, dir: 1 })}
-                            aria-label={`Sort by ${c.header}`}
-                          >
-                            {c.header}
-                            {sort?.key === c.key && (sort.dir === 1 ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />)}
-                          </button>
-                        ) : (
-                          c.header
-                        )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((r) => (
-                    <TableRow
-                      key={r.id}
-                      tabIndex={rowHref ? 0 : undefined}
-                      data-state={selected.has(r.id) ? "selected" : undefined}
-                      className={cn(rowHref && "cursor-pointer focus-visible:bg-muted focus-visible:outline-none")}
-                      onClick={(e) => open(r, e)}
-                      onKeyDown={(e) => onRowKey(e, r)}
-                    >
-                      <TableCell className={cn("pl-4", prefs.dense ? "py-1.5" : "py-3")} onClick={(e) => e.stopPropagation()}>
-                        <Checkbox checked={selected.has(r.id)} onCheckedChange={(on) => toggleRow(r, !!on)} aria-label="Select row" />
-                      </TableCell>
-                      {visibleColumns.map((c) => (
-                        <TableCell key={c.key} className={cn(c.align === "right" && "text-right tabular-nums", prefs.dense ? "py-1.5" : "py-3", c.className)}>
-                          {c.cell(r)}
-                        </TableCell>
+        {panelOpen && (
+          <div className="flex flex-wrap items-end gap-3 border-t bg-muted/30 p-4">
+            {presets.length > 1 && (
+              <label className="grid w-full gap-1.5 text-sm font-medium sm:w-56">
+                {presetLabel}
+                <SearchSelect
+                  value={draft.preset}
+                  onChange={(v) => setDraft({ ...draft, preset: v })}
+                  aria-label={presetLabel}
+                  options={presets.map((p) => {
+                    const n = p.countKey && counts.data ? counts.data[p.countKey] : undefined
+                    return { value: p.key, label: n === undefined ? p.label : `${p.label} (${formatNumber(n)})` }
+                  })}
+                />
+              </label>
+            )}
+            {filters.map((f) => (
+              <label key={f.key} className="grid w-full gap-1.5 text-sm font-medium sm:w-56">
+                {f.label}
+                <SearchSelect value={draft.values[f.key] ?? ""} onChange={(v) => setDraft({ ...draft, values: { ...draft.values, [f.key]: v } })} aria-label={f.label} options={[{ value: "", label: "All" }, ...f.options]} placeholder="All" />
+              </label>
+            ))}
+            <div className="flex gap-2">
+              <Button onClick={applyFilters}>Apply</Button>
+              <Button variant="outline" onClick={clearAll}>Clear</Button>
+            </div>
+          </div>
+        )}
+
+        {selectable && selected.size > 0 && (
+          <div className="flex flex-wrap items-center gap-3 bg-foreground px-4 py-2.5 text-background">
+            <span className="text-sm font-semibold">{formatNumber(selected.size)} selected</span>
+            {total !== null && selected.size < total && (
+              <button className="text-xs text-background/75 hover:text-background hover:underline" onClick={() => void selectAllMatching()} disabled={selectingAll}>
+                {selectingAll ? "Selecting…" : `Select all ${formatNumber(total)} matching`}
+              </button>
+            )}
+            <button className="text-xs text-background/75 hover:text-background hover:underline" onClick={() => setSelected(() => new Map())}>
+              Clear
+            </button>
+            <div className="ml-auto flex flex-wrap gap-2">
+              {bulkActions.map((a) => (
+                <Button key={a.label} size="sm" variant="outline" className="text-foreground" onClick={() => a.run([...selected.values()])}>
+                  {a.label}
+                </Button>
+              ))}
+              {exportName && (
+                <Button size="sm" variant="outline" className="text-foreground" onClick={() => writeCsv([...selected.values()])}>
+                  Export
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="min-w-0">
+          {loading && state.key === null ? (
+            <div className="p-4"><TableSkeleton columns={Math.min(visibleColumns.length, 6)} /></div>
+          ) : state.error ? (
+            <ErrorState error={state.error} onRetry={() => setReloadTick((t) => t + 1)} />
+          ) : rows.length === 0 && !loading ? (
+            hasFilters ? <NoResults filters={filterLabels} onClear={clearAll} /> : emptyState
+          ) : (
+            <div className={cn("transition-opacity", loading && "pointer-events-none opacity-60")}>
+              <div className={cn("overflow-x-auto border-t", cardsView ? "hidden" : "hidden md:block")}>
+                <Table>
+                  <TableHeader className="bg-muted/50">
+                    <TableRow className="hover:bg-transparent">
+                      {selectable && (
+                        <TableHead className="w-10 pl-5">
+                          <Checkbox checked={pageAllSelected} onCheckedChange={(on) => togglePage(!!on)} aria-label="Select all rows on this page" />
+                        </TableHead>
+                      )}
+                      {visibleColumns.map((c, i) => (
+                        <TableHead key={c.key} className={cn("h-11 text-[13px] font-semibold text-foreground", i === 0 && !selectable && "pl-5", i === visibleColumns.length - 1 && "pr-5", c.align === "right" && "text-right", c.className)}>
+                          {c.sort ? (
+                            <button className={cn("inline-flex items-center gap-1.5 hover:text-primary", c.align === "right" && "flex-row-reverse")} onClick={() => setSort(sort?.key === c.key ? (sort.dir === 1 ? { key: c.key, dir: -1 } : null) : { key: c.key, dir: 1 })} aria-label={`Sort by ${c.header}`}>
+                              {c.header}
+                              {sort?.key === c.key ? sort.dir === 1 ? <ArrowUp className="size-3.5" /> : <ArrowDown className="size-3.5" /> : <ArrowUpDown className="size-3.5 text-muted-foreground" />}
+                            </button>
+                          ) : (
+                            c.header
+                          )}
+                        </TableHead>
                       ))}
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-            {/* Cards: chosen on any screen, always on phones */}
-            <ul className={cn("grid gap-3 p-px sm:grid-cols-2", cardsView ? "lg:grid-cols-3 xl:grid-cols-4" : "md:hidden")}>
-              {rows.map((r) => (
-                <li key={r.id} className="ui-rise ui-lift flex gap-3 rounded-2xl p-4 shadow-[var(--shadow-card)]">
-                  <Checkbox checked={selected.has(r.id)} onCheckedChange={(on) => toggleRow(r, !!on)} aria-label="Select row" className="mt-1" />
-                  <button className="grid min-w-0 flex-1 grid-cols-1 gap-1 text-left" onClick={(e) => open(r, e)}>
-                    <span className="font-medium">{visibleColumns[0]?.cell(r)}</span>
-                    {visibleColumns.slice(1).map((c) => (
-                      <span key={c.key} className="flex justify-between gap-3 text-sm">
-                        <span className="shrink-0 text-muted-foreground">{c.header}</span>
-                        <span className="min-w-0 truncate text-right">{c.cell(r)}</span>
-                      </span>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.map((r) => (
+                      <TableRow key={r.id} tabIndex={clickable ? 0 : undefined} data-state={selected.has(r.id) ? "selected" : undefined} className={cn(clickable && "cursor-pointer focus-visible:bg-muted focus-visible:outline-none")} onClick={(e) => open(r, e)} onKeyDown={(e) => onRowKey(e, r)}>
+                        {selectable && (
+                          <TableCell className="py-3.5 pl-5" onClick={(e) => e.stopPropagation()}>
+                            <Checkbox checked={selected.has(r.id)} onCheckedChange={(on) => toggleRow(r, !!on)} aria-label="Select row" />
+                          </TableCell>
+                        )}
+                        {visibleColumns.map((c, i) => (
+                          <TableCell key={c.key} className={cn("py-3.5", i === 0 && !selectable && "pl-5", i === visibleColumns.length - 1 && "pr-5", c.align === "right" && "text-right tabular-nums", c.className)}>
+                            {c.cell(r)}
+                          </TableCell>
+                        ))}
+                      </TableRow>
                     ))}
-                  </button>
-                </li>
-              ))}
-            </ul>
+                  </TableBody>
+                </Table>
+              </div>
+              {/* Cards: chosen on any screen, always on phones */}
+              <ul className={cn("grid gap-3 border-t p-4 sm:grid-cols-2", cardsView ? "lg:grid-cols-3 xl:grid-cols-4" : "md:hidden")}>
+                {rows.map((r) => (
+                  <li key={r.id} className="ui-lift flex gap-3 rounded-2xl border p-4">
+                    {selectable && <Checkbox checked={selected.has(r.id)} onCheckedChange={(on) => toggleRow(r, !!on)} aria-label="Select row" className="mt-1" />}
+                    <div role="button" tabIndex={0} className="grid min-w-0 flex-1 cursor-pointer grid-cols-1 gap-1 text-left" onClick={(e) => open(r, e)} onKeyDown={(e) => { if (e.key === "Enter" && e.target === e.currentTarget) open(r, e) }}>
+                      <span className="font-medium">{visibleColumns[0]?.cell(r)}</span>
+                      {visibleColumns.slice(1).map((c) => (
+                        <span key={c.key} className="flex justify-between gap-3 text-sm">
+                          <span className="shrink-0 text-muted-foreground">{c.header}</span>
+                          <span className="min-w-0 truncate text-right">{c.cell(r)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {!state.error && (rows.length > 0 || pageIndex > 0) && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t px-5 py-3 text-sm text-muted-foreground">
+            <span className="inline-flex items-center gap-2">
+              Rows per page
+              <SearchSelect value={String(pageSize)} onChange={(v) => setPrefs({ ...prefs, pageSize: Number(v) })} aria-label="Rows per page" options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))} className="h-9 w-20" />
+            </span>
+            <nav className="flex flex-wrap items-center gap-1" aria-label="Pages">
+              <span className="mr-3 tabular-nums">{formatNumber(from)}–{formatNumber(to)}{total !== null && ` of ${formatNumber(total)}`}</span>
+              <button type="button" className={pagerButton} disabled={pageIndex === 0 || loading} onClick={() => void goTo(0)} aria-label="First page" title="First page"><ChevronsLeft /></button>
+              <button type="button" className={pagerButton} disabled={pageIndex === 0 || loading} onClick={() => void goTo(pageIndex - 1)} aria-label="Previous page" title="Previous page"><ChevronLeft /></button>
+              {pageNumbers(pageIndex, lastPage).map((n, i) =>
+                n === "gap" ? (
+                  <span key={`gap-${i}`} className="grid size-9 place-items-center" aria-hidden>…</span>
+                ) : (
+                  <button key={n} type="button" className={cn(pagerButton, n === pageIndex && "bg-primary/10 text-primary hover:bg-primary/10 hover:text-primary")} aria-current={n === pageIndex ? "page" : undefined} disabled={loading} onClick={() => void goTo(n)}>{n + 1}</button>
+                )
+              )}
+              <button type="button" className={pagerButton} disabled={!state.next || loading} onClick={() => void goTo(pageIndex + 1)} aria-label="Next page" title="Next page"><ChevronRight /></button>
+              <button type="button" className={pagerButton} disabled={!state.next || loading || total === null} onClick={() => void goTo(lastPage - 1)} aria-label="Last page" title="Last page"><ChevronsRight /></button>
+            </nav>
           </div>
         )}
       </div>
-
-      {!state.error && (rows.length > 0 || pageIndex > 0) && (
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
-          <span className="flex flex-wrap items-center gap-1">
-            Showing {formatNumber(from)}–{formatNumber(to)}
-            {total !== null && <> of {formatNumber(total)}</>}
-            <span aria-hidden> · </span>
-            <span className="inline-flex items-center gap-1">
-              Rows per page
-              <SearchSelect value={String(prefs.pageSize)} onChange={(v) => setPrefs({ ...prefs, pageSize: Number(v) })} aria-label="Rows per page" options={PAGE_SIZES.map((n) => ({ value: String(n), label: String(n) }))} className="h-7 w-auto gap-1 border-0 bg-transparent px-1 font-medium" />
-            </span>
-          </span>
-          <div className="flex gap-2">
-            <Button variant="outline" disabled={pageIndex === 0 || loading} onClick={() => setPageIndex(pageIndex - 1)}>
-              <ArrowLeft /> Previous
-            </Button>
-            <Button variant="outline" disabled={!state.next || loading} onClick={goNext}>
-              Next <ArrowRight />
-            </Button>
-          </div>
-        </div>
-      )}
-      </div>
-
-      <SaveViewDialog
-        key={saveOpen ? "open" : "closed"}
-        open={saveOpen}
-        onClose={() => setSaveOpen(false)}
-        taken={views.map((v) => v.name.toLowerCase())}
-        onSave={(name) => {
-          const v: SavedView = { id: `${Date.now()}`, name, search: search.trim(), filters: filterValues, preset }
-          setViews([...views, v])
-          setActiveView(v.id)
-          setSaveOpen(false)
-          toast.success(`View “${name}” saved`)
-        }}
-      />
     </div>
   )
 }
@@ -692,40 +654,5 @@ export function HeaderLink({ href, children, primary }: { href: string; children
     <Link href={href} className={cn("inline-flex h-10 items-center gap-1.5 rounded-xl border px-4 text-sm font-semibold [&_svg]:size-4", primary ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90" : "border-transparent bg-card shadow-[var(--shadow-card)] hover:bg-muted")}>
       {children}
     </Link>
-  )
-}
-
-function SaveViewDialog({ open, onClose, onSave, taken }: { open: boolean; onClose: () => void; onSave: (name: string) => void; taken: string[] }) {
-  const [name, setName] = React.useState("")
-  const [touched, setTouched] = React.useState(false)
-  const trimmed = name.trim()
-  const error = trimmed.length < 2 ? "Use at least 2 characters" : trimmed.length > 30 ? "Keep it under 30 characters" : taken.includes(trimmed.toLowerCase()) ? "You already have a view with this name" : null
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <form
-          className="grid gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            setTouched(true)
-            if (!error) onSave(trimmed)
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>Save this view</DialogTitle>
-            <DialogDescription>Keeps the current tab, search and filters as a tab of its own. Only you see it, on this device.</DialogDescription>
-          </DialogHeader>
-          <Field label="View name" required error={touched ? error : null}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} onBlur={() => setTouched(true)} autoFocus placeholder="e.g. This month" />
-          </Field>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
-            </Button>
-            <Button type="submit">Save view</Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   )
 }

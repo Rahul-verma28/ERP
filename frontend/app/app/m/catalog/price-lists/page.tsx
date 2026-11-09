@@ -1,15 +1,14 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { toast } from "sonner"
-import { ArrowLeft, Plus, Tags, Trash2 } from "lucide-react"
+import { Plus, Tags, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState, MoneyInput, SearchInput, Spinner } from "@/components/common"
+import { DataList, localList } from "@/components/data-list"
 import { Field, FormError } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -101,7 +100,8 @@ function PriceListDialog({ list, onClose, onSaved }: { list: PriceList | null; o
 
 export default function PriceListsPage() {
   const { can } = useAuth()
-  const { data, error, reload } = useApi<{ data: PriceList[] }>(can("catalog.price_list.view") ? "/price-lists" : null)
+  const [version, setVersion] = React.useState(0)
+  const reload = () => setVersion((v) => v + 1)
   const [editing, setEditing] = React.useState<PriceList | "new" | null>(null)
   const [removing, setRemoving] = React.useState<PriceList | null>(null)
 
@@ -110,39 +110,23 @@ export default function PriceListsPage() {
   const add = can("catalog.price_list.create") && <Button onClick={() => setEditing("new")}><Plus /> New price list</Button>
   return (
     <>
-      <Link href="/app/m/catalog" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> Items</Link>
-      <PageHeader title="Price lists" description="Wholesale, retail or any other rates. Choose a list on the customer, and their new bills use it." actions={add || undefined} />
-      {error ? <p className="text-sm text-muted-foreground">{error.message}</p> : !data ? <div className="grid place-items-center py-24"><Spinner /></div> : data.data.length === 0 ? (
-        <EmptyState icon={Tags} title="No price lists yet" description="Make one for wholesale customers, then choose it on those customers." action={add || undefined} />
-      ) : (
-        <Card>
-          <CardContent>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="py-2 pr-3 font-medium">Name</th>
-                  <th className="py-2 pr-3 text-right font-medium">Discount</th>
-                  <th className="py-2 pr-3 text-right font-medium">Exact prices</th>
-                  <th className="py-2 pr-3 text-right font-medium">Customers</th>
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {data.data.map((l) => (
-                  <tr key={l.id} className="border-b border-border/60">
-                    <td className="py-2 pr-3">{can("catalog.price_list.edit") ? <button className="font-medium hover:underline" onClick={() => setEditing(l)}>{l.name}</button> : l.name}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{l.discountBp / 100}%</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{l.itemCount}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{l.customerCount}</td>
-                    <td className="py-2 text-right">{can("catalog.price_list.delete") && <Button variant="ghost" size="icon-xs" aria-label={`Delete ${l.name}`} onClick={() => setRemoving(l)}><Trash2 /></Button>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </CardContent>
-        </Card>
-      )}
-      {editing && <PriceListDialog list={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void reload() }} />}
+      <DataList<PriceList>
+        id="price-lists"
+        load={localList(async () => (await api.get<{ data: PriceList[] }>("/price-lists")).data, (l, q) => l.name.toLowerCase().includes(q))}
+        params={{ v: String(version) }}
+        header={{ title: "Price lists", description: "Wholesale, retail or any other rates. Choose a list on the customer, and their new bills use it.", primary: add || undefined }}
+        columns={[
+          { key: "name", header: "Name", hideable: false, sort: (l) => l.name, cell: (l) => <span className="font-medium">{l.name}</span> },
+          { key: "discount", header: "Discount", align: "right", sort: (l) => l.discountBp, cell: (l) => `${l.discountBp / 100}%` },
+          { key: "items", header: "Exact prices", align: "right", sort: (l) => l.itemCount, cell: (l) => l.itemCount },
+          { key: "customers", header: "Customers", align: "right", sort: (l) => l.customerCount, cell: (l) => l.customerCount },
+          ...(can("catalog.price_list.delete") ? [{ key: "actions", header: "Actions", hideable: false, cell: (l: PriceList) => <Button variant="ghost" size="icon-sm" className="text-destructive" aria-label={`Delete ${l.name}`} onClick={(e) => { e.stopPropagation(); setRemoving(l) }}><Trash2 /></Button> }] : []),
+        ]}
+        searchPlaceholder="Search price lists"
+        rowClick={can("catalog.price_list.edit") ? setEditing : undefined}
+        emptyState={<EmptyState icon={Tags} title="No price lists yet" description="Make one for wholesale customers, then choose it on those customers." action={add || undefined} />}
+      />
+      {editing && <PriceListDialog list={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}
@@ -154,7 +138,7 @@ export default function PriceListsPage() {
           try {
             await api.delete(`/price-lists/${removing!.id}`)
             toast.success("Price list deleted")
-            await reload()
+            reload()
           } catch (e) {
             toast.error(errorMessage(e))
           }

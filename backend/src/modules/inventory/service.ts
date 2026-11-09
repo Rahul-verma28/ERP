@@ -9,7 +9,7 @@ import { getRolePermissions } from '../access/service';
 import { audit } from '../audit/service';
 import { allocateBatches, applyMove, batchesWithStock, defaultLocation, fromMilli, loadRules, milli, unitFactor, type MoveKind, type Rules } from './engine';
 
-// Godowns, the stock list, an item's ledger, and the entries people make by hand:
+// Warehouses, the stock list, an item's ledger, and the entries people make by hand:
 // opening stock, stock in (until Purchase), adjustments, transfers (now or in transit) and counts.
 // Batch items carry a batch number and expiry, serial items their numbers, and a line may be
 // typed in the item's second unit (boxes); stock is always kept in the base unit.
@@ -18,9 +18,18 @@ const DAY = 86_400_000;
 const Qty = z.number().positive('Enter more than 0').max(1e9);
 const Serials = z.array(z.string().trim().min(1).max(40)).max(1000);
 
-// ---------------------------------------------------------------- godowns
+// ---------------------------------------------------------------- warehouses
 
-export const LocationInput = z.object({ name: z.string().trim().min(2, 'Use at least 2 characters').max(60), isDefault: z.boolean().optional() });
+const Blank = (schema: z.ZodString) => schema.optional().nullable().or(z.literal('').transform(() => null));
+export const LocationInput = z.object({
+  name: z.string().trim().min(2, 'Use at least 2 characters').max(60),
+  isDefault: z.boolean().optional(),
+  address: Blank(z.string().trim().max(300)),
+  city: Blank(z.string().trim().max(80)),
+  zipCode: Blank(z.string().trim().max(10)),
+  phone: Blank(z.string().trim().max(20)),
+  email: Blank(z.string().trim().email('Enter a valid email').max(200)),
+});
 
 export async function listLocations(ctx: TenantCtx) {
   await defaultLocation(ctx);
@@ -41,10 +50,10 @@ export async function listLocations(ctx: TenantCtx) {
 export async function createLocation(ctx: TenantCtx, input: z.infer<typeof LocationInput>) {
   await defaultLocation(ctx);
   if (await db().stockLocation.findFirst({ where: { tenantId: ctx.tenantId, name: { equals: input.name, mode: 'insensitive' } } })) {
-    throw new AppError('VALIDATION_FAILED', 'A godown with this name already exists.', { fields: { name: 'Already used' } });
+    throw new AppError('VALIDATION_FAILED', 'A warehouse with this name already exists.', { fields: { name: 'Already used' } });
   }
   if (input.isDefault) await db().stockLocation.updateMany({ where: { tenantId: ctx.tenantId }, data: { isDefault: false } });
-  const row = await db().stockLocation.create({ data: { tenantId: ctx.tenantId, name: input.name, isDefault: !!input.isDefault } });
+  const row = await db().stockLocation.create({ data: { tenantId: ctx.tenantId, name: input.name, isDefault: !!input.isDefault, address: input.address ?? null, city: input.city ?? null, zipCode: input.zipCode ?? null, phone: input.phone ?? null, email: input.email ?? null } });
   await audit({ action: 'inventory.warehouse.create', entity: 'stock_location', entityId: row.id, after: { name: row.name } });
   return row;
 }
@@ -53,20 +62,20 @@ export const LocationPatch = LocationInput.partial().extend({ isActive: z.boolea
 
 export async function updateLocation(ctx: TenantCtx, id: string, input: z.infer<typeof LocationPatch>) {
   const loc = await db().stockLocation.findFirst({ where: { id, tenantId: ctx.tenantId } });
-  if (!loc) throw notFound('Godown');
+  if (!loc) throw notFound('Warehouse');
   if (input.name && input.name.toLowerCase() !== loc.name.toLowerCase() && (await db().stockLocation.findFirst({ where: { tenantId: ctx.tenantId, name: { equals: input.name, mode: 'insensitive' } } }))) {
-    throw new AppError('VALIDATION_FAILED', 'A godown with this name already exists.', { fields: { name: 'Already used' } });
+    throw new AppError('VALIDATION_FAILED', 'A warehouse with this name already exists.', { fields: { name: 'Already used' } });
   }
   if (input.isActive === false) {
-    if (loc.isDefault) throw new AppError('CONFLICT', 'Make another godown the default before closing this one.');
-    if (await db().stockBalance.count({ where: { locationId: id, quantity: { not: 0 } } })) throw new AppError('CONFLICT', 'This godown still has stock. Transfer it or write it off first.');
-    if (await db().stockEntry.count({ where: { tenantId: ctx.tenantId, toLocationId: id, status: 'in_transit' } })) throw new AppError('CONFLICT', 'Stock is on its way to this godown. Receive it first.');
+    if (loc.isDefault) throw new AppError('CONFLICT', 'Make another warehouse the default before closing this one.');
+    if (await db().stockBalance.count({ where: { locationId: id, quantity: { not: 0 } } })) throw new AppError('CONFLICT', 'This warehouse still has stock. Transfer it or write it off first.');
+    if (await db().stockEntry.count({ where: { tenantId: ctx.tenantId, toLocationId: id, status: 'in_transit' } })) throw new AppError('CONFLICT', 'Stock is on its way to this warehouse. Receive it first.');
   }
   if (input.isDefault) {
-    if (input.isActive === false || !loc.isActive) throw new AppError('CONFLICT', 'A closed godown cannot be the default.');
+    if (input.isActive === false || !loc.isActive) throw new AppError('CONFLICT', 'A closed warehouse cannot be the default.');
     await db().stockLocation.updateMany({ where: { tenantId: ctx.tenantId }, data: { isDefault: false } });
   }
-  const row = await db().stockLocation.update({ where: { id }, data: { name: input.name, isDefault: input.isDefault || undefined, isActive: input.isActive } });
+  const row = await db().stockLocation.update({ where: { id }, data: { name: input.name, isDefault: input.isDefault || undefined, isActive: input.isActive, address: input.address, city: input.city, zipCode: input.zipCode, phone: input.phone, email: input.email } });
   await audit({ action: 'inventory.warehouse.edit', entity: 'stock_location', entityId: id, before: { name: loc.name, isActive: loc.isActive }, after: input });
   return row;
 }
@@ -138,6 +147,7 @@ export async function stockSummary(ctx: TenantCtx, query: z.infer<typeof StockQu
     }
   }
   const [reserved, expired, transit] = query.date ? [new Map<string, number>(), new Map<string, number>(), new Map<string, number>()] : await Promise.all([reservedByItem(ctx.tenantId), expiredByItem(ctx.tenantId, query.locationId), inTransitByItem(ctx.tenantId)]);
+  const places = query.date ? new Map<string, { id: string; name: string; quantity: number }[]>() : await stockByWarehouse(ctx.tenantId, ids);
   const rows = items.map((i) => {
     const qty = qtyBy.get(i.id) ?? 0n;
     const value = valueBy.get(i.id) ?? 0n;
@@ -147,6 +157,7 @@ export async function stockSummary(ctx: TenantCtx, query: z.infer<typeof StockQu
     const available = fromMilli(qty) - held - gone;
     return {
       id: i.id, name: i.name, sku: i.sku, unit: i.unit, isActive: i.isActive, tracking: i.tracking, altUnit: i.altUnit, altFactor: i.altFactor === null ? null : Number(i.altFactor),
+      warehouses: places.get(i.id) ?? [],
       quantity: fromMilli(qty), reserved: held, expired: gone, available, inTransit: transit.get(i.id) ?? 0,
       valuePaise: value, averagePaise: qty > 0n ? (value * 1000n) / qty : 0n, reorderLevel: reorder, low: reorder !== null && available <= reorder,
     };
@@ -155,11 +166,25 @@ export async function stockSummary(ctx: TenantCtx, query: z.infer<typeof StockQu
   return { data, nextCursor: null, total: data.length, totals: { valuePaise: rows.reduce((s, r) => s + r.valuePaise, 0n), low: rows.filter((r) => r.low).length } };
 }
 
-/** In stock and held for orders, per item, all godowns together (for the item list and bill picker). */
+/** In stock and held for orders, per item, all warehouses together (for the item list and bill picker). */
 export async function stockByItem(tenantId: string, itemIds: string[]) {
   if (!itemIds.length) return new Map<string, number>();
   const sums = await db().stockBalance.groupBy({ by: ['itemId'], where: { tenantId, itemId: { in: itemIds } }, _sum: { quantity: true } });
   return new Map(sums.map((s) => [s.itemId, fromMilli(milli(s._sum.quantity ?? 0))]));
+}
+
+/** Each item's stock by warehouse, only where there is some */
+export async function stockByWarehouse(tenantId: string, itemIds: string[]) {
+  const out = new Map<string, { id: string; name: string; quantity: number }[]>();
+  if (!itemIds.length) return out;
+  const [rows, places] = await Promise.all([
+    db().stockBalance.findMany({ where: { tenantId, itemId: { in: itemIds }, quantity: { not: 0 } }, select: { itemId: true, locationId: true, quantity: true } }),
+    db().stockLocation.findMany({ where: { tenantId }, select: { id: true, name: true } }),
+  ]);
+  const names = new Map(places.map((p) => [p.id, p.name]));
+  for (const r of rows) out.set(r.itemId, [...(out.get(r.itemId) ?? []), { id: r.locationId, name: names.get(r.locationId) ?? 'Warehouse', quantity: fromMilli(milli(r.quantity)) }]);
+  for (const list of out.values()) list.sort((a, b) => b.quantity - a.quantity);
+  return out;
 }
 
 // ---------------------------------------------------------------- ledger, batches, serials
@@ -222,7 +247,7 @@ export async function itemBatches(ctx: TenantCtx, itemId: string, query: z.infer
   return { data: rows.map((r) => ({ id: r.id, number: r.number, mfgDate: r.mfgDate, expiryDate: r.expiryDate, quantity: fromMilli(r.qtyMilli), expired: r.expired })) };
 }
 
-/** Serial numbers of one item in stock at a godown. */
+/** Serial numbers of one item in stock at a warehouse. */
 export async function itemSerials(ctx: TenantCtx, itemId: string, query: { locationId?: string; status?: string }) {
   const loc = query.locationId ?? (await defaultLocation(ctx)).id;
   const rows = await db().stockSerial.findMany({ where: { tenantId: ctx.tenantId, itemId, status: query.status ?? 'in_stock', ...(query.status && query.status !== 'in_stock' ? {} : { locationId: loc }) }, orderBy: { serial: 'asc' }, take: 2000 });
@@ -267,13 +292,13 @@ export const EntryInput = z
     party: z.string().trim().max(100).optional().nullable(),
     reference: z.string().trim().max(50).optional().nullable(),
     note: z.string().trim().max(500).optional().nullable(),
-    /** Transfer: false keeps it in transit until the other godown receives it */
+    /** Transfer: false keeps it in transit until the other warehouse receives it */
     receiveNow: z.boolean().optional(),
     lines: z.array(Line).min(1, 'Add at least one item').max(300),
   })
   .superRefine((v, c) => {
     if (v.kind === 'transfer' && !v.toLocationId) c.addIssue({ code: z.ZodIssueCode.custom, path: ['toLocationId'], message: 'Choose where it goes' });
-    if (v.kind === 'transfer' && v.toLocationId === v.locationId) c.addIssue({ code: z.ZodIssueCode.custom, path: ['toLocationId'], message: 'Choose a different godown' });
+    if (v.kind === 'transfer' && v.toLocationId === v.locationId) c.addIssue({ code: z.ZodIssueCode.custom, path: ['toLocationId'], message: 'Choose a different warehouse' });
     if (v.kind === 'adjustment' && !v.reason) c.addIssue({ code: z.ZodIssueCode.custom, path: ['reason'], message: 'Choose a reason' });
     if (v.kind === 'adjustment' && !v.direction) c.addIssue({ code: z.ZodIssueCode.custom, path: ['direction'], message: 'Choose add or remove' });
     v.lines.forEach((l, i) => {
@@ -293,8 +318,8 @@ function checkDate(date: string, backdateDays: number) {
 
 async function activeLocation(ctx: TenantCtx, id: string, field: string) {
   const loc = await db().stockLocation.findFirst({ where: { id, tenantId: ctx.tenantId } });
-  if (!loc) throw new AppError('VALIDATION_FAILED', 'Unknown godown.', { fields: { [field]: 'Unknown godown' } });
-  if (!loc.isActive) throw new AppError('VALIDATION_FAILED', 'This godown is closed.', { fields: { [field]: 'Closed' } });
+  if (!loc) throw new AppError('VALIDATION_FAILED', 'Unknown warehouse.', { fields: { [field]: 'Unknown warehouse' } });
+  if (!loc.isActive) throw new AppError('VALIDATION_FAILED', 'This warehouse is closed.', { fields: { [field]: 'Closed' } });
   return loc;
 }
 
@@ -430,7 +455,7 @@ export async function postEntry(ctx: TenantCtx, input: z.infer<typeof EntryInput
   return getEntry(ctx, entry.id);
 }
 
-/** The other godown got a transfer that was in transit: stock comes in there now, at the cost it left at. */
+/** The other warehouse got a transfer that was in transit: stock comes in there now, at the cost it left at. */
 export async function receiveTransfer(ctx: TenantCtx, id: string) {
   const entry = await db().stockEntry.findFirst({ where: { id, tenantId: ctx.tenantId } });
   if (!entry || entry.kind !== 'transfer') throw notFound('Transfer');
@@ -498,12 +523,12 @@ export async function getEntry(ctx: TenantCtx, id: string) {
   return { ...entry, location: locs.find((l) => l.id === entry.locationId)?.name ?? '—', toLocation: locs.find((l) => l.id === entry.toLocationId)?.name ?? null };
 }
 
-export const EntryList = z.object({ kind: z.string().max(20).optional(), status: z.string().max(12).optional(), q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), cursor: z.string().uuid().optional() });
+export const EntryList = z.object({ kind: z.string().max(20).optional(), notKind: z.string().max(20).optional(), status: z.string().max(12).optional(), q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), cursor: z.string().uuid().optional() });
 
 export async function listEntries(ctx: TenantCtx, query: z.infer<typeof EntryList>) {
   const rows = await db().stockEntry.findMany({
     where: {
-      tenantId: ctx.tenantId, ...(query.kind ? { kind: query.kind } : {}), ...(query.status ? { status: query.status } : {}),
+      tenantId: ctx.tenantId, ...(query.kind ? { kind: query.kind } : query.notKind ? { kind: { not: query.notKind } } : {}), ...(query.status ? { status: query.status } : {}),
       ...(query.q ? { OR: [{ party: { contains: query.q, mode: 'insensitive' } }, { reference: { contains: query.q, mode: 'insensitive' } }, { note: { contains: query.q, mode: 'insensitive' } }] } : {}),
     },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],

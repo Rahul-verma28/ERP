@@ -3,16 +3,16 @@
 export type PurchaseKind = "purchase_order" | "goods_receipt" | "purchase_bill" | "purchase_return"
 
 export const KIND_LABEL: Record<PurchaseKind, string> = {
-  purchase_order: "Purchase order",
-  goods_receipt: "Goods receipt",
-  purchase_bill: "Purchase invoice",
-  purchase_return: "Purchase return",
+  purchase_order: "Purchase Order",
+  goods_receipt: "Goods Receipt",
+  purchase_bill: "Purchase Invoice",
+  purchase_return: "Purchase Return",
 }
 export const KIND_PLURAL: Record<PurchaseKind, string> = {
-  purchase_order: "Purchase orders",
-  goods_receipt: "Goods receipts",
-  purchase_bill: "Purchase invoices",
-  purchase_return: "Purchase returns",
+  purchase_order: "Purchase Orders",
+  goods_receipt: "Goods Receipts",
+  purchase_bill: "Purchase Invoices",
+  purchase_return: "Purchase Returns",
 }
 /** Where each kind's list lives */
 export const KIND_PATH: Record<PurchaseKind, string> = {

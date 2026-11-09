@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { Spinner } from "@/components/common"
 import { useAuth } from "@/lib/auth"
+import { downloadCsv } from "@/lib/csv"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
@@ -20,12 +21,7 @@ type Tab = "payables" | "register" | "itc" | "pending"
 const TABS: [Tab, string][] = [["payables", "Payables"], ["register", "Purchase register"], ["itc", "ITC register"], ["pending", "Pending orders"]]
 
 function csv(name: string, head: string[], rows: (string | number | null)[][]) {
-  const esc = (v: string | number | null) => `"${String(v ?? "").replace(/"/g, '""')}"`
-  const blob = new Blob([[head, ...rows].map((r) => r.map(esc).join(",")).join("\n")], { type: "text/csv" })
-  const a = document.createElement("a")
-  a.href = URL.createObjectURL(blob)
-  a.download = `${name}.csv`
-  a.click()
+  downloadCsv(`${name}.csv`, [head, ...rows.map((r) => r.map((v) => v ?? ""))])
 }
 const rupees = (p: number) => (p / 100).toFixed(2)
 const monthStart = () => `${todayInIndia().slice(0, 8)}01`

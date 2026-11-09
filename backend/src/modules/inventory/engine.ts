@@ -44,13 +44,13 @@ export async function loadRules(ctx: TenantCtx): Promise<Rules> {
   return withDefaults(t.preferences).inventory;
 }
 
-/** The godown sales come from: the default one, made on first use */
+/** The warehouse sales come from: the default one, made on first use */
 export async function defaultLocation(ctx: TenantCtx) {
   const found = await db().stockLocation.findFirst({ where: { tenantId: ctx.tenantId, isDefault: true, isActive: true } });
   if (found) return found;
   const any = await db().stockLocation.findFirst({ where: { tenantId: ctx.tenantId, isActive: true }, orderBy: { createdAt: 'asc' } });
   if (any) return db().stockLocation.update({ where: { id: any.id }, data: { isDefault: true } });
-  return db().stockLocation.create({ data: { tenantId: ctx.tenantId, name: 'Main godown', isDefault: true } });
+  return db().stockLocation.create({ data: { tenantId: ctx.tenantId, name: 'Main warehouse', isDefault: true } });
 }
 
 /** The balance row, made if missing and locked for this transaction, in one round trip */
@@ -202,7 +202,7 @@ async function hasLiveMoves(ctx: TenantCtx, sourceId: string) {
   return rows[0].live;
 }
 
-/** Batches of an item at a godown with stock, earliest expiry first; expired ones only when asked. */
+/** Batches of an item at a warehouse with stock, earliest expiry first; expired ones only when asked. */
 export async function batchesWithStock(itemId: string, locationId: string, onDate: Date, includeExpired = false) {
   const rows = await db().$queryRaw<{ id: string; number: string; expiry_date: Date | null; mfg_date: Date | null; quantity: Prisma.Decimal }[]>`
     SELECT b.id, b.number, b.expiry_date, b.mfg_date, bb.quantity FROM stock_batch_balances bb JOIN stock_batches b ON b.id = bb.batch_id

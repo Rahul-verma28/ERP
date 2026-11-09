@@ -2,14 +2,15 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Copy, MoreHorizontal, UserPlus } from "lucide-react"
+import { Copy, MoreHorizontal, UserPlus, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { EmptyState } from "@/components/common"
+import { DataList, localList } from "@/components/data-list"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -29,6 +30,8 @@ interface Members {
   invitations: { id: string; name: string | null; email: string | null; mobile: string | null; roleId: string; expiresAt: string; expired: boolean }[]
 }
 
+type Member = Members["members"][number]
+
 export default function TeamPage() {
   const { me, can, term } = useAuth()
   const members = useApi<Members>("/members")
@@ -39,6 +42,7 @@ export default function TeamPage() {
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [link, setLink] = React.useState<string | null>(null)
+  const [version, setVersion] = React.useState(0)
   const [resetFor, setResetFor] = React.useState<Members["members"][number] | null>(null)
 
   const assignable = (roles.data?.data ?? []).filter((r) => r.key !== "owner")
@@ -75,6 +79,7 @@ export default function TeamPage() {
       await api.patch(`/members/${m.id}`, { ...patch, version: m.version })
       toast.success("User updated")
       await members.reload()
+      setVersion((v) => v + 1)
     } catch (err) {
       toast.error(errorMessage(err))
     }
@@ -92,89 +97,45 @@ export default function TeamPage() {
 
   return (
     <div className="grid gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {members.data
-            ? `${activeCount + pending} of ${me?.limits?.users} users on your plan (${pending} pending invitation${pending === 1 ? "" : "s"}).`
-            : "Loading team…"}
-        </p>
-        {can("tenant.member.create") && (
-          <Button
-            onClick={() => {
-              setLink(null)
-              setOpen(true)
-            }}
-          >
-            <UserPlus /> Invite user
-          </Button>
-        )}
-      </div>
-
-      <Card>
-        <CardContent className="overflow-x-auto p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="pl-6">User</TableHead>
-                <TableHead>Mobile</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Login status</TableHead>
-                <TableHead>Last sign-in</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {members.data?.members.map((m) => (
-                <TableRow key={m.id}>
-                  <TableCell className="pl-6">
-                    <div className="font-medium">{m.user.name}</div>
-                    <div className="text-xs text-muted-foreground">{m.user.email}</div>
-                  </TableCell>
-                  <TableCell className="text-sm tabular-nums">{m.user.mobile || "—"}</TableCell>
-                  <TableCell>
-                    {can("tenant.member.edit") && m.role.key !== "owner" && m.user.id !== me?.user.id && assignable.length ? (
-                      <NativeSelect className="h-8 w-48" value={m.role.id} onChange={(e) => patchMember(m, { roleId: e.target.value })} aria-label={`Role for ${m.user.name}`}>
-                        {!assignable.some((r) => r.id === m.role.id) && <option value={m.role.id}>{roleName(m.role)}</option>}
-                        {assignable.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {roleName(r)}
-                          </option>
-                        ))}
-                      </NativeSelect>
-                    ) : (
-                      roleName(m.role)
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      <Badge variant={m.status === "active" ? "secondary" : "outline"}>{m.status === "active" ? "Enabled" : m.status === "deactivated" ? "Disabled" : "Invited"}</Badge>
-                      {m.user.mfaEnabled && <Badge variant="outline" title="Two-step verification is on">Two-step</Badge>}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{m.user.lastLoginAt ? formatDate(m.user.lastLoginAt) : "Never"}</TableCell>
-                  <TableCell>
-                    {can("tenant.member.edit") && m.role.key !== "owner" && m.user.id !== me?.user.id && (
-                      <DropdownMenu>
-                        <DropdownMenuTrigger className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label={`Actions for ${m.user.name}`}>
-                          <MoreHorizontal />
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          {m.status === "active" ? (
-                            <DropdownMenuItem onClick={() => patchMember(m, { status: "deactivated" })}>Disable login</DropdownMenuItem>
-                          ) : (
-                            <DropdownMenuItem onClick={() => patchMember(m, { status: "active" })}>Enable login</DropdownMenuItem>
-                          )}
-                          {m.user.mfaEnabled && <DropdownMenuItem onClick={() => setResetFor(m)}>Reset two-step…</DropdownMenuItem>}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <DataList<Member>
+        id="users"
+        load={localList(async () => (await api.get<Members>("/members")).members, (m, q) => `${m.user.name} ${m.user.email} ${m.user.mobile}`.toLowerCase().includes(q))}
+        params={{ v: String(version) }}
+        header={{
+          title: "Manage Users",
+          description: members.data ? `Everyone who works in this business. ${activeCount + pending} of ${me?.limits?.users} users on your plan.` : "Everyone who works in this business.",
+          primary: can("tenant.member.create") ? <Button onClick={() => { setLink(null); setOpen(true) }}><UserPlus /> Invite user</Button> : undefined,
+        }}
+        columns={[
+          { key: "user", header: "User", hideable: false, sort: (m) => m.user.name, cell: (m) => <span><span className="block font-medium">{m.user.name}</span><span className="text-xs text-muted-foreground">{m.user.email}</span></span> },
+          { key: "mobile", header: "Mobile", cell: (m) => <span className="text-sm tabular-nums">{m.user.mobile || "—"}</span> },
+          {
+            key: "role", header: "Role",
+            cell: (m) => can("tenant.member.edit") && m.role.key !== "owner" && m.user.id !== me?.user.id && assignable.length ? (
+              <NativeSelect className="h-8 w-48" value={m.role.id} onChange={(e) => patchMember(m, { roleId: e.target.value })} aria-label={`Role for ${m.user.name}`}>
+                {!assignable.some((r) => r.id === m.role.id) && <option value={m.role.id}>{roleName(m.role)}</option>}
+                {assignable.map((r) => <option key={r.id} value={r.id}>{roleName(r)}</option>)}
+              </NativeSelect>
+            ) : roleName(m.role),
+          },
+          { key: "status", header: "Login status", cell: (m) => <span className="flex flex-wrap gap-1"><Badge variant={m.status === "active" ? "secondary" : "outline"}>{m.status === "active" ? "Enabled" : m.status === "deactivated" ? "Disabled" : "Invited"}</Badge>{m.user.mfaEnabled && <Badge variant="outline" title="Two-step verification is on">Two-step</Badge>}</span> },
+          { key: "last", header: "Last sign-in", cell: (m) => <span className="text-sm text-muted-foreground">{m.user.lastLoginAt ? formatDate(m.user.lastLoginAt) : "Never"}</span> },
+          {
+            key: "actions", header: "Actions", hideable: false,
+            cell: (m) => can("tenant.member.edit") && m.role.key !== "owner" && m.user.id !== me?.user.id ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger className={buttonVariants({ variant: "ghost", size: "icon-sm" })} aria-label={`Actions for ${m.user.name}`}><MoreHorizontal /></DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {m.status === "active" ? <DropdownMenuItem onClick={() => patchMember(m, { status: "deactivated" })}>Disable login</DropdownMenuItem> : <DropdownMenuItem onClick={() => patchMember(m, { status: "active" })}>Enable login</DropdownMenuItem>}
+                  {m.user.mfaEnabled && <DropdownMenuItem onClick={() => setResetFor(m)}>Reset two-step…</DropdownMenuItem>}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null,
+          },
+        ]}
+        searchPlaceholder="Search name, email or mobile"
+        emptyState={<EmptyState icon={Users} title="No users yet" />}
+      />
 
       {!!members.data?.invitations.length && (
         <Card>

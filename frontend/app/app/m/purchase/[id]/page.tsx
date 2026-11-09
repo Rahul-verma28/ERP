@@ -156,7 +156,7 @@ export default function PurchaseDocPage() {
               <span><span className="text-muted-foreground">Date </span>{formatDate(doc.issueDate)}</span>
               {doc.supplierRef && <span><span className="text-muted-foreground">{isBill ? "Supplier bill " : "Challan "}</span>{doc.supplierRef}{doc.supplierDate && ` · ${formatDate(doc.supplierDate)}`}</span>}
               {doc.dueDate && <span><span className="text-muted-foreground">{isOrder ? "Expected " : "Due "}</span>{formatDate(doc.dueDate)}</span>}
-              {doc.location && <span><span className="text-muted-foreground">Godown </span>{doc.location.name}</span>}
+              {doc.location && <span><span className="text-muted-foreground">Warehouse </span>{doc.location.name}</span>}
               {doc.sourceNumber && doc.sourceId && <span><span className="text-muted-foreground">From </span><Link className="font-mono text-primary hover:underline" href={`/app/m/purchase/${doc.sourceId}`}>{doc.sourceNumber}</Link></span>}
               {doc.reverseCharge && <span className="font-medium">Reverse charge</span>}
             </div>

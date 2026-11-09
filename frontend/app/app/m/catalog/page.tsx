@@ -1,378 +1,177 @@
 "use client"
 
 import * as React from "react"
-import { toast } from "sonner"
-import { Package, Plus } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
+import { toast } from "sonner"
+import { Eye, Package, Pencil, Plus, ShoppingCart, Tag, Trash2 } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Textarea } from "@/components/ui/textarea"
-import { PageHeader } from "@/components/app-shell"
-import { EmptyState, LoadMore, MoneyInput, SearchInput, Spinner } from "@/components/common"
-import { Field, FormError, NativeSelect } from "@/components/form"
-import { CustomFieldsForm, useCustomFields } from "@/components/custom-fields"
+import { ConfirmDialog, EmptyState, MoneyInput } from "@/components/common"
+import { WarehouseSelect } from "@/components/creatable-select"
+import { DataList, HeaderLink, type Column, type ViewPreset } from "@/components/data-list"
+import { Field, FormError } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { useApi } from "@/lib/use-api"
-import { useDebounced, useList } from "@/lib/use-list"
+import { categoryColour, type Category, type Item } from "@/lib/catalog"
 import { formatPaise } from "@/lib/format"
-import { GST_RATES } from "@/lib/money"
+import { useApi } from "@/lib/use-api"
+import { cn } from "@/lib/utils"
+import { todayInIndia } from "@contracts/validation"
 
-interface Item {
-  id: string
-  type: "product" | "service"
-  name: string
-  sku: string | null
-  categoryId: string | null
-  unit: string
-  pricePaise: number
-  costPricePaise?: number | null
-  gstRateBp: number
-  hsnSac: string | null
-  durationMin: number | null
-  description: string | null
-  isActive: boolean
-  trackStock?: boolean
-  reorderLevel?: number | null
-  stockQty?: number
-  reservedQty?: number
-  tracking?: "none" | "batch" | "serial"
-  altUnit?: string | null
-  altFactor?: number | null
-  barcode?: string | null
-  variantGroup?: string | null
-  attributes?: Record<string, string>
-  custom: Record<string, unknown>
-  version: number
-}
+const PRESETS: ViewPreset[] = [
+  { key: "all", label: "All", params: {} },
+  { key: "product", label: "Products", params: { type: "product" } },
+  { key: "service", label: "Services", params: { type: "service" } },
+  { key: "archived", label: "Archived", params: { active: "false" } },
+]
 
-interface Category {
-  id: string
-  name: string
-}
-
-const EMPTY = { type: "product" as Item["type"], name: "", sku: "", categoryId: "", unit: "pcs", pricePaise: null as number | null, costPricePaise: null as number | null, gstRateBp: 1800, hsnSac: "", durationMin: "", description: "", trackStock: false, reorderLevel: "", tracking: "none" as "none" | "batch" | "serial", altUnit: "", altFactor: "", barcode: "", custom: {} as Record<string, unknown> }
-
-/** Make one item per combination: Size S, M × Colour Red, Blue gives four items in one group. */
-function VariantsDialog({ item, onClose, onDone }: { item: Item; onClose: () => void; onDone: () => void }) {
-  const [rows, setRows] = React.useState([{ name: "Size", values: "" }, { name: "Colour", values: "" }])
+function AddStockDialog({ item, onClose, onDone }: { item: Item; onClose: () => void; onDone: () => void }) {
+  const { me } = useAuth()
+  const showCost = !!me?.fieldAccess?.["item.cost_price"] && me.fieldAccess["item.cost_price"] !== "hidden"
+  const [picked, setLocationId] = React.useState("")
+  const defaults = useApi<{ data: { id: string; isDefault: boolean; isActive: boolean }[] }>("/stock-locations").data?.data
+  const locationId = picked || defaults?.find((w) => w.isDefault && w.isActive)?.id || ""
+  const [quantity, setQuantity] = React.useState("")
+  const [rate, setRate] = React.useState<number | null>(item.costPricePaise ?? null)
+  const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
-  const attrs = Object.fromEntries(rows.filter((r) => r.name.trim() && r.values.trim()).map((r) => [r.name.trim(), [...new Set(r.values.split(",").map((v) => v.trim()).filter(Boolean))]]))
-  const count = Object.values(attrs).reduce((n, v) => n * v.length, Object.keys(attrs).length ? 1 : 0)
-  async function make() {
-    if (!count) return setError("Give at least one attribute with values")
+  async function save() {
+    const p: Record<string, string> = {}
+    if (!locationId) p.locationId = "Choose a warehouse"
+    if (!(Number(quantity) > 0)) p.quantity = "Enter more than 0"
+    setErrors(p)
+    if (Object.keys(p).length) return
     setBusy(true)
     setError(null)
     try {
-      const r = await api.post<{ created: number }>(`/items/${item.id}/variants`, { attributes: attrs })
-      toast.success(r.created ? `${r.created} variants added` : "Those variants already exist")
+      await api.post("/stock/entries", { kind: "stock_in", locationId, date: todayInIndia(), lines: [{ itemId: item.id, quantity: Number(quantity), ratePaise: rate ?? 0 }] })
+      toast.success(`${quantity} ${item.unit} added to ${item.name}`)
       onDone()
     } catch (e) {
+      if (e instanceof ApiError) setErrors(e.fields)
       setError(errorMessage(e))
       setBusy(false)
     }
   }
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Variants of {item.variantGroup ?? item.name}</DialogTitle>
-          <DialogDescription>Each combination becomes its own item with the same price, GST and stock settings. Change any of them after.</DialogDescription>
+          <DialogTitle>Add stock</DialogTitle>
+          <DialogDescription>{item.name}{item.sku ? ` · ${item.sku}` : ""} · {item.stockQty ?? 0} {item.unit} in stock</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-3">
-          {rows.map((r, i) => (
-            <div key={i} className="grid grid-cols-[8rem_1fr] gap-2">
-              <Input value={r.name} onChange={(e) => setRows((rs) => rs.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder="Attribute" aria-label="Attribute" />
-              <Input value={r.values} onChange={(e) => setRows((rs) => rs.map((x, j) => (j === i ? { ...x, values: e.target.value } : x)))} placeholder="Values, comma separated: S, M, L" aria-label={`Values of ${r.name || "attribute"}`} />
-            </div>
-          ))}
-          {rows.length < 3 && <Button variant="ghost" size="sm" className="justify-self-start" onClick={() => setRows((rs) => [...rs, { name: "", values: "" }])}><Plus /> Attribute</Button>}
-          <p className="text-sm text-muted-foreground">{count ? `${count} item${count === 1 ? "" : "s"} will be made` : "Nothing to make yet"}</p>
+        <div className="grid gap-4">
+          <Field label="Warehouse" required error={errors.locationId}><WarehouseSelect value={locationId} onChange={setLocationId} aria-label="Warehouse" aria-invalid={!!errors.locationId} /></Field>
+          <Field label="Quantity" required error={errors.quantity ?? errors["lines.0.quantity"]}><Input inputMode="decimal" value={quantity} onChange={(e) => setQuantity(e.target.value.replace(/[^\d.]/g, ""))} placeholder={item.unit} autoFocus /></Field>
+          {showCost && <Field label={`Cost per ${item.unit}`}><MoneyInput value={rate} onChange={setRate} aria-label="Cost" /></Field>}
           <FormError message={error} />
         </div>
-        <DialogFooter><Button disabled={busy || !count} onClick={make}>{busy ? "Making…" : "Make variants"}</Button></DialogFooter>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={busy} onClick={save}>{busy ? "Adding…" : "Add stock"}</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
 
-function ItemDialog({ item, categories, onClose, onSaved }: { item: Item | null; categories: Category[]; onClose: () => void; onSaved: () => void }) {
-  const { can, me } = useAuth()
-  const fields = useCustomFields("item")
-  const canCost = me?.fieldAccess?.["item.cost_price"] === "write"
-  const [form, setForm] = React.useState(() =>
-    item
-      ? { ...EMPTY, ...item, sku: item.sku ?? "", categoryId: item.categoryId ?? "", hsnSac: item.hsnSac ?? "", durationMin: item.durationMin ? String(item.durationMin) : "", description: item.description ?? "", costPricePaise: item.costPricePaise ?? null, trackStock: !!item.trackStock, reorderLevel: item.reorderLevel != null ? String(item.reorderLevel) : "", tracking: item.tracking ?? "none", altUnit: item.altUnit ?? "", altFactor: item.altFactor ? String(item.altFactor) : "", barcode: item.barcode ?? "" }
-      : EMPTY
-  )
-  const [errors, setErrors] = React.useState<Record<string, string>>({})
-  const [error, setError] = React.useState<string | null>(null)
-  const [busy, setBusy] = React.useState(false)
-  const [makingVariants, setMakingVariants] = React.useState(false)
-  const set = <K extends keyof typeof EMPTY>(k: K, v: (typeof EMPTY)[K]) => setForm((f) => ({ ...f, [k]: v }))
-  const editable = item ? can("catalog.item.edit") : can("catalog.item.create")
+const iconLink = buttonVariants({ variant: "ghost", size: "icon-sm" })
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
-    if (form.pricePaise === null) return setErrors({ pricePaise: "Enter a price" })
-    setBusy(true)
-    setError(null)
-    setErrors({})
-    const body = {
-      type: form.type,
-      name: form.name,
-      sku: form.sku || null,
-      categoryId: form.categoryId || null,
-      unit: form.unit,
-      pricePaise: form.pricePaise,
-      ...(canCost ? { costPricePaise: form.costPricePaise } : {}),
-      gstRateBp: form.gstRateBp,
-      hsnSac: form.hsnSac || null,
-      durationMin: form.type === "service" && form.durationMin ? Number(form.durationMin) : null,
-      description: form.description || null,
-      ...(form.type === "product"
-        ? {
-            trackStock: form.trackStock,
-            reorderLevel: form.trackStock && form.reorderLevel !== "" ? Number(form.reorderLevel) : null,
-            tracking: form.trackStock ? form.tracking : "none",
-            altUnit: form.altUnit.trim() || null,
-            altFactor: form.altUnit.trim() && form.altFactor ? Number(form.altFactor) : null,
-            barcode: form.barcode.trim() || null,
-          }
-        : { trackStock: false }),
-      custom: form.custom,
-    }
-    try {
-      if (item) await api.patch(`/items/${item.id}`, { ...body, version: item.version })
-      else await api.post("/items", body)
-      toast.success(item ? "Saved" : "Item added")
-      onSaved()
-    } catch (err) {
-      if (err instanceof ApiError) setErrors(err.fields)
-      setError(errorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>{item ? item.name : "New product or service"}</DialogTitle>
-          <DialogDescription>Prices exclude GST. The GST rate and HSN/SAC appear on invoices.</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={save} className="grid gap-4">
-          <div className="inline-flex w-fit rounded-full bg-muted p-1 text-sm" role="radiogroup" aria-label="Type">
-            {(["product", "service"] as const).map((t) => (
-              <button key={t} type="button" role="radio" aria-checked={form.type === t} disabled={!editable}
-                onClick={() => setForm((f) => ({ ...f, type: t, unit: t === "service" ? "service" : f.unit === "service" ? "pcs" : f.unit }))}
-                className={`rounded-full px-3 py-1 capitalize ${form.type === t ? "bg-background font-medium shadow-sm" : ""}`}>
-                {t}
-              </button>
-            ))}
-          </div>
-          <Field label="Name" error={errors.name}>
-            <Input value={form.name} onChange={(e) => set("name", e.target.value)} required disabled={!editable} />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Selling price" error={errors.pricePaise}>
-              <MoneyInput value={form.pricePaise} onChange={(v) => set("pricePaise", v)} disabled={!editable} required />
-            </Field>
-            <Field label="GST rate" error={errors.gstRateBp}>
-              <NativeSelect value={form.gstRateBp} onChange={(e) => set("gstRateBp", Number(e.target.value))} disabled={!editable}>
-                {GST_RATES.map((r) => <option key={r.bp} value={r.bp}>{r.label}</option>)}
-              </NativeSelect>
-            </Field>
-            <Field label={form.type === "service" ? "SAC code" : "HSN code"} error={errors.hsnSac} hint="4–8 digits">
-              <Input inputMode="numeric" value={form.hsnSac} onChange={(e) => set("hsnSac", e.target.value.replace(/\D/g, ""))} maxLength={8} disabled={!editable} />
-            </Field>
-            <Field label="Unit">
-              <Input value={form.unit} onChange={(e) => set("unit", e.target.value)} disabled={!editable} list="units" />
-            </Field>
-            <Field label="SKU / code" error={errors.sku}>
-              <Input value={form.sku} onChange={(e) => set("sku", e.target.value)} disabled={!editable} />
-            </Field>
-            <Field label="Category">
-              <NativeSelect value={form.categoryId} onChange={(e) => set("categoryId", e.target.value)} disabled={!editable}>
-                <option value="">No category</option>
-                {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </NativeSelect>
-            </Field>
-            {form.type === "service" && (
-              <Field label="Duration (minutes)" hint="Used for bookings">
-                <Input inputMode="numeric" value={form.durationMin} onChange={(e) => set("durationMin", e.target.value.replace(/\D/g, ""))} disabled={!editable} />
-              </Field>
-            )}
-            {canCost && (
-              <Field label="Cost price" hint="Visible only to roles allowed to see margins">
-                <MoneyInput value={form.costPricePaise} onChange={(v) => set("costPricePaise", v)} disabled={!editable} />
-              </Field>
-            )}
-          </div>
-          {form.type === "product" && can("inventory.stock.view") && (
-            <div className="grid gap-3 rounded-2xl bg-muted/60 p-3 sm:grid-cols-2 sm:items-end">
-              <label className="flex items-start gap-2 text-sm">
-                <input type="checkbox" className="mt-1" checked={form.trackStock} disabled={!editable} onChange={(e) => set("trackStock", e.target.checked)} />
-                <span><span className="font-medium">Track stock</span><span className="block text-xs text-muted-foreground">{item?.trackStock ? `${item.stockQty ?? 0} ${item.unit} in stock. ` : ""}Bills take stock out. Add opening stock in Inventory.</span></span>
-              </label>
-              {form.trackStock && (
-                <Field label="Low-stock level" hint="Alert at or below this" error={errors.reorderLevel}>
-                  <Input inputMode="decimal" value={form.reorderLevel} onChange={(e) => set("reorderLevel", e.target.value.replace(/[^\d.]/g, ""))} disabled={!editable} />
-                </Field>
-              )}
-              {form.trackStock && (
-                <Field label="Track by" hint={item?.stockQty ? "Can change only when stock is zero" : "Batch: number and expiry. Serial: one number per piece"} error={errors.tracking}>
-                  <NativeSelect value={form.tracking} onChange={(e) => set("tracking", e.target.value as typeof form.tracking)} disabled={!editable || !!item?.stockQty} aria-label="Track by">
-                    <option value="none">Quantity only</option>
-                    <option value="batch">Batch and expiry</option>
-                    <option value="serial">Serial / IMEI number</option>
-                  </NativeSelect>
-                </Field>
-              )}
-              <Field label="Barcode" hint="Scan into bills; printed on labels" error={errors.barcode}>
-                <Input value={form.barcode} onChange={(e) => set("barcode", e.target.value)} maxLength={48} disabled={!editable} />
-              </Field>
-              <div className="grid grid-cols-[1fr_6rem] gap-2">
-                <Field label="Second unit" hint={`e.g. box, carton`} error={errors.altUnit}>
-                  <Input value={form.altUnit} onChange={(e) => set("altUnit", e.target.value)} maxLength={20} disabled={!editable} placeholder="box" />
-                </Field>
-                <Field label={`${form.unit || "pcs"} in one`} error={errors.altFactor}>
-                  <Input inputMode="decimal" value={form.altFactor} onChange={(e) => set("altFactor", e.target.value.replace(/[^\d.]/g, ""))} disabled={!editable || !form.altUnit.trim()} placeholder="12" />
-                </Field>
-              </div>
-            </div>
-          )}
-          <datalist id="units">{["pcs", "kg", "g", "l", "ml", "m", "box", "pack", "hour", "service", "month"].map((u) => <option key={u} value={u} />)}</datalist>
-          <Field label="Description">
-            <Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={2} disabled={!editable} />
-          </Field>
-          <CustomFieldsForm fields={fields} value={form.custom} onChange={(v) => set("custom", v)} errors={errors} disabled={!editable} />
-          <FormError message={error} />
-          {editable && (
-            <DialogFooter className="flex-wrap gap-2">
-              {item && item.type === "product" && (
-                <>
-                  <a href={`/print/labels?ids=${item.id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}>Print labels</a>
-                  {can("catalog.item.create") && <Button type="button" variant="outline" onClick={() => setMakingVariants(true)}>Make variants</Button>}
-                </>
-              )}
-              <Button type="submit" disabled={busy}>{busy ? "Saving…" : item ? "Save changes" : "Add item"}</Button>
-            </DialogFooter>
-          )}
-        </form>
-        {makingVariants && item && <VariantsDialog item={item} onClose={() => setMakingVariants(false)} onDone={() => { setMakingVariants(false); onSaved() }} />}
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-export default function CatalogPage() {
+export default function ItemsPage() {
   const { can, term, me } = useAuth()
-  const [search, setSearch] = React.useState("")
-  const [type, setType] = React.useState("")
-  const [active, setActive] = React.useState("true")
-  const q = useDebounced(search)
-  const list = useList<Item>("/items", { q, type, active })
   const categories = useApi<{ data: Category[] }>("/item-categories")
-  const [editing, setEditing] = React.useState<Item | "new" | null>(null)
+  const [adding, setAdding] = React.useState<Item | null>(null)
+  const [deleting, setDeleting] = React.useState<Item | null>(null)
+  const [version, setVersion] = React.useState(0)
+  const refresh = () => setVersion((v) => v + 1)
+  const title = term("entity.item.plural", "Items")
   const showCost = !!me?.fieldAccess?.["item.cost_price"] && me.fieldAccess["item.cost_price"] !== "hidden"
-  const title = term("entity.item.plural", "Products & Services")
+  const showStock = can("inventory.stock.view")
+  const canAddStock = can("inventory.receipt.create")
+  const places = useApi<{ data: { id: string; name: string; isActive: boolean }[] }>(showStock ? "/stock-locations" : null).data?.data.filter((w) => w.isActive) ?? []
+  const nameOf = (id: string | null) => categories.data?.data.find((c) => c.id === id)?.name
 
-  async function addCategory() {
-    const name = window.prompt("New category name")
-    if (!name?.trim()) return
-    try {
-      await api.post("/item-categories", { name: name.trim() })
-      await categories.reload()
-      toast.success("Category added")
-    } catch (e) {
-      toast.error(errorMessage(e))
-    }
-  }
+  const columns: Column<Item>[] = [
+    {
+      key: "item", header: "Product", hideable: false, sort: (r) => r.name, csv: (r) => r.name,
+      cell: (r) => (
+        <span className="flex items-center gap-3">
+          <span className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-xl border bg-muted/40">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            {r.imageUrl ? <img src={r.imageUrl} alt="" className="size-full object-cover" /> : <Package className="size-5 text-muted-foreground" aria-hidden />}
+          </span>
+          <span className="min-w-0">
+            <span className="block font-medium">{r.name}{!r.isActive && <Badge variant="outline" className="ml-2">Archived</Badge>}</span>
+            <span className="flex items-center gap-1 text-xs text-muted-foreground"><Tag className="size-3" aria-hidden />{r.sku || "No SKU"}{r.tracking === "batch" ? " · Batch" : r.tracking === "serial" ? " · Serial" : ""}</span>
+          </span>
+        </span>
+      ),
+    },
+    { key: "sale", header: "Sale price", sort: (r) => r.pricePaise, csv: (r) => r.pricePaise / 100, cell: (r) => <span className="font-medium text-emerald-700 tabular-nums dark:text-emerald-300">{formatPaise(r.pricePaise)}</span> },
+    ...(showCost ? [{ key: "cost", header: "Purchase price", sort: (r: Item) => r.costPricePaise ?? 0, csv: (r: Item) => (r.costPricePaise ?? 0) / 100, cell: (r: Item) => <span className="font-medium text-amber-700 tabular-nums dark:text-amber-300">{r.costPricePaise != null ? formatPaise(r.costPricePaise) : "—"}</span> }] : []),
+    { key: "category", header: "Category", csv: (r) => nameOf(r.categoryId) ?? "", cell: (r) => { const n = nameOf(r.categoryId); return n ? <Badge variant="outline" className={cn("border-transparent", categoryColour(n))}>{n}</Badge> : "—" } },
+    { key: "unit", header: "Unit", csv: (r) => r.unit, cell: (r) => <Badge variant="outline">{r.unit}</Badge> },
+    ...(showStock ? [{
+      key: "qty", header: "Quantity", sort: (r: Item) => r.stockQty ?? 0, csv: (r: Item) => r.stockQty ?? "",
+      cell: (r: Item) => {
+        if (r.type !== "product") return "—"
+        const qty = <span className={cn("inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-medium tabular-nums", (r.stockQty ?? 0) < 0 && "text-destructive")}><ShoppingCart className="size-3" aria-hidden />{r.stockQty ?? 0}</span>
+        return r.reservedQty ? <span className="inline-flex items-center gap-1">{qty}<span className="text-xs text-muted-foreground">{r.reservedQty} held</span></span> : qty
+      },
+    }] : []),
+    ...(showStock ? [{
+      key: "warehouse", header: "Warehouse", csv: (r: Item) => (r.warehouses ?? []).map((w) => `${w.name}: ${w.quantity}`).join("; "),
+      cell: (r: Item) => (r.warehouses?.length ? <span className="flex flex-wrap gap-1">{r.warehouses.map((w) => <Badge key={w.id} variant="outline">{w.name} · {w.quantity}</Badge>)}</span> : "—"),
+    }] : []),
+    { key: "type", header: "Type", csv: (r) => r.type, cell: (r) => <Badge variant="outline" className="capitalize">{r.type}</Badge> },
+    {
+      key: "actions", header: "Actions", hideable: false,
+      cell: (r) => (
+        <span className="flex items-center gap-0.5" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
+          {r.type === "product" && canAddStock && (r.tracking ?? "none") === "none" && r.isActive && <Button variant="ghost" size="icon-sm" title="Add stock" aria-label={`Add stock to ${r.name}`} onClick={() => setAdding(r)}><Plus /></Button>}
+          {r.type === "product" && showStock && r.trackStock && <Link href={`/app/m/inventory/items/${r.id}`} className={iconLink} title="View stock" aria-label={`View stock of ${r.name}`}><Eye /></Link>}
+          {can("catalog.item.edit") && <Link href={`/app/m/catalog/new?edit=${r.id}`} className={iconLink} title="Edit" aria-label={`Edit ${r.name}`}><Pencil /></Link>}
+          {can("catalog.item.delete") && r.isActive && <Button variant="ghost" size="icon-sm" className="text-destructive" title="Delete" aria-label={`Delete ${r.name}`} onClick={() => setDeleting(r)}><Trash2 /></Button>}
+        </span>
+      ),
+    },
+  ]
 
+  const create = can("catalog.item.create") ? <HeaderLink href="/app/m/catalog/new" primary><Plus /> Create item</HeaderLink> : undefined
   return (
     <>
-      <PageHeader
-        title={title}
-        description="One catalogue for billing, quotations and bookings. Prices exclude GST."
-        actions={
-          <>
-            {can("catalog.price_list.view") && <Link href="/app/m/catalog/price-lists" className={buttonVariants({ variant: "outline" })}>Price lists</Link>}
-            {can("catalog.category.create") && <Button variant="outline" onClick={addCategory}>New category</Button>}
-            {can("catalog.item.create") && <Button onClick={() => setEditing("new")}><Plus /> Add item</Button>}
-          </>
-        }
+      <DataList<Item>
+        id="catalog-items"
+        path="/items"
+        params={{ active: "true", v: String(version) }}
+        header={{ title, description: "Manage your products, services, prices and stock.", primary: create }}
+        columns={columns}
+        searchPlaceholder="Search name, SKU, HSN or barcode"
+        presets={PRESETS}
+        presetLabel="Type"
+        filters={[
+          ...(categories.data?.data.length ? [{ key: "categoryId", label: "Category", options: categories.data.data.map((c) => ({ value: c.id, label: c.name })) }] : []),
+          ...(places.length ? [{ key: "locationId", label: "Warehouse", options: places.map((w) => ({ value: w.id, label: w.name })) }] : []),
+        ]}
+        rowHref={(r) => `/app/m/catalog/new?edit=${r.id}`}
+        exportName="items"
+        emptyState={<EmptyState icon={Package} title="No items yet" description="Add what you buy and sell so you can bill it in seconds." action={create} />}
       />
-      <div className="mb-4 flex flex-wrap gap-3">
-        <SearchInput value={search} onChange={setSearch} placeholder="Search name, SKU or HSN" className="w-full sm:w-72" />
-        <NativeSelect className="w-40" value={type} onChange={(e) => setType(e.target.value)} aria-label="Type">
-          <option value="">All types</option>
-          <option value="product">Products</option>
-          <option value="service">Services</option>
-        </NativeSelect>
-        <NativeSelect className="w-36" value={active} onChange={(e) => setActive(e.target.value)} aria-label="Status">
-          <option value="true">Active</option>
-          <option value="false">Archived</option>
-          <option value="all">All</option>
-        </NativeSelect>
-      </div>
-      <Card>
-        <CardContent className="overflow-x-auto p-0">
-          {list.loading ? (
-            <div className="grid place-items-center py-14"><Spinner /></div>
-          ) : list.rows.length === 0 ? (
-            <EmptyState icon={Package} title={search ? "No matches" : `No ${title.toLowerCase()} yet`} description="Add what you sell so you can bill it in seconds." action={can("catalog.item.create") && !search ? <Button onClick={() => setEditing("new")}><Plus /> Add item</Button> : undefined} />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-6">Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>HSN/SAC</TableHead>
-                  <TableHead className="text-right">GST</TableHead>
-                  {can("inventory.stock.view") && <TableHead className="text-right">Stock</TableHead>}
-                  {showCost && <TableHead className="text-right">Cost</TableHead>}
-                  <TableHead className="pr-6 text-right">Price</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {list.rows.map((i) => (
-                  <TableRow key={i.id} className="cursor-pointer" onClick={() => setEditing(i)}>
-                    <TableCell className="pl-6">
-                      <div className="font-medium">{i.name} {!i.isActive && <Badge variant="outline" className="ml-1">Archived</Badge>}</div>
-                      <div className="text-xs text-muted-foreground">{[i.sku, i.variantGroup && i.attributes && Object.keys(i.attributes).length ? Object.values(i.attributes).join(" / ") : null, categories.data?.data.find((c) => c.id === i.categoryId)?.name, i.durationMin ? `${i.durationMin} min` : null, i.tracking === "batch" ? "Batch" : i.tracking === "serial" ? "Serial" : null].filter(Boolean).join(" · ") || i.unit}</div>
-                    </TableCell>
-                    <TableCell className="capitalize">{i.type}</TableCell>
-                    <TableCell className="font-mono text-xs">{i.hsnSac ?? "—"}</TableCell>
-                    <TableCell className="text-right">{i.gstRateBp / 100}%</TableCell>
-                    {can("inventory.stock.view") && <TableCell className={"text-right tabular-nums" + ((i.stockQty ?? 0) < 0 ? " text-destructive" : "")}>{i.trackStock ? `${i.stockQty ?? 0} ${i.unit}${i.reservedQty ? ` · ${i.reservedQty} held` : ""}` : "—"}</TableCell>}
-                    {showCost && <TableCell className="text-right tabular-nums text-muted-foreground">{i.costPricePaise != null ? formatPaise(i.costPricePaise) : "—"}</TableCell>}
-                    <TableCell className="pr-6 text-right font-medium tabular-nums">{formatPaise(i.pricePaise)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-          <LoadMore hasMore={list.hasMore} loading={list.loadingMore} onClick={list.loadMore} />
-        </CardContent>
-      </Card>
-      {editing && (
-        <ItemDialog
-          item={editing === "new" ? null : editing}
-          categories={categories.data?.data ?? []}
-          onClose={() => setEditing(null)}
-          onSaved={() => {
-            setEditing(null)
-            void list.reload()
-          }}
-        />
-      )}
+      {adding && <AddStockDialog item={adding} onClose={() => setAdding(null)} onDone={() => { setAdding(null); refresh() }} />}
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title={`Delete ${deleting?.name ?? "item"}?`}
+        description="If it is used on any bill or stock record it is archived instead, so your history stays correct."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={async () => {
+          try { await api.delete(`/items/${deleting!.id}`); toast.success("Item removed"); setDeleting(null); refresh() } catch (e) { toast.error(errorMessage(e)); throw e }
+        }}
+      />
     </>
   )
 }

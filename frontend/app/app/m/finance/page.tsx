@@ -4,17 +4,14 @@ import * as React from "react"
 import { toast } from "sonner"
 import { Plus, Trash2, Wallet } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { PageHeader } from "@/components/app-shell"
-import { ConfirmDialog, EmptyState, LoadMore, MoneyInput, SearchInput, Spinner } from "@/components/common"
+import { ConfirmDialog, EmptyState, MoneyInput } from "@/components/common"
+import { DataList, periodFilter, type Column } from "@/components/data-list"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
-import { useDebounced, useList } from "@/lib/use-list"
 import { formatDate, formatPaise } from "@/lib/format"
 import { PAYMENT_METHODS } from "@/lib/money"
 
@@ -99,76 +96,39 @@ function ExpenseDialog({ expense, categories, onClose, onSaved }: { expense?: Ex
 }
 
 export default function ExpensesPage() {
-  const { can } = useAuth()
-  const monthStart = `${todayIST().slice(0, 8)}01`
-  const [from, setFrom] = React.useState(monthStart)
-  const [to, setTo] = React.useState(todayIST())
-  const [category, setCategory] = React.useState("")
-  const [search, setSearch] = React.useState("")
-  const q = useDebounced(search)
-  const list = useList<Expense>("/expenses", { from, to, category, q })
+  const { can, me } = useAuth()
   const categories = useApi<{ data: string[] }>("/expense-categories").data?.data ?? []
   const [editing, setEditing] = React.useState<Expense | "new" | null>(null)
   const [deleting, setDeleting] = React.useState<Expense | null>(null)
+  const [version, setVersion] = React.useState(0)
+  const refresh = () => setVersion((v) => v + 1)
+  const add = can("finance.expense.create") ? <Button onClick={() => setEditing("new")}><Plus /> Add expense</Button> : undefined
+  const columns: Column<Expense>[] = [
+    { key: "date", header: "Date", hideable: false, sort: (e) => e.paidOn, csv: (e) => e.paidOn.slice(0, 10), cell: (e) => <span className="text-muted-foreground">{formatDate(e.paidOn)}</span> },
+    { key: "category", header: "Category", sort: (e) => e.category, csv: (e) => e.category, cell: (e) => <span className="font-medium">{e.category}{e.notes && <span className="block text-xs font-normal text-muted-foreground">{e.notes}</span>}</span> },
+    { key: "payee", header: "Paid to", csv: (e) => e.payee ?? "", cell: (e) => e.payee ?? "—" },
+    { key: "method", header: "Method", csv: (e) => e.method, cell: (e) => PAYMENT_METHODS.find((m) => m.value === e.method)?.label },
+    { key: "amount", header: "Amount", align: "right", sort: (e) => e.amountPaise, csv: (e) => e.amountPaise / 100, cell: (e) => <span className="font-medium">{formatPaise(e.amountPaise)}</span> },
+    ...(can("finance.expense.delete") ? [{ key: "actions", header: "Actions", hideable: false, cell: (e: Expense) => <Button variant="ghost" size="icon-sm" className="text-destructive" aria-label="Delete expense" onClick={(ev) => { ev.stopPropagation(); setDeleting(e) }}><Trash2 /></Button> }] : []),
+  ]
 
   return (
     <>
-      <PageHeader title="Expenses" description="Record what you spend. Ledgers, P&L and GST reports come with the Finance module." actions={can("finance.expense.create") && <Button onClick={() => setEditing("new")}><Plus /> Add expense</Button>} />
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <Field label="From"><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-40" /></Field>
-        <Field label="To"><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-40" /></Field>
-        <Field label="Category">
-          <NativeSelect className="w-48" value={category} onChange={(e) => setCategory(e.target.value)}>
-            <option value="">All categories</option>
-            {categories.map((c) => <option key={c}>{c}</option>)}
-          </NativeSelect>
-        </Field>
-        <SearchInput value={search} onChange={setSearch} placeholder="Search payee or notes" className="w-full sm:w-56" />
-        <div className="ml-auto text-right">
-          <p className="text-xs text-muted-foreground">Total for period</p>
-          <p className="text-xl font-semibold tabular-nums">{formatPaise(Number(list.extra.totalPaise ?? 0))}</p>
-        </div>
-      </div>
-      <Card>
-        <CardContent className="overflow-x-auto p-0">
-          {list.loading ? (
-            <div className="grid place-items-center py-14"><Spinner /></div>
-          ) : list.rows.length === 0 ? (
-            <EmptyState icon={Wallet} title="No expenses in this period" description="Add rent, supplies, salaries and other spending to see your real profit." />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="pl-6">Date</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead className="hidden sm:table-cell">Paid to</TableHead>
-                  <TableHead className="hidden md:table-cell">Method</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="w-12 pr-6" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {list.rows.map((e) => (
-                  <TableRow key={e.id} className={can("finance.expense.edit") ? "cursor-pointer" : ""} onClick={() => can("finance.expense.edit") && setEditing(e)}>
-                    <TableCell className="pl-6 text-muted-foreground">{formatDate(e.paidOn)}</TableCell>
-                    <TableCell className="font-medium">{e.category}{e.notes && <div className="text-xs font-normal text-muted-foreground">{e.notes}</div>}</TableCell>
-                    <TableCell className="hidden sm:table-cell">{e.payee ?? "—"}</TableCell>
-                    <TableCell className="hidden md:table-cell">{PAYMENT_METHODS.find((m) => m.value === e.method)?.label}</TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">{formatPaise(e.amountPaise)}</TableCell>
-                    <TableCell className="pr-6">
-                      {can("finance.expense.delete") && (
-                        <Button variant="ghost" size="icon-sm" aria-label="Delete expense" onClick={(ev) => { ev.stopPropagation(); setDeleting(e) }}><Trash2 /></Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-          <LoadMore hasMore={list.hasMore} loading={list.loadingMore} onClick={list.loadMore} />
-        </CardContent>
-      </Card>
-      {editing && <ExpenseDialog expense={editing === "new" ? undefined : editing} categories={categories} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void list.reload() }} />}
+      <DataList<Expense>
+        id="expenses"
+        path="/expenses"
+        params={{ v: String(version) }}
+        header={{ title: "Expenses", description: "Record what you spend. Ledgers, P&L and GST reports come with the Finance module.", primary: add }}
+        columns={columns}
+        searchPlaceholder="Search payee or notes"
+        filters={[periodFilter(me?.tenant?.fyStartMonth ?? 4), { key: "category", label: "Category", options: categories.map((c) => ({ value: c, label: c })) }]}
+        defaultFilters={{ period: "this_month" }}
+        rowClick={can("finance.expense.edit") ? setEditing : undefined}
+        exportName="expenses"
+        summary={(r) => <span className="text-sm text-muted-foreground">Total <strong className="text-foreground tabular-nums">{formatPaise(Number(r.totalPaise ?? 0))}</strong></span>}
+        emptyState={<EmptyState icon={Wallet} title="No expenses yet" description="Add rent, supplies, salaries and other spending to see your real profit." action={add} />}
+      />
+      {editing && <ExpenseDialog expense={editing === "new" ? undefined : editing} categories={categories} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh() }} />}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
@@ -180,7 +140,7 @@ export default function ExpensesPage() {
           try {
             await api.delete(`/expenses/${deleting!.id}`)
             toast.success("Deleted")
-            await list.reload()
+            refresh()
           } catch (e) {
             toast.error(errorMessage(e))
           }

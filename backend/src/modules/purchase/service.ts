@@ -392,7 +392,7 @@ async function receiveStock(ctx: TenantCtx, doc: Doc, items: Map<string, Item>, 
   return products;
 }
 
-/** Goods back to the supplier: out of the godown and batch they came into, at the cost they came in at */
+/** Goods back to the supplier: out of the warehouse and batch they came into, at the cost they came in at */
 async function returnStock(ctx: TenantCtx, ret: Doc, bill: Doc, items: Map<string, Item>) {
   const rules = await loadRules(ctx);
   const billLines = new Map(bill.lines.map((l) => [l.id, l]));
@@ -418,13 +418,13 @@ async function locationFor(ctx: TenantCtx, id: string | null | undefined, fallba
   const want = id ?? fallback;
   if (want) {
     const loc = await db().stockLocation.findFirst({ where: { id: want, tenantId: ctx.tenantId } });
-    if (!loc) throw new AppError('VALIDATION_FAILED', 'Unknown godown.', { fields: { locationId: 'Unknown godown' } });
-    if (!loc.isActive) throw new AppError('VALIDATION_FAILED', 'This godown is closed.', { fields: { locationId: 'Closed' } });
+    if (!loc) throw new AppError('VALIDATION_FAILED', 'Unknown warehouse.', { fields: { locationId: 'Unknown warehouse' } });
+    if (!loc.isActive) throw new AppError('VALIDATION_FAILED', 'This warehouse is closed.', { fields: { locationId: 'Closed' } });
     return loc.id;
   }
   const found = await db().stockLocation.findFirst({ where: { tenantId: ctx.tenantId, isDefault: true, isActive: true } });
   if (found) return found.id;
-  return (await db().stockLocation.create({ data: { tenantId: ctx.tenantId, name: 'Main godown', isDefault: true } })).id;
+  return (await db().stockLocation.create({ data: { tenantId: ctx.tenantId, name: 'Main warehouse', isDefault: true } })).id;
 }
 
 const FIRST_STATUS: Record<PurchaseKind, string> = { purchase_order: 'open', goods_receipt: 'received', purchase_bill: 'unpaid', purchase_return: 'issued' };
@@ -432,7 +432,7 @@ const FIRST_STATUS: Record<PurchaseKind, string> = { purchase_order: 'open', goo
 export async function createPurchase(ctx: TenantCtx, kind: PurchaseKind, input: PurchaseInput, opts: { draft?: boolean } = {}) {
   const draft = !!opts.draft && (kind === 'purchase_bill' || kind === 'purchase_return');
   const p = await prepare(ctx, kind, input, undefined, draft);
-  // A return's godown is the invoice's, for the list; its stock leaves from where it came in
+  // A return's warehouse is the invoice's, for the list; its stock leaves from where it came in
   const locationId = kind === 'purchase_return' ? (p.source?.locationId ?? null) : await locationFor(ctx, input.locationId, p.source?.locationId);
   const { number, fy } = await allocateNumber(ctx.tenantId, kind, p.tenant.fyStartMonth, p.doc.issueDate);
   if (draft) {
@@ -643,9 +643,9 @@ export async function listPurchases(ctx: TenantCtx, q: z.infer<typeof PurchaseLi
     db().purchaseDocument.findMany({ where, orderBy: { id: 'desc' }, take: q.limit + 1, include: q.kind === 'purchase_return' ? { lines: { orderBy: { position: 'asc' }, select: { description: true, quantity: true, unit: true } } } : undefined, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) }),
     db().purchaseDocument.count({ where }),
   ]);
-  const godownIds = [...new Set(rows.map((d) => d.locationId).filter(Boolean))] as string[];
-  const godowns = new Map(q.kind === 'purchase_return' && godownIds.length ? (await db().stockLocation.findMany({ where: { id: { in: godownIds } }, select: { id: true, name: true } })).map((g) => [g.id, g]) : []);
-  const data = rows.slice(0, q.limit).map((d) => ({ ...d, location: d.locationId ? (godowns.get(d.locationId) ?? null) : null, balancePaise: owes(d) ? d.totalPaise - d.paidPaise - d.returnedPaise : 0n, overdue: d.kind === 'purchase_bill' && !!d.dueDate && d.dueDate < today && (d.status === 'unpaid' || d.status === 'part_paid') }));
+  const warehouseIds = [...new Set(rows.map((d) => d.locationId).filter(Boolean))] as string[];
+  const warehouses = new Map(q.kind === 'purchase_return' && warehouseIds.length ? (await db().stockLocation.findMany({ where: { id: { in: warehouseIds } }, select: { id: true, name: true } })).map((g) => [g.id, g]) : []);
+  const data = rows.slice(0, q.limit).map((d) => ({ ...d, location: d.locationId ? (warehouses.get(d.locationId) ?? null) : null, balancePaise: owes(d) ? d.totalPaise - d.paidPaise - d.returnedPaise : 0n, overdue: d.kind === 'purchase_bill' && !!d.dueDate && d.dueDate < today && (d.status === 'unpaid' || d.status === 'part_paid') }));
   return { data, nextCursor: rows.length > q.limit ? data[data.length - 1].id : null, total };
 }
 

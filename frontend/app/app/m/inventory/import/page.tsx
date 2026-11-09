@@ -47,9 +47,9 @@ function ImportStock() {
   const kind: Kind = params.get("kind") === "count" ? "count" : "opening"
   const { can } = useAuth()
   const locations = useApi<{ data: StockLocation[] }>("/stock-locations")
-  const godowns = (locations.data?.data ?? []).filter((l) => l.isActive)
+  const warehouses = (locations.data?.data ?? []).filter((l) => l.isActive)
   const [locationId, setLocationId] = React.useState("")
-  const at = locationId || godowns.find((g) => g.isDefault)?.id || godowns[0]?.id || ""
+  const at = locationId || warehouses.find((g) => g.isDefault)?.id || warehouses[0]?.id || ""
   const [date, setDate] = React.useState(todayInIndia())
   const [rows, setRows] = React.useState<Row[] | null>(null)
   const [fileError, setFileError] = React.useState<string | null>(null)
@@ -129,10 +129,10 @@ function ImportStock() {
       <Card>
         <CardContent className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-3 sm:items-end">
-            {godowns.length > 1 && (
-              <Field label="Godown">
-                <NativeSelect value={at} onChange={(e) => { setLocationId(e.target.value); setRows(null) }} aria-label="Godown">
-                  {godowns.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            {warehouses.length > 1 && (
+              <Field label="Warehouse">
+                <NativeSelect value={at} onChange={(e) => { setLocationId(e.target.value); setRows(null) }} aria-label="Warehouse">
+                  {warehouses.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                 </NativeSelect>
               </Field>
             )}

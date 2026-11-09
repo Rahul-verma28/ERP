@@ -18,7 +18,7 @@ interface Row { id: string; name: string; unit: string; quantity: number; valueP
 const BANDS: [Band, string][] = [["d0_30", "0–30 days"], ["d31_60", "31–60"], ["d61_90", "61–90"], ["d91_180", "91–180"], ["d180", "Over 180"]]
 const STATUS: Record<Row["status"], [string, string]> = { moving: ["Moving", ""], slow: ["Slow", "border-amber-300 text-amber-700 dark:text-amber-300"], dead: ["Dead", "border-red-300 text-red-700 dark:text-red-300"] }
 
-export default function AgeingPage() {
+export function StockAgeingReport() {
   const { can } = useAuth()
   if (!can("inventory.stock.view")) return <PageHeader title="Stock ageing" description="You don't have access to stock. Ask your admin." />
   const showValue = can("inventory.valuation.view") || can("inventory.receipt.create")
@@ -34,7 +34,7 @@ export default function AgeingPage() {
     <DataList<Row>
       id="stock-ageing"
       path="/stock/ageing"
-      header={{ breadcrumb: "Inventory › Ageing", title: "Stock ageing and dead stock", description: "Age comes from when each part of the stock came in. Slow: no sale in 90 days. Dead: none in 180 days.", actions: <HeaderLink href="/app/m/inventory">Stock</HeaderLink> }}
+      header={{ title: "Stock ageing and dead stock", description: "Age comes from when each part of the stock came in. Slow: no sale in 90 days. Dead: none in 180 days.", actions: <HeaderLink href="/app/m/inventory">Stock</HeaderLink> }}
       columns={columns}
       exportName="stock-ageing"
       emptyState={<EmptyState icon={Hourglass} title="No stock to age" description="Items with stock show here with their age." />}

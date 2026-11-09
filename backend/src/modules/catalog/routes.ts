@@ -4,7 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
-import { GST_RATES_BP } from '../../kernel/gst';
+import { GST_RATES_BP, todayIST } from '../../kernel/gst';
 import { IdParam, ListQuery, Paise, assertRecordLimit, assertVersion, canWriteField, markOnboarding, page, pageArgs, stripHidden } from '../../kernel/query';
 import { validate } from '../../middleware/request';
 import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
@@ -12,7 +12,7 @@ import { validateCustom } from '../config/service';
 import { optionalText, zHsnOrSac } from '../../kernel/zodRules';
 import { consumer } from '../events/outbox';
 import { audit } from '../audit/service';
-import { reservedByItem, stockByItem } from '../inventory/service';
+import { postEntry, reservedByItem, stockByItem, stockByWarehouse } from '../inventory/service';
 import { templateByKey } from '../../contracts/templates';
 
 // Product & Service Catalogue (CAT-01, CAT-02) — master data shared by billing, CRM, bookings.
@@ -35,7 +35,8 @@ const ItemInput = z.object({
   durationMin: z.number().int().min(5).max(24 * 60).optional().nullable(),
   skill: z.string().trim().max(80).optional().nullable(),
   description: z.string().trim().max(2000).optional().nullable(),
-  imageUrl: z.string().url().max(500).optional().nullable().or(z.literal('').transform(() => null)),
+  /** A web link, or a small picture the browser has already shrunk */
+  imageUrl: z.string().url().max(500).or(z.string().regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/, 'Use a PNG, JPG or WebP image').max(150_000, 'This image is too large')).optional().nullable().or(z.literal('').transform(() => null)),
   isActive: z.boolean().optional(),
   /** Inventory: sales and returns move this item's stock */
   trackStock: z.boolean().optional(),
@@ -51,6 +52,11 @@ const ItemInput = z.object({
 });
 
 const ItemPatch = ItemInput.partial().extend({ version: z.number().int() });
+/** Creating an item can bring in the stock already on hand, in the same save */
+const ItemCreate = ItemInput.extend({ opening: z.object({ quantity: z.number().positive('Enter more than 0').max(1e9), locationId: z.string().uuid() }).optional() });
+
+/** A business's first look at the category list is not an empty one */
+const STARTER_CATEGORIES = ['Sports & Fitness', 'Food & Beverages', 'Automotive & Tools', 'Electronics & Technology', 'Jewelry & Accessories', 'Fruits & Vegetables', 'Books & Stationery', 'Home & Garden', 'Health & Beauty', 'Fashion & Apparel'];
 
 /** Second unit both ways or neither; a barcode used once per business */
 async function checkStockFields(tenantId: string, body: { altUnit?: string | null; altFactor?: number | null; barcode?: string | null }, itemId?: string) {
@@ -66,16 +72,19 @@ const ItemList = ListQuery.extend({
   type: z.enum(['product', 'service']).optional(),
   categoryId: z.string().uuid().optional(),
   active: z.enum(['true', 'false', 'all']).default('true'),
+  locationId: z.string().uuid().optional(),
+  withTotal: z.enum(['1']).optional(),
 });
 
 async function serialize(ctx: TenantCtx, rows: Record<string, unknown>[]) {
-  // Tracked items carry how many are in stock, all godowns together
+  // Tracked items carry how many are in stock, all warehouses together
   const stock = await stockByItem(ctx.tenantId, rows.filter((r) => r.trackStock).map((r) => r.id as string));
+  const places = await stockByWarehouse(ctx.tenantId, rows.filter((r) => r.trackStock).map((r) => r.id as string));
   const reserved = rows.some((r) => r.trackStock) ? await reservedByItem(ctx.tenantId) : new Map<string, number>();
   const withStock = rows.map((r) => ({
     ...r,
     altFactor: r.altFactor == null ? null : Number(r.altFactor),
-    ...(r.trackStock ? { stockQty: stock.get(r.id as string) ?? 0, reservedQty: reserved.get(r.id as string) ?? 0, reorderLevel: r.reorderLevel === null ? null : Number(r.reorderLevel) } : {}),
+    ...(r.trackStock ? { warehouses: places.get(r.id as string) ?? [], stockQty: stock.get(r.id as string) ?? 0, reservedQty: reserved.get(r.id as string) ?? 0, reorderLevel: r.reorderLevel === null ? null : Number(r.reorderLevel) } : {}),
   }));
   return stripHidden(ctx, 'item', withStock, HIDDEN);
 }
@@ -88,15 +97,17 @@ async function checkCategory(categoryId?: string | null) {
 
 router.get('/items', requirePermission('catalog.item.view'), validate(ItemList, 'query'), tx(async (req, res) => {
   const q = req.query as unknown as z.infer<typeof ItemList>;
+  const here = q.locationId ? (await db().stockBalance.findMany({ where: { locationId: q.locationId, quantity: { not: 0 } }, select: { itemId: true } })).map((b) => b.itemId) : undefined;
   const where: Prisma.ItemWhereInput = {
+    ...(here ? { id: { in: here } } : {}),
     type: q.type,
     categoryId: q.categoryId,
     isActive: q.active === 'all' ? undefined : q.active === 'true',
     ...(q.q ? { OR: [{ name: { contains: q.q, mode: 'insensitive' } }, { sku: { contains: q.q, mode: 'insensitive' } }, { hsnSac: { startsWith: q.q } }, { barcode: q.q }] } : {}),
   };
-  const rows = await db().item.findMany({ where, ...pageArgs(q) });
+  const [rows, total] = await Promise.all([db().item.findMany({ where, ...pageArgs(q) }), q.withTotal ? db().item.count({ where }) : Promise.resolve(undefined)]);
   const p = page(rows, q.limit);
-  res.json({ ...p, data: await serialize(req.ctx!, p.data) });
+  res.json({ ...p, total, data: await serialize(req.ctx!, p.data) });
 }));
 
 router.get('/items/:id', requirePermission('catalog.item.view'), validate(IdParam, 'params'), tx(async (req, res) => {
@@ -105,9 +116,14 @@ router.get('/items/:id', requirePermission('catalog.item.view'), validate(IdPara
   res.json((await serialize(req.ctx!, [item]))[0]);
 }));
 
-router.post('/items', requirePermission('catalog.item.create'), validate(ItemInput), tx(async (req, res) => {
+const openingAllowed = requirePermission('inventory.receipt.create');
+router.post('/items', requirePermission('catalog.item.create'), validate(ItemCreate), (req, res, next) => ((req.body as { opening?: unknown }).opening ? openingAllowed(req, res, next) : next()), tx(async (req, res) => {
   const ctx = req.ctx!;
-  const body = req.body as z.infer<typeof ItemInput>;
+  const { opening, ...body } = req.body as z.infer<typeof ItemCreate>;
+  if (opening && (body.type === 'service' || (body.tracking ?? 'none') !== 'none')) {
+    throw new AppError('VALIDATION_FAILED', 'Add stock for this item after saving it.', { fields: { opening: 'Not for this item' } });
+  }
+  if (opening) body.trackStock = true;
   await assertRecordLimit(ctx, 'items', () => db().item.count(), 'products and services');
   await checkCategory(body.categoryId);
   await checkStockFields(ctx.tenantId, body);
@@ -118,7 +134,14 @@ router.post('/items', requirePermission('catalog.item.create'), validate(ItemInp
     data: { ...body, tenantId: ctx.tenantId, createdBy: ctx.userId, pricePaise: BigInt(body.pricePaise), costPricePaise: body.costPricePaise != null ? BigInt(body.costPricePaise) : null, custom: custom as Prisma.InputJsonValue },
   });
   await markOnboarding(ctx, 'firstItem');
+  if (opening) await postEntry(ctx, { kind: 'opening', locationId: opening.locationId, date: todayIST(), lines: [{ itemId: item.id, quantity: opening.quantity, ratePaise: Number(item.costPricePaise ?? 0n) }] });
   res.status(201).json((await serialize(ctx, [item]))[0]);
+}));
+
+// Units already used on this business's items, beyond the standard list the form shows
+router.get('/item-units', requirePermission('catalog.item.view'), tx(async (_req, res) => {
+  const rows = await db().item.findMany({ distinct: ['unit'], select: { unit: true }, orderBy: { unit: 'asc' } });
+  res.json({ data: rows.map((r) => r.unit) });
 }));
 
 // Variants: one item per combination of the values given, e.g. Size S, M, L × Colour Red, Blue
@@ -186,7 +209,8 @@ router.patch('/items/:id', requirePermission('catalog.item.edit'), validate(IdPa
 router.delete('/items/:id', requirePermission('catalog.item.delete'), validate(IdParam, 'params'), tx(async (req, res) => {
   const item = await db().item.findUnique({ where: { id: String(req.params.id) } });
   if (!item) throw notFound('Item');
-  const used = await db().salesDocumentLine.count({ where: { itemId: item.id } });
+  const [sold, bought, moved] = await Promise.all([db().salesDocumentLine.count({ where: { itemId: item.id } }), db().purchaseDocumentLine.count({ where: { itemId: item.id } }), db().stockMove.count({ where: { itemId: item.id } })]);
+  const used = sold + bought + moved;
   if (used) await db().item.update({ where: { id: item.id }, data: { isActive: false, version: { increment: 1 } } });
   else await db().item.delete({ where: { id: item.id } });
   await audit({ action: used ? 'catalog.item.archive' : 'catalog.item.delete', entity: 'item', entityId: item.id, before: { name: item.name } });
@@ -195,12 +219,26 @@ router.delete('/items/:id', requirePermission('catalog.item.delete'), validate(I
 
 // ── Categories ──
 
-router.get('/item-categories', requirePermission('catalog.category.view'), tx(async (_req, res) => {
+router.get('/item-categories', requirePermission('catalog.category.view'), tx(async (req, res) => {
+  if (!(await db().itemCategory.count())) {
+    await db().itemCategory.createMany({ data: STARTER_CATEGORIES.map((name) => ({ tenantId: req.ctx!.tenantId, name })), skipDuplicates: true });
+  }
   res.json({ data: await db().itemCategory.findMany({ orderBy: { name: 'asc' } }) });
 }));
 
 router.post('/item-categories', requirePermission('catalog.category.create'), validate(z.object({ name: z.string().trim().min(1).max(80) })), tx(async (req, res) => {
+  if (await db().itemCategory.findFirst({ where: { name: { equals: req.body.name, mode: 'insensitive' } }, select: { id: true } })) {
+    throw new AppError('VALIDATION_FAILED', 'This category already exists.', { fields: { name: 'Already added' } });
+  }
   res.status(201).json(await db().itemCategory.create({ data: { tenantId: req.ctx!.tenantId, name: req.body.name } }));
+}));
+
+router.patch('/item-categories/:id', requirePermission('catalog.category.edit'), validate(IdParam, 'params'), validate(z.object({ name: z.string().trim().min(1).max(80) })), tx(async (req, res) => {
+  const id = String(req.params.id);
+  if (await db().itemCategory.findFirst({ where: { name: { equals: req.body.name, mode: 'insensitive' }, id: { not: id } }, select: { id: true } })) {
+    throw new AppError('VALIDATION_FAILED', 'This category already exists.', { fields: { name: 'Already added' } });
+  }
+  res.json(await db().itemCategory.update({ where: { id }, data: { name: req.body.name } }));
 }));
 
 router.delete('/item-categories/:id', requirePermission('catalog.category.delete'), validate(IdParam, 'params'), tx(async (req, res) => {

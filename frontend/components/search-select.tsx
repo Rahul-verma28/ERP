@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { Popover } from "@base-ui/react/popover"
-import { Check, ChevronDown, Search } from "lucide-react"
+import { Check, ChevronDown, Plus, Search } from "lucide-react"
 import { GST_STATES } from "@contracts/validation"
 import { INDUSTRIES, industryByKey } from "@contracts/workspace"
 import { cn } from "@/lib/utils"
@@ -37,12 +37,15 @@ export interface SearchSelectProps {
   "aria-invalid"?: boolean
   "aria-describedby"?: string
   "aria-required"?: boolean
+  /** Adds a "+ Add ..." row at the foot of the list; gets whatever was typed in search */
+  onCreate?: (typed: string) => void
+  createLabel?: string
 }
 
 const rank = (o: SelectOption) => (!o.value ? 0 : /^other\b/i.test(o.label) ? 2 : 1)
 const sorted = (options: SelectOption[]) => [...options].sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label))
 
-export function SearchSelect({ value, onChange, options, placeholder = "Choose…", searchPlaceholder = "Search…", searchable, sort, onBlur, disabled, className, ...trigger }: SearchSelectProps) {
+export function SearchSelect({ value, onChange, options, placeholder = "Choose…", searchPlaceholder = "Search…", searchable, sort, onBlur, disabled, className, onCreate, createLabel = "Add new", ...trigger }: SearchSelectProps) {
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
   const [active, setActive] = React.useState(0)
@@ -131,8 +134,24 @@ export function SearchSelect({ value, onChange, options, placeholder = "Choose�
                   {o.value === value && <Check className="size-4 shrink-0" aria-hidden />}
                 </button>
               ))}
-              {!shown.length && <p className="px-2.5 py-3 text-center text-muted-foreground">Nothing matches “{query.trim()}”</p>}
+              {!shown.length && <p className="px-2.5 py-3 text-center text-muted-foreground">{query.trim() ? `Nothing matches “${query.trim()}”` : "Nothing here yet"}</p>}
             </div>
+            {onCreate && (
+              <div className="border-t p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const typed = query.trim()
+                    change(false)
+                    onCreate(typed)
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left font-medium text-primary hover:bg-muted"
+                >
+                  <Plus className="size-4 shrink-0" aria-hidden />
+                  {createLabel}
+                </button>
+              </div>
+            )}
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>

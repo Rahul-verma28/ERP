@@ -79,7 +79,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const [query, setQuery] = React.useState("")
   const q = query.trim().toLowerCase()
   const isAdmin = can("tenant.billing.view") || can("tenant.member.view")
-  const allowed = (subs: SubNav[]) => subs.filter((s) => (!s.permission || can(s.permission)) && (!s.needsPurchaseOrders || me?.tenant?.purchaseOrders))
+  const allowed = (subs: SubNav[]) => subs.filter((s) => !s.permission || can(s.permission))
   const purchase = me?.modules?.inventory?.status === "inactive" ? [] : allowed(PURCHASE_NAV.subs)
   const users = allowed(USER_NAV.subs)
   const moduleSubs = (key: ModuleKey) => (me?.modules?.[key]?.status === "inactive" ? [] : allowed(MODULE_SUBS[key] ?? []))

@@ -1730,6 +1730,11 @@ model StockLocation {
   id        String   @id @default(uuid(7)) @db.Uuid
   tenantId  String   @map("tenant_id") @db.Uuid
   name      String
+  address   String?
+  city      String?
+  zipCode   String?  @map("zip_code") @db.VarChar(10)
+  phone     String?  @db.VarChar(20)
+  email     String?
   isDefault Boolean  @default(false) @map("is_default")
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz

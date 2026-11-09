@@ -3,13 +3,13 @@
 import { StateSelect } from "@/components/search-select"
 import * as React from "react"
 import { toast } from "sonner"
-import { Plus } from "lucide-react"
+import { Building2, Plus } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { EmptyState } from "@/components/common"
+import { DataList, localList } from "@/components/data-list"
 import { Field, FormError } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -25,6 +25,7 @@ export default function BranchesPage() {
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
+  const [version, setVersion] = React.useState(0)
   const count = data?.data.length ?? 0
   const limit = me?.limits?.branches ?? 1
 
@@ -39,6 +40,7 @@ export default function BranchesPage() {
       setOpen(false)
       setForm({ name: "", code: "", stateCode: "", gstin: "" })
       await reload()
+      setVersion((v) => v + 1)
     } catch (err) {
       if (err instanceof ApiError) setErrors(err.fields)
       setError(errorMessage(err))
@@ -49,42 +51,20 @@ export default function BranchesPage() {
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {count} of {limit} branch{limit === 1 ? "" : "es"} used on your plan.
-        </p>
-        {can("tenant.branch.create") && (
-          <Button onClick={() => setOpen(true)} disabled={count >= limit}>
-            <Plus /> Add branch
-          </Button>
-        )}
-      </div>
-      <Card>
-        <CardContent className="overflow-x-auto p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="pl-6">Name</TableHead>
-                <TableHead>Code</TableHead>
-                <TableHead>State</TableHead>
-                <TableHead>GSTIN</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data?.data.map((b) => (
-                <TableRow key={b.id}>
-                  <TableCell className="pl-6 font-medium">
-                    {b.name} {b.isDefault && <Badge variant="secondary" className="ml-2">Default</Badge>}
-                  </TableCell>
-                  <TableCell>{b.code}</TableCell>
-                  <TableCell>{GST_STATES.find(([c]) => c === b.stateCode)?.[1] ?? "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">{b.gstin ?? "—"}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+      <DataList<Branch>
+        id="branches"
+        load={localList(async () => (await api.get<{ data: Branch[] }>("/branches")).data, (b, q) => `${b.name} ${b.code} ${b.gstin ?? ""}`.toLowerCase().includes(q))}
+        params={{ v: String(version) }}
+        header={{ title: "Branches", description: `Locations with their own GSTIN, address and invoice series. ${count} of ${limit} used on your plan.`, primary: can("tenant.branch.create") ? <Button onClick={() => setOpen(true)} disabled={count >= limit}><Plus /> Add branch</Button> : undefined }}
+        columns={[
+          { key: "name", header: "Name", hideable: false, sort: (b) => b.name, cell: (b) => <span className="font-medium">{b.name}{b.isDefault && <Badge variant="secondary" className="ml-2">Default</Badge>}</span> },
+          { key: "code", header: "Code", cell: (b) => b.code },
+          { key: "state", header: "State", cell: (b) => GST_STATES.find(([c]) => c === b.stateCode)?.[1] ?? "—" },
+          { key: "gstin", header: "GSTIN", cell: (b) => <span className="font-mono text-xs">{b.gstin ?? "—"}</span> },
+        ]}
+        searchPlaceholder="Search branches"
+        emptyState={<EmptyState icon={Building2} title="No branches yet" />}
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

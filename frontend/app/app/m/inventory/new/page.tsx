@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { MoneyInput, Spinner } from "@/components/common"
+import { WarehouseSelect } from "@/components/creatable-select"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { ItemPicker, type ItemOption } from "@/components/pickers"
 import { parseSerials } from "@/components/stock-line"
@@ -44,10 +45,10 @@ type Line = {
 }
 
 const HINT: Record<Kind, string> = {
-  opening: "What you have on the day you start. Each item gets opening stock once per godown.",
+  opening: "What you have on the day you start. Each item gets opening stock once per warehouse.",
   stock_in: "Goods that came in without a purchase bill, such as from another shop of yours. For supplier goods, use Purchase.",
   adjustment: "Damage, loss, samples, expired stock or stock found. Needs a reason.",
-  transfer: "Move stock from one godown to another. Cost moves with it.",
+  transfer: "Move stock from one warehouse to another. Cost moves with it.",
 }
 
 function BatchPicker({ itemId, locationId, value, onChange, includeExpired }: { itemId: string; locationId: string; value: string; onChange: (v: string) => void; includeExpired: boolean }) {
@@ -66,10 +67,10 @@ function EntryForm() {
   const kind = (["opening", "stock_in", "adjustment", "transfer"].includes(params.get("kind") ?? "") ? params.get("kind") : "stock_in") as Kind
   const { can } = useAuth()
   const locations = useApi<{ data: StockLocation[] }>("/stock-locations")
-  const godowns = (locations.data?.data ?? []).filter((l) => l.isActive)
+  const warehouses = (locations.data?.data ?? []).filter((l) => l.isActive)
   const [locationId, setLocationId] = React.useState("")
   const [toLocationId, setToLocationId] = React.useState("")
-  const from = locationId || godowns.find((g) => g.isDefault)?.id || godowns[0]?.id || ""
+  const from = locationId || warehouses.find((g) => g.isDefault)?.id || warehouses[0]?.id || ""
   const stock = useApi<{ data: StockRow[] }>(from ? `/stock?locationId=${from}` : null)
   const [date, setDate] = React.useState(todayInIndia())
   const [reason, setReason] = React.useState("")
@@ -131,7 +132,7 @@ function EntryForm() {
           ...(l.tracking === "serial" ? { serials: parseSerials(l.serialText) } : {}),
         })),
       })
-      toast.success(entry.status === "in_transit" ? "Sent. Receive it at the other godown when it arrives." : `${ENTRY_LABEL[kind]} saved`)
+      toast.success(entry.status === "in_transit" ? "Sent. Receive it at the other warehouse when it arrives." : `${ENTRY_LABEL[kind]} saved`)
       router.push(`/app/m/inventory/entries/${entry.id}`)
     } catch (err) {
       if (err instanceof ApiError) setErrors(err.fields)
@@ -147,19 +148,12 @@ function EntryForm() {
       <Card>
         <CardContent className="grid gap-5">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {godowns.length > 1 && (
-              <Field label={kind === "transfer" ? "From godown" : "Godown"}>
-                <NativeSelect value={from} onChange={(e) => setLocationId(e.target.value)} aria-label="Godown">
-                  {godowns.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </NativeSelect>
-              </Field>
-            )}
+            <Field label={kind === "transfer" ? "From warehouse" : "Warehouse"}>
+              <WarehouseSelect value={from} onChange={setLocationId} aria-label="Warehouse" />
+            </Field>
             {kind === "transfer" && (
-              <Field label="To godown" required error={errors.toLocationId}>
-                <NativeSelect value={toLocationId} onChange={(e) => setToLocationId(e.target.value)} aria-label="To godown">
-                  <option value="">Choose</option>
-                  {godowns.filter((g) => g.id !== from).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </NativeSelect>
+              <Field label="To warehouse" required error={errors.toLocationId}>
+                <WarehouseSelect value={toLocationId} onChange={setToLocationId} aria-label="To warehouse" aria-invalid={!!errors.toLocationId} />
               </Field>
             )}
             <Field label="Date" error={errors.date}><Input type="date" value={date} max={todayInIndia()} onChange={(e) => setDate(e.target.value)} /></Field>
@@ -193,7 +187,7 @@ function EntryForm() {
           {kind === "transfer" && (
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" className="mt-1" checked={!receiveNow} onChange={(e) => setReceiveNow(!e.target.checked)} />
-              <span><span className="font-medium">Goods are on the way</span><span className="block text-muted-foreground">Stock leaves now and arrives when the other godown receives it.</span></span>
+              <span><span className="font-medium">Goods are on the way</span><span className="block text-muted-foreground">Stock leaves now and arrives when the other warehouse receives it.</span></span>
             </label>
           )}
 

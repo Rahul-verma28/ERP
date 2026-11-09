@@ -9,7 +9,7 @@ import * as reports from './reports';
 const router = Router();
 router.use(tenantAuth);
 
-// Godowns
+// Warehouses
 router.get('/stock-locations', requirePermission('inventory.stock.view'), tx(async (req, res) => {
   res.json(await inventory.listLocations(req.ctx!));
 }));

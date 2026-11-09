@@ -51,7 +51,7 @@ describe('stock entries and cost', () => {
   it('starts from opening stock, averages the cost on stock in, and flags low stock', async () => {
     await rolledBack(async () => {
       const { ctx, fan, main } = await setup();
-      expect(main).toMatchObject({ name: 'Main godown', isDefault: true });
+      expect(main).toMatchObject({ name: 'Main warehouse', isDefault: true });
       await inventory.postEntry(ctx, { kind: 'opening', locationId: main.id, date: today, lines: [{ itemId: fan.id, quantity: 10, ratePaise: 100_000 }] });
       await inventory.postEntry(ctx, { kind: 'stock_in', locationId: main.id, date: today, party: 'Havells dealer', lines: [{ itemId: fan.id, quantity: 10, ratePaise: 120_000 }] });
       let row = (await inventory.stockSummary(ctx, {})).data[0];

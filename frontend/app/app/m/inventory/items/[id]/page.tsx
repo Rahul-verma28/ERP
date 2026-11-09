@@ -50,7 +50,7 @@ export default function ItemStockPage({ params }: { params: Promise<{ id: string
 
       {data.byLocation.length > 1 && (
         <Card className="mt-6">
-          <CardHeader><CardTitle className="text-base">By godown</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">By warehouse</CardTitle></CardHeader>
           <CardContent>
             <ul className="grid gap-1 text-sm">
               {data.byLocation.map((b) => <li key={b.locationId} className="flex justify-between"><span>{b.location}</span><span className="tabular-nums">{qty(b.quantity)} {u}</span></li>)}
@@ -70,7 +70,7 @@ export default function ItemStockPage({ params }: { params: Promise<{ id: string
                 <tr className="border-b text-left text-xs text-muted-foreground">
                   <th className="py-2 pr-3 font-medium">Date</th>
                   <th className="py-2 pr-3 font-medium">What</th>
-                  <th className="py-2 pr-3 font-medium">Godown</th>
+                  <th className="py-2 pr-3 font-medium">Warehouse</th>
                   <th className="py-2 pr-3 text-right font-medium">In</th>
                   <th className="py-2 pr-3 text-right font-medium">Out</th>
                   {showValue && <th className="py-2 pr-3 text-right font-medium">Rate</th>}
