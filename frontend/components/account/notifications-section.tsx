@@ -28,7 +28,7 @@ export function NotificationsSection({ data, reload }: { data: AccountOverview; 
   }
 
   return (
-        <section className="rounded-xl border bg-card px-[18px] py-3.5">
+        <section className="ui-surface px-[18px] py-3.5">
           <h2 className="text-[15px] font-bold">Notifications</h2>
           <p className="mb-2 text-[13px] text-muted-foreground">Alerts sent to you. Your business decides which alerts exist; you can mute the ones you don&apos;t need.</p>
           <table className="w-full text-[13px]">

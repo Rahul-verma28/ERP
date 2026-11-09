@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/common"
 import { DataList, type Column } from "@/components/data-list"
 import { PageHeader } from "@/components/app-shell"
-import { PurchaseNav } from "@/components/purchase-list"
 import { SupplierDialog } from "@/components/supplier-dialog"
 import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
@@ -36,7 +35,6 @@ export default function SuppliersPage() {
         header={{
           breadcrumb: "Purchase › Suppliers",
           title: "Suppliers",
-          actions: <PurchaseNav />,
           primary: can("inventory.supplier.create") ? <Button onClick={() => setAdding(true)}>New supplier</Button> : undefined,
         }}
         columns={columns}

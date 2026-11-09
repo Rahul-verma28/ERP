@@ -56,20 +56,22 @@ function GodownDialog({ godown, onClose, onSaved }: { godown: StockLocation | nu
 
 function StockRules() {
   const { can } = useAuth()
-  const ws = useApi<{ preferences: { inventory: { blockNegative: boolean; adjustmentApprovalPaise: number; backdateDays: number; valuation: "average" | "fifo"; nearExpiryDays: number } } }>(can("tenant.settings.view") ? "/tenant/workspace" : null)
-  const [form, setForm] = React.useState<{ blockNegative: boolean; adjustmentApprovalPaise: number | null; backdateDays: string; valuation: "average" | "fifo"; nearExpiryDays: string } | null>(null)
+  const ws = useApi<{ preferences: { inventory: { blockNegative: boolean; adjustmentApprovalPaise: number; backdateDays: number; valuation: "average" | "fifo"; nearExpiryDays: number; purchaseOrders: boolean } } }>(can("tenant.settings.view") ? "/tenant/workspace" : null)
+  const [form, setForm] = React.useState<{ blockNegative: boolean; adjustmentApprovalPaise: number | null; backdateDays: string; valuation: "average" | "fifo"; nearExpiryDays: string; purchaseOrders: boolean } | null>(null)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [busy, setBusy] = React.useState(false)
   const current = ws.data?.preferences.inventory
-  const v = form ?? (current ? { blockNegative: current.blockNegative, adjustmentApprovalPaise: current.adjustmentApprovalPaise, backdateDays: String(current.backdateDays), valuation: current.valuation, nearExpiryDays: String(current.nearExpiryDays) } : null)
+  const v = form ?? (current ? { blockNegative: current.blockNegative, adjustmentApprovalPaise: current.adjustmentApprovalPaise, backdateDays: String(current.backdateDays), valuation: current.valuation, nearExpiryDays: String(current.nearExpiryDays), purchaseOrders: current.purchaseOrders } : null)
   if (!can("tenant.settings.view") || !v) return null
   const editable = can("tenant.settings.edit")
   async function save() {
     setBusy(true)
     setErrors({})
     try {
-      await api.put("/tenant/preferences/inventory", { blockNegative: v!.blockNegative, adjustmentApprovalPaise: v!.adjustmentApprovalPaise ?? 0, backdateDays: Number(v!.backdateDays || 0), valuation: v!.valuation, nearExpiryDays: Number(v!.nearExpiryDays || 30) })
+      await api.put("/tenant/preferences/inventory", { blockNegative: v!.blockNegative, adjustmentApprovalPaise: v!.adjustmentApprovalPaise ?? 0, backdateDays: Number(v!.backdateDays || 0), valuation: v!.valuation, nearExpiryDays: Number(v!.nearExpiryDays || 30), purchaseOrders: v!.purchaseOrders })
       toast.success("Stock rules saved")
+      // The menu is built from the signed-in details, so a changed switch needs a fresh load
+      if (v!.purchaseOrders !== current?.purchaseOrders) return window.location.reload()
       setForm(null)
       await ws.reload()
     } catch (err) {
@@ -86,6 +88,10 @@ function StockRules() {
         <label className="flex items-start gap-3 text-sm">
           <input type="checkbox" className="mt-1" checked={v.blockNegative} disabled={!editable} onChange={(e) => setForm({ ...v, blockNegative: e.target.checked })} />
           <span><span className="font-medium">Stop sales when stock runs out</span><span className="block text-muted-foreground">Off: the bill goes through and stock shows below zero until you add stock.</span></span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input type="checkbox" className="mt-1" checked={v.purchaseOrders} disabled={!editable} onChange={(e) => setForm({ ...v, purchaseOrders: e.target.checked })} />
+          <span><span className="font-medium">Use Purchase Orders and Goods Receipts</span><span className="block text-muted-foreground">Off: purchases start straight at the invoice. On: order first, receive the goods, then enter the invoice.</span></span>
         </label>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Adjustments that need a stock manager" hint="Adjustments and counts worth more than this" error={errors.adjustmentApprovalPaise}>

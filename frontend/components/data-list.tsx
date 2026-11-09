@@ -215,7 +215,7 @@ export function DataList<T extends { id: string }>({
   const { me } = useAuth()
   const counts = useApi<Record<string, number>>(countsPath ?? null)
   const storeKey = me ? `ahead:list:${id}:${me.user.id}` : null
-  const [prefs, setPrefs] = useStored<{ hidden: string[]; dense: boolean; pageSize: number }>(storeKey && `${storeKey}:prefs`, {
+  const [prefs, setPrefs] = useStored<{ hidden: string[]; dense: boolean; pageSize: number; view?: "table" | "cards" }>(storeKey && `${storeKey}:prefs`, {
     hidden: columns.filter((c) => c.defaultHidden).map((c) => c.key),
     dense: false,
     pageSize: 25,
@@ -380,15 +380,16 @@ export function DataList<T extends { id: string }>({
     if (v.preset) setPreset(v.preset)
     setActiveView(v.id)
   }
-  const tabClass = (on: boolean) => cn("shrink-0 border-b-2 border-transparent px-1 py-2 text-sm font-semibold text-muted-foreground transition-colors hover:text-foreground", on && "border-primary text-foreground")
+  const tabClass = (on: boolean) => cn("shrink-0 rounded-[11px] px-3.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground", on && "bg-primary text-primary-foreground hover:text-primary-foreground")
+  const cardsView = prefs.view === "cards"
 
   return (
-    <div className="grid gap-3.5">
+    <div className="grid gap-4">
       {/* Header: title left, Import · Export · New right */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           {header.breadcrumb && <p className="text-xs text-muted-foreground">{header.breadcrumb}</p>}
-          <h1 className="text-[22px] font-bold tracking-tight">{header.title}</h1>
+          <h1 className="text-[26px] leading-tight font-bold tracking-tight">{header.title}</h1>
           {header.description && <p className="mt-0.5 text-sm text-muted-foreground">{header.description}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -404,7 +405,7 @@ export function DataList<T extends { id: string }>({
 
       {/* Preset tabs with counts, saved views, + Save view */}
       {(presets.length > 0 || views.length > 0) && (
-        <div className="flex gap-5 overflow-x-auto border-b" role="tablist" aria-label="Views">
+        <div className="ui-surface flex w-fit max-w-full gap-1 overflow-x-auto rounded-2xl p-1" role="tablist" aria-label="Views">
           {presets.map((p) => {
             const n = p.countKey && counts.data ? (counts.data[p.countKey] ?? 0) : undefined
             return (
@@ -439,7 +440,8 @@ export function DataList<T extends { id: string }>({
         </div>
       )}
 
-      {/* Search · chips · + Filter · Clear all ………… Columns · Density */}
+      <div className="ui-surface ui-rise grid min-w-0 gap-3.5 p-4">
+      {/* Search · chips · + Filter · Clear all ………… Table or cards · Columns · Density */}
       <div className="flex flex-wrap items-center gap-2">
         <SearchInput value={search} onChange={setSearch} placeholder={searchPlaceholder} className="w-full sm:w-80" />
         {Object.entries(filterValues).map(([k, v]) => {
@@ -496,7 +498,14 @@ export function DataList<T extends { id: string }>({
             Clear all
           </button>
         )}
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap gap-2">
+          <div className="hidden rounded-xl bg-muted p-0.5 md:flex" role="radiogroup" aria-label="Show as">
+            {(["table", "cards"] as const).map((v) => (
+              <button key={v} type="button" role="radio" aria-checked={(prefs.view ?? "table") === v} onClick={() => setPrefs({ ...prefs, view: v })} className={cn("rounded-[10px] px-3 py-1 text-[13px] font-medium capitalize text-muted-foreground transition-colors", (prefs.view ?? "table") === v && "bg-card text-foreground")}>
+                {v}
+              </button>
+            ))}
+          </div>
           <DropdownMenu>
             <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>
               <Columns3 /> Columns
@@ -559,7 +568,7 @@ export function DataList<T extends { id: string }>({
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border bg-card">
+      <div className="min-w-0 overflow-hidden">
         {loading && state.key === null ? (
           <TableSkeleton columns={Math.min(visibleColumns.length, 6)} />
         ) : state.error ? (
@@ -568,9 +577,9 @@ export function DataList<T extends { id: string }>({
           hasFilters ? <NoResults filters={filterLabels} onClear={clearAll} /> : emptyState
         ) : (
           <div className={cn("transition-opacity", loading && "pointer-events-none opacity-60")}>
-            <div className="hidden overflow-x-auto md:block">
+            <div className={cn("overflow-x-auto", cardsView ? "hidden" : "hidden md:block")}>
               <Table>
-                <TableHeader className="bg-background">
+                <TableHeader>
                   <TableRow className="hover:bg-transparent">
                     <TableHead className="w-10 pl-4">
                       <Checkbox checked={pageAllSelected} onCheckedChange={(on) => togglePage(!!on)} aria-label="Select all rows on this page" />
@@ -616,16 +625,16 @@ export function DataList<T extends { id: string }>({
                 </TableBody>
               </Table>
             </div>
-            {/* Cards on phones */}
-            <ul className="divide-y md:hidden">
+            {/* Cards: chosen on any screen, always on phones */}
+            <ul className={cn("grid gap-3 p-px sm:grid-cols-2", cardsView ? "lg:grid-cols-3 xl:grid-cols-4" : "md:hidden")}>
               {rows.map((r) => (
-                <li key={r.id} className="flex gap-3 p-4">
+                <li key={r.id} className="ui-rise ui-lift flex gap-3 rounded-2xl p-4 shadow-[var(--shadow-card)]">
                   <Checkbox checked={selected.has(r.id)} onCheckedChange={(on) => toggleRow(r, !!on)} aria-label="Select row" className="mt-1" />
-                  <button className="grid min-w-0 flex-1 gap-1 text-left" onClick={(e) => open(r, e)}>
+                  <button className="grid min-w-0 flex-1 grid-cols-1 gap-1 text-left" onClick={(e) => open(r, e)}>
                     <span className="font-medium">{visibleColumns[0]?.cell(r)}</span>
                     {visibleColumns.slice(1).map((c) => (
                       <span key={c.key} className="flex justify-between gap-3 text-sm">
-                        <span className="text-muted-foreground">{c.header}</span>
+                        <span className="shrink-0 text-muted-foreground">{c.header}</span>
                         <span className="min-w-0 truncate text-right">{c.cell(r)}</span>
                       </span>
                     ))}
@@ -658,6 +667,7 @@ export function DataList<T extends { id: string }>({
           </div>
         </div>
       )}
+      </div>
 
       <SaveViewDialog
         key={saveOpen ? "open" : "closed"}
@@ -679,7 +689,7 @@ export function DataList<T extends { id: string }>({
 /** Link-styled header action (Import, New …) that keeps the button look. */
 export function HeaderLink({ href, children, primary }: { href: string; children: React.ReactNode; primary?: boolean }) {
   return (
-    <Link href={href} className={cn("inline-flex h-10 items-center gap-1.5 rounded-lg border px-4 text-sm font-semibold [&_svg]:size-4", primary ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90" : "border-input bg-card hover:bg-muted")}>
+    <Link href={href} className={cn("inline-flex h-10 items-center gap-1.5 rounded-xl border px-4 text-sm font-semibold [&_svg]:size-4", primary ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90" : "border-transparent bg-card shadow-[var(--shadow-card)] hover:bg-muted")}>
       {children}
     </Link>
   )

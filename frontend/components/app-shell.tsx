@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Bell, Check, ChevronsUpDown, CreditCard, Lock, LogOut, Menu, Settings, ShieldCheck, ShoppingCart, UserRound, X } from "lucide-react"
+import { Bell, Check, ChevronDown, ChevronsUpDown, CreditCard, Lock, LogOut, Menu, Search, Settings, ShieldCheck, UserRound, X, type LucideIcon } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { DASHBOARD_NAV, MODULE_NAV } from "@/lib/nav"
+import { DASHBOARD_NAV, MODULE_NAV, MODULE_SUBS, NAV_SECTIONS, PURCHASE_NAV, USER_NAV, type NavEntry, type SubNav } from "@/lib/nav"
 import { ReadOnlyBanner } from "@/components/page-states"
 import { CommandPalette } from "@/components/command-palette"
 import { SidePanel } from "@/components/side-panel"
@@ -36,8 +36,8 @@ export function NavLink({ href, active, children, onClick }: { href: string; act
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center gap-2.5 rounded-2xl px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
-        active && "bg-sidebar-accent font-medium text-sidebar-foreground"
+        "flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
+        active && "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
       )}
     >
       {children}
@@ -45,63 +45,120 @@ export function NavLink({ href, active, children, onClick }: { href: string; act
   )
 }
 
+/** A module with sub-modules: opens in place, and shows where you are */
+function NavGroup({ id, label, icon: Icon, subs, open, onToggle, activeHref, onNavigate }: { id: string; label: string; icon: LucideIcon; subs: SubNav[]; open: boolean; onToggle: (id: string) => void; activeHref: string | null; onNavigate?: () => void }) {
+  const inside = subs.some((s) => s.href === activeHref)
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => onToggle(id)}
+        aria-expanded={open}
+        className={cn("flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-left text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground", inside && "bg-sidebar-accent font-medium text-sidebar-accent-foreground")}
+      >
+        <Icon className="size-4" />
+        <span className="flex-1 truncate">{label}</span>
+        <ChevronDown className={cn("size-4 transition-transform duration-200", open && "rotate-180")} />
+      </button>
+      {open && (
+        <div className="ui-rise grid gap-px py-1 pl-8">
+          {subs.map((s) => (
+            <Link key={s.href} href={s.href} onClick={onNavigate} aria-current={s.href === activeHref ? "page" : undefined} className={cn("rounded-lg px-2.5 py-1.5 text-[13.5px] text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground", s.href === activeHref && "bg-sidebar-accent font-semibold text-sidebar-accent-foreground")}>
+              {s.label}
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const { me, canView, can, term } = useAuth()
-  // Owner's picks at signup first, then the industry template's order
-  const recommended = [...new Set([...(me?.tenant?.preferredModules ?? []), ...(me?.tenant?.onboarding?.recommendedModules ?? [])])]
-  const ordered = [...MODULE_NAV].sort((a, b) => {
-    const ia = recommended.indexOf(a.key)
-    const ib = recommended.indexOf(b.key)
-    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
-  })
+  const [query, setQuery] = React.useState("")
+  const q = query.trim().toLowerCase()
   const isAdmin = can("tenant.billing.view") || can("tenant.member.view")
+  const allowed = (subs: SubNav[]) => subs.filter((s) => (!s.permission || can(s.permission)) && (!s.needsPurchaseOrders || me?.tenant?.purchaseOrders))
+  const purchase = me?.modules?.inventory?.status === "inactive" ? [] : allowed(PURCHASE_NAV.subs)
+  const users = allowed(USER_NAV.subs)
+  const moduleSubs = (key: ModuleKey) => (me?.modules?.[key]?.status === "inactive" ? [] : allowed(MODULE_SUBS[key] ?? []))
+
+  // The group holding this page is open until someone toggles another one
+  const groups: [string, SubNav[]][] = [["users", users], ["purchase", purchase], ...MODULE_NAV.map((m) => [m.key, moduleSubs(m.key)] as [string, SubNav[]])]
+  const matches = groups.flatMap(([id, subs]) => subs.filter((s) => pathname === s.href || pathname.startsWith(`${s.href}/`)).map((s) => ({ id, href: s.href })))
+  const current = matches.sort((a, b) => b.href.length - a.href.length)[0] ?? null
+  const [toggled, setToggled] = React.useState<{ page: string | null; id: string | null } | null>(null)
+  const page = current?.id ?? null
+  const openId = toggled && toggled.page === page ? toggled.id : page
+  const toggle = (id: string) => setToggled({ page, id: openId === id ? null : id })
+  /** Searching opens every matching module and keeps only the pages that match */
+  const matchGroup = (label: string, subs: SubNav[]) => (!q || label.toLowerCase().includes(q) ? subs : subs.filter((s) => s.label.toLowerCase().includes(q)))
+  const hit = (label: string) => !q || label.toLowerCase().includes(q)
+  const group = (id: string, label: string, icon: LucideIcon, subs: SubNav[]) => {
+    const shown = matchGroup(label, subs)
+    if (!shown.length) return null
+    return <NavGroup key={id} id={id} label={label} icon={icon} subs={shown} open={!!q || openId === id} onToggle={toggle} activeHref={current?.href ?? null} onNavigate={onNavigate} />
+  }
+
+  const entry = (e: NavEntry): React.ReactNode => {
+    if (e === "dashboard")
+      return hit(DASHBOARD_NAV.label) ? (
+        <NavLink key={e} href="/app" active={pathname === "/app"} onClick={onNavigate}>
+          <DASHBOARD_NAV.icon className="size-4" /> {DASHBOARD_NAV.label}
+        </NavLink>
+      ) : null
+    if (e === "purchase") return group("purchase", PURCHASE_NAV.label, PURCHASE_NAV.icon, purchase)
+    if (e === "users") return group("users", USER_NAV.label, USER_NAV.icon, users)
+    if (e === "plan")
+      return can("tenant.billing.view") && hit("Plan & billing") ? (
+        <NavLink key={e} href="/app/billing" active={pathname.startsWith("/app/billing")} onClick={onNavigate}>
+          <CreditCard className="size-4" /> Plan & billing
+        </NavLink>
+      ) : null
+    if (e === "settings")
+      return can("tenant.settings.view") && hit("Settings") ? (
+        <NavLink key={e} href="/app/settings" active={pathname === "/app/settings" || (pathname.startsWith("/app/settings") && !users.some((u) => pathname.startsWith(u.href)))} onClick={onNavigate}>
+          <Settings className="size-4" /> Settings
+        </NavLink>
+      ) : null
+    const m = MODULE_NAV.find((x) => x.key === e)
+    if (!m) return null
+    const ent = me?.modules?.[m.key]
+    // Locked modules are shown to admins as an upgrade prompt; hidden for everyone else
+    if (!canView(m.key) && !(isAdmin && ent?.status === "inactive")) return null
+    const label = m.termKey ? term(m.termKey, m.label) : m.label
+    const subs = moduleSubs(m.key)
+    if (subs.length > 0) return group(m.key, label, m.icon, subs)
+    if (!hit(label)) return null
+    return (
+      <NavLink key={m.key} href={`/app/m/${m.key}`} active={pathname.startsWith(`/app/m/${m.key}`)} onClick={onNavigate}>
+        <m.icon className="size-4" />
+        <span className="flex-1 truncate">{label}</span>
+        {ent?.status === "inactive" && <Lock className="size-3.5 text-muted-foreground" aria-label="Not in your plan" />}
+        {ent?.status === "read_only" && <Badge variant="outline" className="h-5 px-1.5 text-[10px]">Read-only</Badge>}
+      </NavLink>
+    )
+  }
+
+  const sections = NAV_SECTIONS.map((s) => ({ label: s.label, items: s.entries.map(entry).filter(Boolean) })).filter((s) => s.items.length > 0)
 
   return (
-    <nav className="flex h-full flex-col gap-1 overflow-y-auto p-3" aria-label="Main">
-      <NavLink href="/app" active={pathname === "/app"} onClick={onNavigate}>
-        <DASHBOARD_NAV.icon className="size-4" /> {DASHBOARD_NAV.label}
-      </NavLink>
-      <p className="mt-4 mb-1 px-3 text-xs font-medium text-muted-foreground">Modules</p>
-      {ordered.map((m) => {
-        const ent = me?.modules?.[m.key]
-        const visible = canView(m.key)
-        // Locked modules are shown to admins as an upgrade prompt; hidden for everyone else
-        if (!visible && !(isAdmin && ent?.status === "inactive")) return null
-        const label = m.termKey ? term(m.termKey, m.label) : m.label
-        const link = (
-          <NavLink key={m.key} href={`/app/m/${m.key}`} active={pathname.startsWith(`/app/m/${m.key}`)} onClick={onNavigate}>
-            <m.icon className="size-4" />
-            <span className="flex-1 truncate">{label}</span>
-            {ent?.status === "inactive" && <Lock className="size-3.5 text-muted-foreground" aria-label="Not in your plan" />}
-            {ent?.status === "read_only" && <Badge variant="outline" className="h-5 px-1.5 text-[10px]">Read-only</Badge>}
-          </NavLink>
-        )
-        if (m.key !== "inventory" || ent?.status === "inactive" || !(can("inventory.supplier_bill.view") || can("inventory.purchase_order.view") || can("inventory.receipt.view"))) return link
-        // Purchase is part of Inventory but has its own place in the menu
-        return (
-          <React.Fragment key={m.key}>
-            {link}
-            <NavLink href={can("inventory.supplier_bill.view") ? "/app/m/purchase" : can("inventory.purchase_order.view") ? "/app/m/purchase/orders" : "/app/m/purchase/grn"} active={pathname.startsWith("/app/m/purchase")} onClick={onNavigate}>
-              <ShoppingCart className="size-4" />
-              <span className="flex-1 truncate">Purchase</span>
-            </NavLink>
-          </React.Fragment>
-        )
-      })}
-      <div className="mt-auto grid gap-1 pt-4">
-        {can("tenant.billing.view") && (
-          <NavLink href="/app/billing" active={pathname.startsWith("/app/billing")} onClick={onNavigate}>
-            <CreditCard className="size-4" /> Plan & billing
-          </NavLink>
-        )}
-        {can("tenant.settings.view") && (
-          <NavLink href="/app/settings" active={pathname.startsWith("/app/settings")} onClick={onNavigate}>
-            <Settings className="size-4" /> Settings
-          </NavLink>
-        )}
+    <>
+      <div className="relative px-3 pt-2">
+        <Search className="pointer-events-none absolute top-1/2 left-6 mt-1 size-4 -translate-y-1/2 text-muted-foreground" />
+        <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search menu…" aria-label="Search menu" className="h-9 w-full rounded-xl border border-sidebar-border bg-transparent pr-3 pl-9 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring" />
       </div>
-    </nav>
+      <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto p-3 pt-1" aria-label="Main">
+        {sections.map((s) => (
+          <div key={s.label} className="grid gap-0.5 pt-3">
+            <p className="px-3 pb-1 text-[11px] font-semibold tracking-[.06em] text-sidebar-foreground/55 uppercase">{s.label}</p>
+            {s.items}
+          </div>
+        ))}
+        {!sections.length && <p className="px-3 py-6 text-center text-sm text-muted-foreground">Nothing matches.</p>}
+      </nav>
+    </>
   )
 }
 
@@ -363,11 +420,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-svh flex-col">
       <Banners />
       <div className="flex flex-1">
-        <aside className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col border-r bg-sidebar lg:flex">
-          <div className="border-b p-3">
-            <WorkspaceSwitcher />
+        <aside className="sticky top-0 hidden h-svh w-[272px] shrink-0 border-r border-sidebar-border bg-sidebar lg:block">
+          <div className="flex h-full flex-col overflow-hidden">
+            <div className="p-3 pb-1">
+              <WorkspaceSwitcher />
+            </div>
+            <Sidebar />
           </div>
-          <Sidebar />
         </aside>
 
         {mobileOpen && (
@@ -386,7 +445,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/90 px-4 backdrop-blur">
+          <header className="sticky top-0 z-30 flex h-16 items-center gap-2 border-b bg-card px-4">
             <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation">
               <Menu className="size-4" />
             </Button>
@@ -396,7 +455,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Notifications />
             <UserMenu />
           </header>
-          <main className={cn("w-full flex-1", fullBleed ? "flex min-w-0 flex-col" : "mx-auto max-w-6xl px-4 py-6 sm:px-6")}>
+          <main className={cn("w-full flex-1", fullBleed ? "flex min-w-0 flex-col" : "px-4 py-5 sm:px-6")}>
             <ReadOnlyNotice />
             {children}
           </main>
@@ -408,9 +467,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 export function PageHeader({ title, description, actions }: { title: React.ReactNode; description?: string; actions?: React.ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div className="min-w-0">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="text-[26px] leading-tight font-bold tracking-tight">{title}</h1>
         {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}

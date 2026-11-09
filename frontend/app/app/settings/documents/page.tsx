@@ -78,7 +78,7 @@ function SeriesCard({ fy, rows, onSaved }: { fy: string; rows: Series[]; onSaved
   const { can } = useAuth()
   const [editing, setEditing] = React.useState<Series["docType"] | null>(null)
   return (
-    <section id="series" className="rounded-xl border bg-card px-[18px] py-3.5">
+    <section id="series" className="ui-surface px-[18px] py-3.5">
       <div className="mb-1.5 flex items-center justify-between gap-3">
         <h2 className="text-[15px] font-bold">Number series · FY {fy}</h2>
         <span className="text-xs text-muted-foreground">Resets every financial year</span>
@@ -254,7 +254,7 @@ function TemplateCard({ tenant, workspace, refresh }: { tenant: SetupTenant; wor
   const brand = me?.tenant?.branding.brandColor ?? "#2450D8"
   const editable = can("tenant.settings.edit")
   return (
-    <section id="template" className="flex flex-col gap-2.5 rounded-xl border bg-card px-[18px] py-3.5">
+    <section id="template" className="flex flex-col gap-2.5 ui-surface px-[18px] py-3.5">
       <h2 className="text-[15px] font-bold">Template</h2>
       <div className="grid grid-cols-3 gap-2.5" role="radiogroup" aria-label="Invoice template">
         {DOC_TEMPLATES.map((t) => {
@@ -333,7 +333,7 @@ function PrintCard({ workspace, refresh }: { workspace: Workspace; refresh: () =
 
   const row = "flex items-center justify-between gap-3"
   return (
-    <section id="print" className="flex flex-col gap-2.5 rounded-xl border bg-card px-[18px] py-3.5 text-[13px]">
+    <section id="print" className="flex flex-col gap-2.5 ui-surface px-[18px] py-3.5 text-[13px]">
       <h2 className="text-[15px] font-bold">Print</h2>
       <div className="flex gap-1.5" role="radiogroup" aria-label="Paper size">
         {(

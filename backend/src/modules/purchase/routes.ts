@@ -79,9 +79,26 @@ const byKind = (action: 'view' | 'create' | 'cancel', from: 'query' | 'body' | '
 router.get('/purchases', validate(purchase.PurchaseList, 'query'), byKind('view', 'query'), tx(async (req, res) => {
   res.json(await purchase.listPurchases(req.ctx!, req.query as unknown as z.infer<typeof purchase.PurchaseList>));
 }));
-router.post('/purchases', validate(purchase.PurchaseInput.extend(KIND.shape)), byKind('create', 'body'), tx(async (req, res) => {
-  const { kind, ...input } = req.body as purchase.PurchaseInput & { kind: purchase.PurchaseKind };
-  res.status(201).json(await purchase.createPurchase(req.ctx!, kind, purchase.PurchaseInput.parse(input)));
+router.post('/purchases', validate(purchase.PurchaseInput.extend({ ...KIND.shape, draft: z.boolean().optional() })), byKind('create', 'body'), tx(async (req, res) => {
+  const { kind, draft, ...input } = req.body as purchase.PurchaseInput & { kind: purchase.PurchaseKind; draft?: boolean };
+  res.status(201).json(await purchase.createPurchase(req.ctx!, kind, purchase.PurchaseInput.parse(input), { draft }));
+}));
+router.put('/purchases/:id/draft', requirePermission('inventory.supplier_bill.create'), validate(IdParam, 'params'), validate(purchase.PurchaseInput.extend({ version: z.number().int(), post: z.boolean().optional() })), tx(async (req, res) => {
+  const { version, post, ...input } = req.body as purchase.PurchaseInput & { version: number; post?: boolean };
+  res.json(await purchase.updateBillDraft(req.ctx!, String(req.params.id), input, version, post));
+}));
+router.post('/purchases/:id/post', requirePermission('inventory.supplier_bill.create'), validate(IdParam, 'params'), validate(z.object({ version: z.number().int() })), tx(async (req, res) => {
+  res.json(await purchase.postBill(req.ctx!, String(req.params.id), req.body.version));
+}));
+router.post('/purchases/:id/approve', requirePermission('inventory.supplier_bill.approve'), validate(IdParam, 'params'), validate(z.object({ version: z.number().int() })), tx(async (req, res) => {
+  res.json(await purchase.approveReturn(req.ctx!, String(req.params.id), req.body.version));
+}));
+router.post('/purchases/:id/complete', requirePermission('inventory.supplier_bill.create'), validate(IdParam, 'params'), validate(z.object({ version: z.number().int() })), tx(async (req, res) => {
+  res.json(await purchase.completeReturn(req.ctx!, String(req.params.id), req.body.version));
+}));
+router.delete('/purchases/:id', requirePermission('inventory.supplier_bill.create'), validate(IdParam, 'params'), tx(async (req, res) => {
+  await purchase.deleteBillDraft(req.ctx!, String(req.params.id));
+  res.status(204).end();
 }));
 router.get('/purchases/:id', validate(IdParam, 'params'), byKind('view', 'doc'), tx(async (req, res) => {
   res.json(await purchase.purchaseView(req.ctx!, String(req.params.id)));

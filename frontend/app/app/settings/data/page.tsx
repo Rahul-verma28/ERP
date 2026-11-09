@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils"
 // Settings › Data (wireframe X6): import centre and history, export, sample data, backups,
 // and closing the business (Owner only, name + code, reopen within 30 days).
 
-const card = "flex flex-col gap-2.5 rounded-xl border bg-card px-[18px] py-3.5"
+const card = "flex flex-col gap-2.5 ui-surface px-[18px] py-3.5"
 const chip = "h-[30px] rounded-lg border px-2.5 text-xs font-semibold"
 const chipOn = "border-primary bg-accent text-accent-foreground"
 

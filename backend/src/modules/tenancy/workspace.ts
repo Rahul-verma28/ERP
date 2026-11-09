@@ -180,6 +180,7 @@ export const PREFERENCE_SCHEMAS = {
     backdateDays: z.number().int().min(0, 'Enter 0 to 31').max(31, 'Enter 0 to 31'),
     valuation: z.enum(['average', 'fifo']),
     nearExpiryDays: z.number().int().min(1, 'Enter 1 to 365').max(365, 'Enter 1 to 365'),
+    purchaseOrders: z.boolean(),
   }),
   branding: z.object({
     brandColor: z.string().superRefine((v, c) => {

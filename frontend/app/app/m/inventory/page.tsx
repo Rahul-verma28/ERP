@@ -74,8 +74,6 @@ function StockList() {
       <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
         <label className="flex items-center gap-2 text-muted-foreground">As on <Input type="date" value={date} max={todayInIndia()} onChange={(e) => setDate(e.target.value)} className="h-9 w-40" aria-label="Stock as on date" /></label>
         {date && <button className="text-xs text-primary hover:underline" onClick={() => setDate("")}>Today</button>}
-        <Link href="/app/m/inventory/expiry" className="text-primary hover:underline">Near expiry</Link>
-        <Link href="/app/m/inventory/ageing" className="text-primary hover:underline">Ageing and dead stock</Link>
         {can("inventory.receipt.create") && <Link href="/app/m/inventory/import?kind=opening" className="text-primary hover:underline">Import opening stock</Link>}
         <SerialFinder />
       </div>
@@ -89,9 +87,6 @@ function StockList() {
           description: "Sales, challans and returns move stock by themselves. Use these for everything else.",
           actions: (
             <>
-              <HeaderLink href="/app/m/inventory/entries">Entries</HeaderLink>
-              {can("inventory.warehouse.view") && <HeaderLink href="/app/m/inventory/godowns">Godowns</HeaderLink>}
-              {can("inventory.stock_count.create") && <HeaderLink href="/app/m/inventory/count">Count</HeaderLink>}
               {can("inventory.transfer.create") && godowns.length > 1 && <HeaderLink href="/app/m/inventory/new?kind=transfer">Transfer</HeaderLink>}
               {can("inventory.stock_adjustment.create") && <HeaderLink href="/app/m/inventory/new?kind=adjustment">Adjust</HeaderLink>}
               {can("inventory.receipt.create") && <HeaderLink href="/app/m/inventory/new?kind=opening">Opening stock</HeaderLink>}

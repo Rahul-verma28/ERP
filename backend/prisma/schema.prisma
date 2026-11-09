@@ -1874,8 +1874,10 @@ model PurchaseDocument {
   /// purchase_order | goods_receipt | purchase_bill | purchase_return
   kind          String    @db.VarChar(16)
   /// PO: open | part_received | received | cancelled. GRN: received | billed | cancelled.
-  /// Bill: unpaid | part_paid | paid | cancelled. Return: issued | cancelled.
+  /// Bill: draft | unpaid | part_paid | paid | cancelled. Return: draft | approved | issued (shown as Completed) | cancelled.
   status        String    @db.VarChar(16)
+  /// Why goods went back, on a purchase return
+  returnReason  String?   @map("return_reason") @db.VarChar(40)
   number        String
   fy            String
   contactId     String    @map("contact_id") @db.Uuid

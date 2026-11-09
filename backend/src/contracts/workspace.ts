@@ -232,6 +232,8 @@ export interface WorkspacePreferences {
     valuation: 'average' | 'fifo';
     /** Batches expiring within this many days show as near expiry */
     nearExpiryDays: number;
+    /** Off: purchases start at the invoice. On: Purchase Orders and Goods Receipts appear too */
+    purchaseOrders: boolean;
   };
   branding: {
     brandColor: string;
@@ -248,7 +250,7 @@ export const DEFAULT_PREFERENCES: WorkspacePreferences = {
   documents: { invoicePrefix: 'INV/{FY}/', quotationPrefix: 'QT/{FY}/', receiptPrefix: 'RCT/{FY}/', creditNotePrefix: 'CN/{FY}/', salesOrderPrefix: 'SO/{FY}/', deliveryChallanPrefix: 'DC/{FY}/', debitNotePrefix: 'DN/{FY}/', purchaseOrderPrefix: 'PO/{FY}/', goodsReceiptPrefix: 'GRN/{FY}/', purchaseBillPrefix: 'PB/{FY}/', purchaseReturnPrefix: 'PR/{FY}/', supplierPaymentPrefix: 'PAY/{FY}/', template: 'classic', paper: 'a4', terms: '', quotationTerms: '', showHsnSummary: true, showSignatory: true },
   payments: { bankHolder: '', bankAccount: '', ifsc: '', upiId: '', showUpiQr: false },
   taxes: { composition: false, compositionRateBp: null, pricesIncludeTax: true, roundOff: false, defaultGstRateBp: 1800, hsnDigits: 4, reverseCharge: false, eInvoicing: false },
-  inventory: { blockNegative: false, adjustmentApprovalPaise: 500_000, backdateDays: 7, valuation: 'average', nearExpiryDays: 30 },
+  inventory: { blockNegative: false, adjustmentApprovalPaise: 500_000, backdateDays: 7, valuation: 'average', nearExpiryDays: 30, purchaseOrders: false },
   branding: { brandColor: '#2450D8', preset: 'default', theme: 'system', font: 'inter', density: 'comfortable' },
 };
 

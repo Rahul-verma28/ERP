@@ -177,13 +177,7 @@ export function SalesDocList({ kind }: { kind: Kind }) {
         title: LIST_NAME[kind],
         actions: (
           <>
-            {kind === "invoice" && <HeaderLink href="/app/m/billing/dues">Dues</HeaderLink>}
-            {kind === "invoice" && can("billing.credit_note.view") && <HeaderLink href="/app/m/billing/credit-notes">Credit notes</HeaderLink>}
             {kind === "invoice" && canCreate && can("billing.payment.create") && <HeaderLink href="/app/m/billing/new?cash=1">Cash bill</HeaderLink>}
-            {kind === "quotation" && can("sales.order.view") && <HeaderLink href="/app/m/sales/orders">Sales orders</HeaderLink>}
-            {kind === "sales_order" && can("sales.quotation.view") && <HeaderLink href="/app/m/sales">Quotations</HeaderLink>}
-            {kind === "sales_order" && can("sales.delivery.view") && <HeaderLink href="/app/m/sales/challans">Delivery challans</HeaderLink>}
-            {kind === "delivery_challan" && can("sales.order.view") && <HeaderLink href="/app/m/sales/orders">Sales orders</HeaderLink>}
           </>
         ),
         primary: newButton,

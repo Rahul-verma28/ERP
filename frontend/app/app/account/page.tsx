@@ -45,7 +45,7 @@ export default function AccountPage() {
   if (error && !data) return <ErrorState error={error} onRetry={reload} />
   if (!data)
     return (
-      <div className="mx-auto grid max-w-5xl gap-4">
+      <div className="grid w-full gap-4">
         <Skeleton className="h-52 rounded-2xl" />
         <Skeleton className="h-64 rounded-2xl" />
       </div>
@@ -65,7 +65,7 @@ export default function AccountPage() {
   const p = data.profile
 
   return (
-    <div className="mx-auto grid max-w-5xl content-start gap-6">
+    <div className="grid w-full content-start gap-6">
       <Hero account={data} role={auth.me?.console?.role.name ?? auth.me?.role?.name ?? null} onEdit={() => setDialog("name")} />
 
       <div className="grid items-start gap-6 lg:grid-cols-[13.5rem_minmax(0,1fr)]">

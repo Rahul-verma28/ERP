@@ -6,7 +6,6 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { Spinner } from "@/components/common"
-import { PurchaseNav } from "@/components/purchase-list"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
@@ -122,7 +121,7 @@ export default function PurchaseReportsPage() {
   if (!can("inventory.supplier_bill.view")) return <PageHeader title="Purchase reports" description="You don't have access to this. Ask your admin." />
   return (
     <>
-      <PageHeader title="Purchase reports" actions={<div className="flex flex-wrap gap-2"><PurchaseNav /></div>} />
+      <PageHeader title="Purchase reports" />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {TABS.map(([k, l]) => (
           <button key={k} onClick={() => setTab(k)} className={cn("rounded-full border px-3 py-1.5 text-sm", tab === k ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}>{l}</button>

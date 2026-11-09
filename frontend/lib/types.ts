@@ -77,6 +77,7 @@ export interface Me {
     onboarding: { dashboard?: string[]; recommendedModules?: ModuleKey[]; setup?: SetupState }
     createdAt: string
     branding: WorkspacePreferences["branding"]
+    purchaseOrders: boolean
     /** Modules the owner chose at signup, in order */
     preferredModules: ModuleKey[]
   }
@@ -99,6 +100,7 @@ export interface Role {
   isSystem: boolean
   isPredefined: boolean
   memberCount: number
+  permissionCount: number
 }
 
 export interface Branch {

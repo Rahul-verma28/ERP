@@ -24,7 +24,7 @@ export function DoneStep({ workspace, goTo }: { workspace: Workspace; goTo: (k: 
   }, [reload])
 
   return (
-    <div className="grid max-w-xl content-start gap-4 rounded-xl border bg-card p-9">
+    <div className="grid max-w-xl content-start gap-4 ui-surface p-9">
       <span className="grid size-14 place-items-center rounded-full bg-emerald-600 text-white">
         <Check className="size-7" />
       </span>

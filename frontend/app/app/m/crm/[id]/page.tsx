@@ -138,9 +138,9 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
       </div>
 
       {showLedger && (
-        <div className="mb-5 flex gap-5 border-b" role="tablist">
+        <div className="mb-5 flex gap-1 ui-surface w-fit max-w-full rounded-2xl p-1" role="tablist">
           {(["overview", "ledger"] as const).map((t) => (
-            <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={cn("-mb-px border-b-2 border-transparent px-1 py-2 text-sm font-semibold capitalize text-muted-foreground hover:text-foreground", tab === t && "border-primary text-foreground")}>{t}</button>
+            <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={cn("shrink-0 rounded-[11px] px-3.5 py-2 text-sm font-medium capitalize text-muted-foreground transition-colors hover:text-foreground", tab === t && "bg-primary text-primary-foreground hover:text-primary-foreground")}>{t}</button>
           ))}
         </div>
       )}

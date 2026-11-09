@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArrowLeft } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -17,7 +17,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
-import { KIND_LABEL, KIND_PATH, KIND_PLURAL, type PurchaseDoc } from "@/lib/purchase"
+import { INVOICE_STEPS, KIND_LABEL, KIND_PATH, KIND_PLURAL, RETURN_STEPS, invoiceStatus, returnStatus, type PurchaseDoc } from "@/lib/purchase"
 import { todayInIndia } from "@contracts/validation"
 
 // A purchase document with what happened since: received or billed quantities, documents made
@@ -78,13 +78,19 @@ export default function PurchaseDocPage() {
   const setDoc = res.setData
   const [paying, setPaying] = React.useState(false)
   const [cancelling, setCancelling] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
+  const router = useRouter()
   if (res.error) return <PageHeader title="Not found" description={errorMessage(res.error)} />
   if (!doc) return <div className="grid place-items-center py-24"><Spinner /></div>
 
-  const live = doc.status !== "cancelled"
+  const draft = doc.status === "draft"
+  const live = doc.status !== "cancelled" && !draft
   const left = doc.lines.some((l) => l.quantity - l.doneQuantity > 0)
   const isOrder = doc.kind === "purchase_order"
   const isBill = doc.kind === "purchase_bill"
+  const isReturn = doc.kind === "purchase_return"
+  const steps = isBill ? INVOICE_STEPS : isReturn ? RETURN_STEPS : null
+  const label = (kind: string, status: string) => (kind === "purchase_bill" ? invoiceStatus(status) : kind === "purchase_return" ? returnStatus(status) : undefined)
   const doneLabel = isOrder ? "Received" : doc.kind === "goods_receipt" ? "Billed" : isBill ? "Returned" : null
   const act = async (fn: () => Promise<PurchaseDoc>, msg: string) => {
     try { setDoc(await fn()); toast.success(msg) } catch (e) { toast.error(errorMessage(e)) }
@@ -100,6 +106,21 @@ export default function PurchaseDocPage() {
         description={`${doc.supplier.name}${doc.supplier.gstin ? ` · ${doc.supplier.gstin}` : ""}`}
         actions={
           <div className="flex flex-wrap gap-2">
+            {isReturn && draft && can("inventory.supplier_bill.approve") && <Button onClick={() => act(() => api.post(`/purchases/${doc.id}/approve`, { version: doc.version }), "Return approved")}>Approve return</Button>}
+            {isReturn && doc.status === "approved" && can("inventory.supplier_bill.create") && <Button onClick={() => act(() => api.post(`/purchases/${doc.id}/complete`, { version: doc.version }), "Return completed. Stock has gone out.")}>Complete return</Button>}
+            {isReturn && draft && can("inventory.supplier_bill.create") && (
+              <>
+                <Link href={`/app/m/purchase/new?kind=purchase_return&edit=${doc.id}`} className={buttonVariants({ variant: "outline" })}>Edit</Link>
+                <Button variant="outline" className="text-destructive" onClick={() => setDeleting(true)}>Delete</Button>
+              </>
+            )}
+            {isBill && draft && can("inventory.supplier_bill.create") && (
+              <>
+                <Button onClick={() => act(() => api.post(`/purchases/${doc.id}/post`, { version: doc.version }), "Invoice posted. Stock is in.")}>Post invoice</Button>
+                <Link href={`/app/m/purchase/new?kind=purchase_bill&edit=${doc.id}`} className={buttonVariants({ variant: "outline" })}>Edit</Link>
+                <Button variant="outline" className="text-destructive" onClick={() => setDeleting(true)}>Delete</Button>
+              </>
+            )}
             {live && isOrder && left && doc.status !== "closed" && can("inventory.receipt.create") && <Link href={`/app/m/purchase/new?kind=goods_receipt&from=${doc.id}`} className={buttonVariants()}>Receive goods</Link>}
             {live && isOrder && left && doc.status !== "closed" && can("inventory.supplier_bill.create") && <Link href={`/app/m/purchase/new?kind=purchase_bill&from=${doc.id}`} className={buttonVariants({ variant: "outline" })}>Bill directly</Link>}
             {live && doc.kind === "goods_receipt" && left && can("inventory.supplier_bill.create") && <Link href={`/app/m/purchase/new?kind=purchase_bill&from=${doc.id}`} className={buttonVariants()}>Make bill</Link>}
@@ -114,8 +135,24 @@ export default function PurchaseDocPage() {
       <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
         <Card>
           <CardContent className="grid gap-4">
+            {steps && doc.status !== "cancelled" && (
+              <ol className="flex flex-wrap items-center gap-1.5 text-xs font-medium" aria-label="Status">
+                {steps.map(([key, text], i) => {
+                  const at = steps.findIndex(([k]) => k === doc.status)
+                  return (
+                    <li key={key} className="flex items-center gap-1.5">
+                      {i > 0 && <span className="h-px w-5 bg-border" />}
+                      <span aria-current={i === at ? "step" : undefined} className={i === at ? "rounded-full bg-primary px-2.5 py-1 text-primary-foreground" : i < at ? "rounded-full bg-primary/15 px-2.5 py-1 text-primary" : "rounded-full bg-muted px-2.5 py-1 text-muted-foreground"}>{text}</span>
+                    </li>
+                  )
+                })}
+              </ol>
+            )}
+            {draft && <p className="rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">{isReturn ? "This is a draft. Stock and the invoice balance change only when the return is completed." : "This is a draft. Stock and what you owe change only when you post it."}</p>}
+            {isReturn && doc.status === "approved" && <p className="rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">Approved. Press Complete return once the goods have actually gone back to the supplier.</p>}
             <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
-              <span className="flex items-center gap-2"><StatusBadge status={doc.status} />{doc.overdue && <StatusBadge status="overdue" />}</span>
+              <span className="flex items-center gap-2"><StatusBadge status={doc.status} label={label(doc.kind, doc.status)} />{doc.overdue && <StatusBadge status="overdue" />}</span>
+              {doc.returnReason && <span><span className="text-muted-foreground">Reason </span>{doc.returnReason}</span>}
               <span><span className="text-muted-foreground">Date </span>{formatDate(doc.issueDate)}</span>
               {doc.supplierRef && <span><span className="text-muted-foreground">{isBill ? "Supplier bill " : "Challan "}</span>{doc.supplierRef}{doc.supplierDate && ` · ${formatDate(doc.supplierDate)}`}</span>}
               {doc.dueDate && <span><span className="text-muted-foreground">{isOrder ? "Expected " : "Due "}</span>{formatDate(doc.dueDate)}</span>}
@@ -175,7 +212,7 @@ export default function PurchaseDocPage() {
               {doc.children.map((c) => (
                 <Link key={c.id} href={`/app/m/purchase/${c.id}`} className="flex items-center justify-between gap-2 hover:underline">
                   <span><span className="font-mono">{c.number}</span><span className="block text-xs text-muted-foreground">{KIND_LABEL[c.kind]} · {formatDate(c.issueDate)}</span></span>
-                  <StatusBadge status={c.status} />
+                  <StatusBadge status={c.status} label={label(c.kind, c.status)} />
                 </Link>
               ))}
             </CardContent></Card>
@@ -202,12 +239,23 @@ export default function PurchaseDocPage() {
           </CardContent></Card>
         </div>
       </div>
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title={`Delete draft ${doc.number}?`}
+        description="This draft is removed for good. Nothing else changes."
+        confirmLabel="Delete draft"
+        destructive
+        onConfirm={async () => {
+          try { await api.delete(`/purchases/${doc.id}`); toast.success("Draft deleted"); router.push(KIND_PATH[doc.kind]) } catch (e) { toast.error(errorMessage(e)); throw e }
+        }}
+      />
       {isBill && <PayDialog key={doc.balancePaise} doc={doc} open={paying} onOpenChange={setPaying} onDone={setDoc} />}
       <ConfirmDialog
         open={cancelling}
         onOpenChange={setCancelling}
         title={`Cancel ${doc.number}?`}
-        description={doc.kind === "purchase_order" ? "The order stays on record as cancelled." : "Any stock it moved is moved back. It stays on record as cancelled."}
+        description={doc.kind === "purchase_order" ? "The order stays on record as cancelled." : doc.status === "approved" ? "Nothing has moved yet. It stays on record as cancelled." : "Any stock it moved is moved back. It stays on record as cancelled."}
         confirmLabel="Cancel it"
         destructive
         reasonLabel="Why?"

@@ -55,11 +55,30 @@ export async function roleDetail(tenantId: string, roleId: string) {
   };
 }
 
+const SCOPES = ['own', 'team', 'branch', 'all'] as const;
+
 export const CloneInput = z.object({
   fromRoleId: z.string().uuid().nullish(),
   name: z.string().trim().min(2, 'Use 2–40 characters').max(40, 'Use 2–40 characters'),
   description: z.string().trim().max(200).nullish(),
+  /** Given by the Create Role form; when left out, a clone keeps its source's permissions */
+  permissions: z.record(z.enum(SCOPES)).optional(),
+  fieldAccess: z.record(z.enum(['hidden', 'read', 'write'])).optional(),
 });
+
+function assertPermissions(keys: string[]) {
+  const unknown = keys.find((k) => !PERMISSION_BY_KEY.has(k) || PERMISSION_BY_KEY.get(k)!.moduleKey === 'platform');
+  if (unknown) throw new AppError('VALIDATION_FAILED', `Unknown permission ${unknown}.`, { fields: { permissions: `Unknown permission ${unknown}` } });
+  if (keys.some((k) => OWNER_ONLY.has(k))) throw new AppError('VALIDATION_FAILED', 'Only the Owner can close the business.', { fields: { permissions: 'Only the Owner can close the business' } });
+  const problem = rolePermissionProblem(keys, TENANT_KEYS);
+  if (problem) throw new AppError('VALIDATION_FAILED', problem, { fields: { permissions: problem } });
+}
+
+function assertFields(access: Record<string, unknown>) {
+  const allowed = new Set(SENSITIVE_FIELDS.map((f) => `${f.entity}.${f.field}`));
+  const unknown = Object.keys(access).find((k) => !allowed.has(k));
+  if (unknown) throw new AppError('VALIDATION_FAILED', `Unknown field ${unknown}.`, { fields: { fieldAccess: `Unknown field ${unknown}` } });
+}
 
 export async function createRole(ctx: TenantCtx, input: z.infer<typeof CloneInput>) {
   await assertCustomRolesAllowed(ctx.tenantId);
@@ -70,6 +89,8 @@ export async function createRole(ctx: TenantCtx, input: z.infer<typeof CloneInpu
   const source = input.fromRoleId ? await db().role.findUnique({ where: { id: input.fromRoleId }, include: { permissions: true, fieldAccess: true } }) : null;
   if (input.fromRoleId && (!source || !visible.some((r) => r.id === source.id))) throw notFound('Role');
   if (source?.key === 'owner') throw new AppError('VALIDATION_FAILED', "The Owner role can't be cloned.", { fields: { fromRoleId: "The Owner role can't be cloned" } });
+  if (input.permissions) assertPermissions(Object.keys(input.permissions));
+  if (input.fieldAccess) assertFields(input.fieldAccess);
 
   const role = await db().role.create({
     data: {
@@ -84,16 +105,20 @@ export async function createRole(ctx: TenantCtx, input: z.infer<typeof CloneInpu
       sort: 900,
     },
   });
-  const perms = (source?.permissions ?? []).filter((p) => !OWNER_ONLY.has(p.permissionKey));
+  const perms = input.permissions
+    ? Object.entries(input.permissions).map(([permissionKey, scope]) => ({ permissionKey, scope: scope as PermissionScope }))
+    : (source?.permissions ?? []).filter((p) => !OWNER_ONLY.has(p.permissionKey));
   if (perms.length) await db().rolePermission.createMany({ data: perms.map((p) => ({ roleId: role.id, tenantId: ctx.tenantId, permissionKey: p.permissionKey, scope: p.scope })) });
-  if (source?.fieldAccess.length) {
-    await db().roleFieldAccess.createMany({ data: source.fieldAccess.map((f) => ({ roleId: role.id, tenantId: ctx.tenantId, entity: f.entity, field: f.field, access: f.access })) });
+  const fields = input.fieldAccess
+    ? Object.entries(input.fieldAccess).map(([k, access]) => ({ entity: k.split('.')[0], field: k.split('.')[1], access: access as FieldAccess }))
+    : (source?.fieldAccess ?? []);
+  if (fields.length) {
+    await db().roleFieldAccess.createMany({ data: fields.map((f) => ({ roleId: role.id, tenantId: ctx.tenantId, entity: f.entity, field: f.field, access: f.access })) });
   }
   await audit({ action: 'role.create', entity: 'role', entityId: role.id, after: { name: role.name, clonedFrom: source?.name ?? null } });
   return roleDetail(ctx.tenantId, role.id);
 }
 
-const SCOPES = ['own', 'team', 'branch', 'all'] as const;
 export const RolePatch = z.object({
   version: z.number().int(),
   name: z.string().trim().min(2, 'Use 2–40 characters').max(40, 'Use 2–40 characters').optional(),
@@ -120,20 +145,15 @@ export async function updateRole(ctx: TenantCtx, roleId: string, input: z.infer<
 
   if (input.permissions) {
     const keys = Object.keys(input.permissions);
-    const unknown = keys.find((k) => !PERMISSION_BY_KEY.has(k) || PERMISSION_BY_KEY.get(k)!.moduleKey === 'platform');
-    if (unknown) throw new AppError('VALIDATION_FAILED', `Unknown permission ${unknown}.`, { fields: { permissions: `Unknown permission ${unknown}` } });
-    if (keys.some((k) => OWNER_ONLY.has(k))) throw new AppError('VALIDATION_FAILED', 'Only the Owner can close the business.', { fields: { permissions: 'Only the Owner can close the business' } });
-    const problem = rolePermissionProblem(keys, TENANT_KEYS);
-    if (problem) throw new AppError('VALIDATION_FAILED', problem, { fields: { permissions: problem } });
+    assertPermissions(keys);
     await db().rolePermission.deleteMany({ where: { roleId } });
     if (keys.length) {
       await db().rolePermission.createMany({ data: keys.map((k) => ({ roleId, tenantId: ctx.tenantId, permissionKey: k, scope: input.permissions![k] as PermissionScope })) });
     }
   }
   if (input.fieldAccess) {
-    const allowed = new Set(SENSITIVE_FIELDS.map((f) => `${f.entity}.${f.field}`));
+    assertFields(input.fieldAccess);
     for (const [k, access] of Object.entries(input.fieldAccess)) {
-      if (!allowed.has(k)) throw new AppError('VALIDATION_FAILED', `Unknown field ${k}.`, { fields: { fieldAccess: `Unknown field ${k}` } });
       const [entity, field] = k.split('.');
       await db().roleFieldAccess.upsert({
         where: { roleId_entity_field: { roleId, entity, field } },

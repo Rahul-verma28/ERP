@@ -80,7 +80,7 @@ export function SearchSelect({ value, onChange, options, placeholder = "Chooseâ€
         aria-haspopup="listbox"
         {...trigger}
         className={cn(
-          "flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-input bg-card px-3 text-left text-sm text-foreground transition-[color,box-shadow,border-color] outline-none focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground aria-invalid:border-destructive aria-invalid:bg-destructive/[0.03] data-popup-open:border-primary data-popup-open:ring-3 data-popup-open:ring-primary/20",
+          "flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-transparent bg-muted px-3 text-left text-sm text-foreground transition-[color,box-shadow,border-color] outline-none focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground aria-invalid:border-destructive aria-invalid:bg-destructive/[0.03] data-popup-open:border-primary data-popup-open:ring-3 data-popup-open:ring-primary/20",
           className
         )}
       >

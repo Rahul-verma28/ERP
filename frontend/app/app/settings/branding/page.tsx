@@ -35,7 +35,7 @@ function LogoCard({ tenant, refresh, readOnly }: { tenant: SetupTenant; refresh:
     }
   }
   return (
-    <section id="logo" className="grid gap-3 rounded-xl border bg-card p-5">
+    <section id="logo" className="grid gap-3 ui-surface p-5">
       <div>
         <h2 className="text-[15px] font-bold">Logo</h2>
         <p className="text-xs text-muted-foreground">Printed on invoices and shown in the menu. PNG, JPG or WebP; it&apos;s resized for you.</p>

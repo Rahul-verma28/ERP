@@ -9,7 +9,6 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { Spinner } from "@/components/common"
-import { PurchaseNav } from "@/components/purchase-list"
 import { SupplierPicker, type ContactOption } from "@/components/pickers"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -51,7 +50,7 @@ export default function ReorderPage() {
 
   return (
     <>
-      <PageHeader title="Low stock" description="Items at or under their low-stock level. Suggested quantity fills back to twice that level, less what is already ordered." actions={<div className="flex flex-wrap gap-2"><PurchaseNav /></div>} />
+      <PageHeader title="Low stock" description="Items at or under their low-stock level. Suggested quantity fills back to twice that level, less what is already ordered." />
       <Card>
         <CardContent className="grid gap-3">
           {!list.data.data.length ? (

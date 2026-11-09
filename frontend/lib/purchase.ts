@@ -5,13 +5,13 @@ export type PurchaseKind = "purchase_order" | "goods_receipt" | "purchase_bill" 
 export const KIND_LABEL: Record<PurchaseKind, string> = {
   purchase_order: "Purchase order",
   goods_receipt: "Goods receipt",
-  purchase_bill: "Purchase bill",
+  purchase_bill: "Purchase invoice",
   purchase_return: "Purchase return",
 }
 export const KIND_PLURAL: Record<PurchaseKind, string> = {
   purchase_order: "Purchase orders",
   goods_receipt: "Goods receipts",
-  purchase_bill: "Purchase bills",
+  purchase_bill: "Purchase invoices",
   purchase_return: "Purchase returns",
 }
 /** Where each kind's list lives */
@@ -25,6 +25,13 @@ export const STATUS_TEXT: Record<string, string> = {
   open: "Open", part_received: "Part received", received: "Received", closed: "Closed", billed: "Billed",
   unpaid: "Unpaid", part_paid: "Part paid", paid: "Paid", issued: "Issued", cancelled: "Cancelled",
 }
+/** An invoice's life: Draft → Posted → Partial → Paid */
+export const INVOICE_STEPS = [["draft", "Draft"], ["unpaid", "Posted"], ["part_paid", "Partial"], ["paid", "Paid"]] as const
+export const invoiceStatus = (status: string) => INVOICE_STEPS.find(([k]) => k === status)?.[1] ?? STATUS_TEXT[status] ?? status
+/** A return's life: Draft → Approved → Completed */
+export const RETURN_STEPS = [["draft", "Draft"], ["approved", "Approved"], ["issued", "Completed"]] as const
+export const returnStatus = (status: string) => RETURN_STEPS.find(([k]) => k === status)?.[1] ?? STATUS_TEXT[status] ?? status
+export const RETURN_REASONS = ["Defective", "Damaged in transit", "Wrong item", "Excess quantity", "Quality issue", "Other"]
 
 export interface Supplier {
   id: string
@@ -98,6 +105,7 @@ export interface PurchaseDoc {
   sourceId: string | null
   sourceNumber: string | null
   notes: string | null
+  returnReason: string | null
   cancelReason: string | null
   version: number
   createdAt: string

@@ -63,7 +63,7 @@ export function Dashboard() {
     )
   }
   if (!data.tabs.length) {
-    return <p className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">Your role has no dashboard. Use the menu to open your work.</p>
+    return <p className="ui-surface p-6 text-sm text-muted-foreground">Your role has no dashboard. Use the menu to open your work.</p>
   }
   return <DashboardView config={data} />
 }
@@ -104,18 +104,18 @@ function DashboardView({ config }: { config: DashboardConfig }) {
   const sub = `${new Date(`${config.today}T00:00:00Z`).toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })} · ${isMyDay ? "your work only" : (me?.tenant?.name ?? "")}`
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       <HandoverCard />
       <FinishSetupCard />
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-[22px] font-bold tracking-tight">
+          <h1 className="text-[26px] leading-tight font-bold tracking-tight">
             {greeting()}, {firstName}
           </h1>
           <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex overflow-hidden rounded-lg border border-input" role="radiogroup" aria-label="Date range">
+          <div className="ui-surface inline-flex rounded-xl p-[3px]" role="radiogroup" aria-label="Date range">
             {PRESETS.map((p) => (
               <button
                 key={p.key}
@@ -123,7 +123,7 @@ function DashboardView({ config }: { config: DashboardConfig }) {
                 role="radio"
                 aria-checked={prefs.range === p.key}
                 onClick={() => (p.key === "custom" ? setCustomRange(true) : update({ range: p.key }))}
-                className={cn("border-r border-input px-[11px] py-[7px] text-xs font-semibold last:border-r-0", prefs.range === p.key ? "bg-accent text-accent-foreground" : "bg-card hover:bg-muted")}
+                className={cn("rounded-[10px] px-3 py-2 text-[13px] font-medium transition-colors", prefs.range === p.key ? "bg-primary text-primary-foreground" : "hover:bg-muted")}
               >
                 {p.key === "custom" && prefs.range === "custom" ? `${formatDate(q.from)} – ${formatDate(q.to)}` : p.label}
               </button>
@@ -147,7 +147,8 @@ function DashboardView({ config }: { config: DashboardConfig }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-5 overflow-x-auto overflow-y-hidden border-b [scrollbar-width:none]" role="tablist" aria-label="Dashboard">
+      <div className="flex flex-wrap items-center gap-2">
+      <div className="ui-surface flex max-w-full items-center gap-1 overflow-x-auto rounded-2xl p-1 [scrollbar-width:none]" role="tablist" aria-label="Dashboard">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -155,13 +156,14 @@ function DashboardView({ config }: { config: DashboardConfig }) {
             role="tab"
             aria-selected={active === t.key}
             onClick={() => openTab(t.key)}
-            className={cn("-mb-px inline-flex shrink-0 items-center gap-1.5 border-b-2 border-transparent px-0.5 py-[9px] text-[13px] font-semibold text-muted-foreground hover:text-foreground", active === t.key && "border-primary text-foreground")}
+            className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-[11px] px-3.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground", active === t.key && "bg-primary text-primary-foreground hover:text-primary-foreground")}
           >
             {t.label}
             {t.readOnly && <span className="rounded-full bg-muted px-1.5 py-px text-[10px] text-foreground/80">Read-only</span>}
           </button>
         ))}
-        <button type="button" onClick={() => setCustomizing(true)} className="ml-auto shrink-0 py-[9px] text-xs font-semibold text-primary hover:underline">
+      </div>
+        <button type="button" onClick={() => setCustomizing(true)} className="ui-surface ml-auto h-10 shrink-0 rounded-xl px-3.5 text-sm font-medium hover:bg-muted">
           Customize
         </button>
       </div>
@@ -225,7 +227,7 @@ function NewMenu({ can }: { can: (p: string) => boolean }) {
   if (!items.length) return null
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="inline-flex h-8 items-center gap-1 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground hover:opacity-90">
+      <DropdownMenuTrigger className="inline-flex h-10 items-center gap-1 rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">
         <Plus className="size-3.5" /> New <ChevronDown className="size-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
@@ -247,7 +249,7 @@ function TabBody({ tab, q, layout, ctxBase }: { tab: DashboardTab; q: Query; lay
   if (own.error) return <ErrorState error={own.error} onRetry={own.reload} />
   const ctx: WidgetCtx = { ...ctxBase, q, reload: own.reload, slow: own.slow }
   return (
-    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[repeat(30,minmax(0,1fr))]">
+    <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[repeat(30,minmax(0,1fr))]">
       {keys.map((k) => {
         const [from, w] = splitWidgetKey(k, tab)
         if (from !== tab) return <CrossWidget key={k} tab={from} widget={w} q={q} ctxBase={ctxBase} />

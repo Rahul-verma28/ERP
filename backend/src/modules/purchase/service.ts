@@ -23,7 +23,10 @@ const DAY = 86_400_000;
 /** Purchase papers often reach the office late; stock dates may go back this far (decision P3) */
 const BACKDATE_DAYS = 90;
 
-const live = { not: 'cancelled' };
+/** A draft invoice counts for nothing until it is posted */
+const live = { notIn: ['cancelled', 'draft'] };
+const owes = (d: { kind: string; status: string }) => d.kind === 'purchase_bill' && d.status !== 'cancelled' && d.status !== 'draft';
+const iso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
 const sum = (xs: bigint[]) => xs.reduce((a, b) => a + b, 0n);
 
 // ---------------------------------------------------------------- suppliers
@@ -147,6 +150,7 @@ export const PurchaseInput = z.object({
   chargesGstBp: Rate.default(0),
   roundOff: z.boolean().default(true),
   notes: optionalText(z.string().trim().max(1000)),
+  returnReason: optionalText(z.string().trim().max(40)),
   /** GRN or bill from a PO, bill from a GRN, return against a bill */
   sourceId: z.string().uuid().optional().nullable(),
   lines: z.array(Line).min(1, 'Add at least one item').max(300),
@@ -175,7 +179,7 @@ export async function purchaseView(ctx: TenantCtx, id: string, kind?: PurchaseKi
   return {
     ...d,
     location,
-    balancePaise: d.kind === 'purchase_bill' && d.status !== 'cancelled' ? d.totalPaise - d.paidPaise - d.returnedPaise : 0n,
+    balancePaise: owes(d) ? d.totalPaise - d.paidPaise - d.returnedPaise : 0n,
     lines: d.lines.map((l) => ({ ...l, quantity: Number(l.quantity), doneQuantity: fromMilli(used.get(l.id) ?? 0n) })),
     children,
     payments: payments.map((p) => ({ ...p, reversed: reversed.has(p.id) })),
@@ -226,7 +230,7 @@ function spread(total: bigint, weights: bigint[]) {
   return parts;
 }
 
-async function prepare(ctx: TenantCtx, kind: PurchaseKind, input: PurchaseInput, exceptDocId?: string) {
+async function prepare(ctx: TenantCtx, kind: PurchaseKind, input: PurchaseInput, exceptDocId?: string, draft = false) {
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId } });
   const supplier = await supplierOf(ctx, input.contactId);
   const taxes = withDefaults(tenant.preferences, tenant.profile).taxes;
@@ -246,7 +250,8 @@ async function prepare(ctx: TenantCtx, kind: PurchaseKind, input: PurchaseInput,
   }
   const stock = movesStock(kind, source?.kind ?? null);
 
-  if (kind === 'purchase_bill') {
+  // A draft may wait for the supplier's paper; everything is checked when it is posted
+  if (kind === 'purchase_bill' && !draft) {
     // Rule 46: the supplier's invoice number and date are what ITC is matched on (GSTR-2B)
     if (!input.supplierRef) throw new AppError('VALIDATION_FAILED', "Enter the supplier's bill number.", { fields: { supplierRef: 'Required' } });
     if (!input.supplierDate) throw new AppError('VALIDATION_FAILED', "Enter the supplier's bill date.", { fields: { supplierDate: 'Required' } });
@@ -356,6 +361,7 @@ async function prepare(ctx: TenantCtx, kind: PurchaseKind, input: PurchaseInput,
       roundOffPaise, totalPaise: beforeRound + roundOffPaise,
       sourceType: source?.kind ?? null, sourceId: source?.id ?? null, sourceNumber: source?.number ?? null,
       notes: input.notes ?? null,
+      returnReason: kind === 'purchase_return' ? (input.returnReason ?? null) : null,
     },
     lines: lineRows,
   };
@@ -423,10 +429,19 @@ async function locationFor(ctx: TenantCtx, id: string | null | undefined, fallba
 
 const FIRST_STATUS: Record<PurchaseKind, string> = { purchase_order: 'open', goods_receipt: 'received', purchase_bill: 'unpaid', purchase_return: 'issued' };
 
-export async function createPurchase(ctx: TenantCtx, kind: PurchaseKind, input: PurchaseInput) {
-  const p = await prepare(ctx, kind, input);
-  const locationId = kind === 'purchase_return' ? null : await locationFor(ctx, input.locationId, p.source?.locationId);
+export async function createPurchase(ctx: TenantCtx, kind: PurchaseKind, input: PurchaseInput, opts: { draft?: boolean } = {}) {
+  const draft = !!opts.draft && (kind === 'purchase_bill' || kind === 'purchase_return');
+  const p = await prepare(ctx, kind, input, undefined, draft);
+  // A return's godown is the invoice's, for the list; its stock leaves from where it came in
+  const locationId = kind === 'purchase_return' ? (p.source?.locationId ?? null) : await locationFor(ctx, input.locationId, p.source?.locationId);
   const { number, fy } = await allocateNumber(ctx.tenantId, kind, p.tenant.fyStartMonth, p.doc.issueDate);
+  if (draft) {
+    const saved = await db().purchaseDocument.create({
+      data: { ...p.doc, tenantId: ctx.tenantId, kind, status: 'draft', number, fy, locationId, branchId: ctx.branchIds[0] ?? null, createdBy: ctx.userId, lines: { create: p.lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) } },
+    });
+    await audit({ action: `inventory.${kind}.draft`, entity: 'purchase_document', entityId: saved.id, after: { number, supplier: p.supplier.name, totalPaise: saved.totalPaise } });
+    return purchaseView(ctx, saved.id);
+  }
   const created = await db().purchaseDocument.create({
     data: { ...p.doc, tenantId: ctx.tenantId, kind, status: FIRST_STATUS[kind], number, fy, locationId, branchId: ctx.branchIds[0] ?? null, createdBy: ctx.userId, lines: { create: p.lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) } },
     include: { lines: { orderBy: { position: 'asc' } } },
@@ -442,6 +457,93 @@ export async function createPurchase(ctx: TenantCtx, kind: PurchaseKind, input: 
   if (p.source) await refreshSource(p.source.id);
   await audit({ action: `inventory.${kind}.create`, entity: 'purchase_document', entityId: created.id, after: { kind, number, supplier: p.supplier.name, totalPaise: created.totalPaise, from: p.source?.number ?? null } });
   return purchaseView(ctx, created.id);
+}
+
+async function draftOf(ctx: TenantCtx, id: string, version: number, kind?: PurchaseKind) {
+  const d = await getPurchase(ctx, id, kind);
+  if (d.kind !== 'purchase_bill' && d.kind !== 'purchase_return') throw new AppError('CONFLICT', 'This document has no draft stage.');
+  if (d.version !== version) throw new AppError('CONFLICT', 'Someone else changed this. Reload and try again.');
+  if (d.status !== 'draft') throw new AppError('CONFLICT', 'This is no longer a draft, so it can no longer change.');
+  return d;
+}
+
+/** What a saved document was entered as, so posting or approving runs every check again */
+const inputFrom = (d: Doc): PurchaseInput => ({
+  contactId: d.contactId, issueDate: iso(d.issueDate) ?? undefined, dueDate: iso(d.dueDate), supplierRef: d.supplierRef, supplierDate: iso(d.supplierDate),
+  locationId: d.locationId, reverseCharge: d.reverseCharge, chargesPaise: Number(d.chargesPaise), chargesGstBp: d.chargesGstBp, roundOff: d.roundOffPaise !== 0n, notes: d.notes, returnReason: d.returnReason, sourceId: d.sourceId,
+  lines: d.lines.map((l) => ({
+    itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: Number(l.unitPricePaise), discountPaise: Number(l.discountPaise), gstRateBp: l.gstRateBp,
+    sourceLineId: l.sourceLineId, batchNo: l.batchNo, mfgDate: iso(l.mfgDate), expiryDate: iso(l.expiryDate), serials: l.serials,
+  })),
+});
+
+/** Change a draft invoice or return; with `post`, an invoice is saved and posted together */
+export async function updateBillDraft(ctx: TenantCtx, id: string, input: PurchaseInput, version: number, post = false) {
+  const d = await draftOf(ctx, id, version);
+  const kind = d.kind as PurchaseKind;
+  const p = await prepare(ctx, kind, { ...input, sourceId: d.sourceId }, id, true);
+  const locationId = kind === 'purchase_return' ? d.locationId : await locationFor(ctx, input.locationId, d.locationId);
+  await db().purchaseDocumentLine.deleteMany({ where: { documentId: id } });
+  await db().purchaseDocument.update({
+    where: { id },
+    data: { ...p.doc, locationId, version: { increment: 1 }, lines: { create: p.lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) } },
+  });
+  await audit({ action: `inventory.${kind}.edit`, entity: 'purchase_document', entityId: id, after: { totalPaise: p.doc.totalPaise } });
+  return post && kind === 'purchase_bill' ? postBill(ctx, id, version + 1) : purchaseView(ctx, id);
+}
+
+/** Approve a draft return: quantities are checked and held, but nothing moves yet */
+export async function approveReturn(ctx: TenantCtx, id: string, version: number) {
+  const d = await draftOf(ctx, id, version, 'purchase_return');
+  const p = await prepare(ctx, 'purchase_return', inputFrom(d), id);
+  await db().purchaseDocumentLine.deleteMany({ where: { documentId: id } });
+  await db().purchaseDocument.update({
+    where: { id },
+    data: { ...p.doc, status: 'approved', version: { increment: 1 }, lines: { create: p.lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) } },
+  });
+  await audit({ action: 'inventory.purchase_return.approve', entity: 'purchase_document', entityId: id, after: { number: d.number, totalPaise: p.doc.totalPaise } });
+  return purchaseView(ctx, id);
+}
+
+/** The goods have gone back: stock leaves and the invoice's balance comes down */
+export async function completeReturn(ctx: TenantCtx, id: string, version: number) {
+  const d = await getPurchase(ctx, id, 'purchase_return');
+  if (d.version !== version) throw new AppError('CONFLICT', 'Someone else changed this return. Reload and try again.');
+  if (d.status !== 'approved') throw new AppError('CONFLICT', 'Only an approved return can be completed.');
+  const bill = await getPurchase(ctx, d.sourceId!, 'purchase_bill');
+  if (bill.status === 'cancelled') throw new AppError('CONFLICT', `${bill.number} is cancelled, so this return can't be completed.`);
+  const ids = [...new Set(d.lines.map((l) => l.itemId).filter(Boolean))] as string[];
+  const items = new Map((await db().item.findMany({ where: { tenantId: ctx.tenantId, id: { in: ids } } })).map((i) => [i.id, i]));
+  await returnStock(ctx, d, bill, items);
+  await setBillStatus(bill, bill.paidPaise, bill.returnedPaise + d.totalPaise);
+  await db().purchaseDocument.update({ where: { id }, data: { status: 'issued', version: { increment: 1 } } });
+  await audit({ action: 'inventory.purchase_return.complete', entity: 'purchase_document', entityId: id, after: { number: d.number, totalPaise: d.totalPaise } });
+  return purchaseView(ctx, id);
+}
+
+/** Post a draft: every check runs now, stock comes in, and the money is owed */
+export async function postBill(ctx: TenantCtx, id: string, version: number) {
+  const d = await draftOf(ctx, id, version, 'purchase_bill');
+  const p = await prepare(ctx, 'purchase_bill', inputFrom(d), id);
+  const locationId = await locationFor(ctx, d.locationId, p.source?.locationId);
+  await db().purchaseDocumentLine.deleteMany({ where: { documentId: id } });
+  const posted = await db().purchaseDocument.update({
+    where: { id },
+    data: { ...p.doc, locationId, status: 'unpaid', version: { increment: 1 }, lines: { create: p.lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) } },
+    include: { lines: { orderBy: { position: 'asc' } } },
+  });
+  if (p.stock) await receiveStock(ctx, posted, p.items, p.supplier.id);
+  if (p.source) await refreshSource(p.source.id);
+  await audit({ action: 'inventory.purchase_bill.post', entity: 'purchase_document', entityId: id, after: { number: d.number, totalPaise: posted.totalPaise } });
+  return purchaseView(ctx, id);
+}
+
+/** Only a draft can be removed; a posted invoice is cancelled and stays on record */
+export async function deleteBillDraft(ctx: TenantCtx, id: string) {
+  const d = await getPurchase(ctx, id);
+  if (d.status !== 'draft') throw new AppError('CONFLICT', 'Only a draft can be deleted. Cancel it instead.');
+  await db().purchaseDocument.delete({ where: { id } });
+  await audit({ action: `inventory.${d.kind}.delete`, entity: 'purchase_document', entityId: id, before: { number: d.number } });
 }
 
 /** A purchase order can change until anything is received against it */
@@ -488,6 +590,13 @@ async function setBillStatus(bill: PurchaseDocument, paid: bigint, returned: big
 export async function cancelPurchase(ctx: TenantCtx, id: string, reason: string) {
   const d = await getPurchase(ctx, id);
   if (d.status === 'cancelled') throw new AppError('CONFLICT', 'Already cancelled.');
+  if (d.status === 'draft') throw new AppError('CONFLICT', 'This is only a draft. Delete it instead.');
+  // An approved return has moved nothing yet, so there is nothing to undo
+  if (d.status === 'approved') {
+    await db().purchaseDocument.update({ where: { id }, data: { status: 'cancelled', cancelReason: reason, cancelledAt: new Date(), version: { increment: 1 } } });
+    await audit({ action: `inventory.${d.kind}.cancel`, entity: 'purchase_document', entityId: id, after: { number: d.number, reason } });
+    return purchaseView(ctx, id);
+  }
   const children = await db().purchaseDocument.findMany({ where: { sourceId: d.id, status: live }, select: { number: true } });
   if (children.length) throw new AppError('CONFLICT', `Cancel ${children.map((c) => c.number).join(', ')} first; ${children.length > 1 ? 'they come' : 'it comes'} from this ${LABEL[d.kind as PurchaseKind].toLowerCase()}.`);
   if (d.kind === 'purchase_bill' && d.paidPaise > 0n) throw new AppError('CONFLICT', 'Money is paid against this bill. Reverse the payments first.');
@@ -531,10 +640,12 @@ export async function listPurchases(ctx: TenantCtx, q: z.infer<typeof PurchaseLi
     ...(q.q ? { OR: [{ number: { contains: q.q, mode: 'insensitive' } }, { supplierRef: { contains: q.q, mode: 'insensitive' } }, { supplier: { path: ['name'], string_contains: q.q } }] } : {}),
   };
   const [rows, total] = await Promise.all([
-    db().purchaseDocument.findMany({ where, orderBy: { id: 'desc' }, take: q.limit + 1, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) }),
+    db().purchaseDocument.findMany({ where, orderBy: { id: 'desc' }, take: q.limit + 1, include: q.kind === 'purchase_return' ? { lines: { orderBy: { position: 'asc' }, select: { description: true, quantity: true, unit: true } } } : undefined, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) }),
     db().purchaseDocument.count({ where }),
   ]);
-  const data = rows.slice(0, q.limit).map((d) => ({ ...d, balancePaise: d.kind === 'purchase_bill' && d.status !== 'cancelled' ? d.totalPaise - d.paidPaise - d.returnedPaise : 0n, overdue: d.kind === 'purchase_bill' && !!d.dueDate && d.dueDate < today && (d.status === 'unpaid' || d.status === 'part_paid') }));
+  const godownIds = [...new Set(rows.map((d) => d.locationId).filter(Boolean))] as string[];
+  const godowns = new Map(q.kind === 'purchase_return' && godownIds.length ? (await db().stockLocation.findMany({ where: { id: { in: godownIds } }, select: { id: true, name: true } })).map((g) => [g.id, g]) : []);
+  const data = rows.slice(0, q.limit).map((d) => ({ ...d, location: d.locationId ? (godowns.get(d.locationId) ?? null) : null, balancePaise: owes(d) ? d.totalPaise - d.paidPaise - d.returnedPaise : 0n, overdue: d.kind === 'purchase_bill' && !!d.dueDate && d.dueDate < today && (d.status === 'unpaid' || d.status === 'part_paid') }));
   return { data, nextCursor: rows.length > q.limit ? data[data.length - 1].id : null, total };
 }
 
@@ -550,6 +661,7 @@ export const SupplierPaymentInput = z.object({
 export async function paySupplier(ctx: TenantCtx, billId: string, input: z.infer<typeof SupplierPaymentInput>) {
   const bill = await getPurchase(ctx, billId, 'purchase_bill');
   if (bill.status === 'cancelled') throw new AppError('CONFLICT', 'This bill is cancelled.');
+  if (bill.status === 'draft') throw new AppError('CONFLICT', 'Post this invoice before paying it.');
   const due = bill.totalPaise - bill.paidPaise - bill.returnedPaise;
   if (BigInt(input.amountPaise) > due) {
     throw new AppError('VALIDATION_FAILED', `Amount is more than the balance due (₹${(Number(due > 0n ? due : 0n) / 100).toFixed(2)}).`, { fields: { amountPaise: 'More than balance due' } });

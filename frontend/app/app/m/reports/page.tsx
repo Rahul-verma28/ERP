@@ -256,7 +256,7 @@ export default function ReportsPage() {
     return (
       <>
         <PageHeader title="Reports" />
-        <div className="max-w-xl rounded-xl border bg-card"><ModuleLocked name="Reports" description="Sales, collection and GST reports." canUpgrade={can("tenant.billing.view")} /></div>
+        <div className="max-w-xl ui-surface"><ModuleLocked name="Reports" description="Sales, collection and GST reports." canUpgrade={can("tenant.billing.view")} /></div>
       </>
     )
   }
@@ -269,9 +269,9 @@ export default function ReportsPage() {
         <Field label="From"><Input type="date" value={from} max={to} onChange={(e) => e.target.value && setFrom(e.target.value)} /></Field>
         <Field label="To"><Input type="date" value={to} min={from} onChange={(e) => e.target.value && setTo(e.target.value)} /></Field>
       </div>
-      <div className="mb-5 flex gap-5 overflow-x-auto border-b" role="tablist">
+      <div className="mb-5 flex gap-1 overflow-x-auto ui-surface w-fit max-w-full rounded-2xl p-1" role="tablist">
         {TABS.map((t) => (
-          <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className={cn("-mb-px shrink-0 border-b-2 border-transparent px-1 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground", tab === t.key && "border-primary text-foreground")}>{t.label}</button>
+          <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)} className={cn("shrink-0 rounded-[11px] px-3.5 py-2 text-sm font-medium capitalize text-muted-foreground transition-colors hover:text-foreground", tab === t.key && "bg-primary text-primary-foreground hover:text-primary-foreground")}>{t.label}</button>
         ))}
       </div>
       {(tab === "day" || tab === "month" || tab === "customer") && <SalesReport key={tab} by={tab} query={query} />}

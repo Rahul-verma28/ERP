@@ -46,9 +46,9 @@ export default function NotificationsPage() {
   ] as const
   return (
     <SettingsPage title="Notifications" crumb className="max-w-none">
-      <div className="flex gap-5 border-b" role="tablist">
+      <div className="flex gap-1 ui-surface w-fit max-w-full rounded-2xl p-1" role="tablist">
         {tabs.map(([key, label]) => (
-          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={cn("-mb-px border-b-2 border-transparent px-0.5 py-2 text-[13px] font-semibold text-muted-foreground", tab === key && "border-primary text-foreground")}>
+          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={cn("shrink-0 rounded-[11px] px-3.5 py-2 text-sm font-medium capitalize text-muted-foreground transition-colors hover:text-foreground", tab === key && "bg-primary text-primary-foreground hover:text-primary-foreground")}>
             {label}
           </button>
         ))}
@@ -92,8 +92,8 @@ function Editor({ data, tab, event, setEvent, onSaved }: { data: Data; tab: "cus
 
   if (tab === "team") {
     return (
-      <section className="rounded-xl border bg-card px-4 py-3">
-        <table className="w-full max-w-3xl text-[13px]">
+      <section className="ui-surface px-4 py-3">
+        <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b text-left text-xs text-muted-foreground">
               <th className="py-2 font-semibold">When</th>
@@ -127,7 +127,7 @@ function Editor({ data, tab, event, setEvent, onSaved }: { data: Data; tab: "cus
 
   if (tab === "limits") {
     return (
-      <section className="grid max-w-2xl gap-4 rounded-xl border bg-card px-5 py-4">
+      <section className="grid gap-4 ui-surface px-5 py-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-[15px] font-bold">Quiet hours</h2>
@@ -182,7 +182,7 @@ function Editor({ data, tab, event, setEvent, onSaved }: { data: Data; tab: "cus
 
   return (
     <div className="flex flex-col gap-4 xl:flex-row">
-      <section className="min-w-0 flex-1 rounded-xl border bg-card px-4 py-3">
+      <section className="min-w-0 flex-1 ui-surface px-4 py-3">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[440px] text-[13px]">
             <thead>
@@ -270,7 +270,7 @@ function TemplateEditor({ event, settings, defaults, editable, onSave }: { event
   }
 
   return (
-    <section className="flex w-full shrink-0 flex-col gap-2.5 rounded-xl border bg-card px-4 py-3.5 xl:w-[380px]" aria-label={`${def.label} email template`}>
+    <section className="flex w-full shrink-0 flex-col gap-2.5 ui-surface px-4 py-3.5 xl:w-[380px]" aria-label={`${def.label} email template`}>
       <h2 className="text-[15px] font-bold">{def.label} · Email</h2>
       <Field label="Subject" error={!subject.trim() ? "Add a subject" : null}>
         <Input value={subject} onChange={(e) => setSubject(e.target.value)} disabled={!editable} maxLength={150} />

@@ -23,7 +23,7 @@ export default function ModulePage({ params }: { params: Promise<{ module: strin
     <>
       <PageHeader title={title} description={nav.description} />
       {ent?.status === "inactive" ? (
-        <div className="max-w-xl rounded-xl border bg-card">
+        <div className="max-w-xl ui-surface">
           <ModuleLocked name={title} description={nav.description} canUpgrade={can("tenant.billing.view")} />
         </div>
       ) : (

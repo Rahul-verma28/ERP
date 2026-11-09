@@ -75,7 +75,7 @@ export async function visibleRoles(tenantId: string) {
   const all = await db().role.findMany({
     where: { layer: 'tenant', OR: [{ tenantId: null }, { tenantId }] },
     orderBy: [{ sort: 'asc' }, { name: 'asc' }],
-    include: { _count: { select: { members: true } } },
+    include: { _count: { select: { members: true, permissions: true } } },
   });
   return all
     .filter((r) => r.requiredModules.every((m) => active.includes(m as never)) && !hiddenIds.has(r.id))
@@ -89,6 +89,7 @@ export async function visibleRoles(tenantId: string) {
       isSystem: r.isSystem,
       isPredefined: r.isPredefined,
       memberCount: r._count.members,
+      permissionCount: r._count.permissions,
     }));
 }
 

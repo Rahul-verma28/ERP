@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { MoneyInput, Spinner } from "@/components/common"
 import { Field, FormError, NativeSelect } from "@/components/form"
+import { SearchSelect } from "@/components/search-select"
 import { ItemPicker, SupplierPicker, type ContactOption, type ItemOption } from "@/components/pickers"
 import { parseSerials } from "@/components/stock-line"
 import { api, ApiError, errorMessage } from "@/lib/api"
@@ -18,7 +19,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatPaise } from "@/lib/format"
 import { qty, type StockLocation, type Tracking } from "@/lib/inventory"
-import { KIND_LABEL, KIND_PATH, type PurchaseDoc, type PurchaseKind } from "@/lib/purchase"
+import { KIND_LABEL, KIND_PATH, RETURN_REASONS, type PurchaseDoc, type PurchaseKind } from "@/lib/purchase"
 import { todayInIndia } from "@contracts/validation"
 
 // One form for a purchase order, goods receipt, purchase bill or purchase return. A GRN or bill can
@@ -31,8 +32,8 @@ const PERM: Record<PurchaseKind, string> = { purchase_order: "inventory.purchase
 const HINT: Record<PurchaseKind, string> = {
   purchase_order: "What you are ordering, at what price. Nothing moves in stock until goods come.",
   goods_receipt: "Goods that arrived. Stock comes in now; the bill can follow.",
-  purchase_bill: "The supplier's bill. Stock comes in now unless it already came on a GRN.",
-  purchase_return: "Goods going back to the supplier. Stock goes out and you owe less.",
+  purchase_bill: "The supplier's invoice. Save it as a draft, or post it to bring the stock in.",
+  purchase_return: "Enter what goes back. Stock and what you owe change when the return is completed.",
 }
 
 type Line = {
@@ -82,6 +83,8 @@ function PurchaseForm() {
   const [chargesPaise, setChargesPaise] = React.useState<number | null>(null)
   const [chargesGstBp, setChargesGstBp] = React.useState(1800)
   const [notes, setNotes] = React.useState("")
+  const [returnReason, setReturnReason] = React.useState("")
+  const invoices = useApi<{ data: PurchaseDoc[] }>(kind === "purchase_return" && !fromId && !editId ? "/purchases?kind=purchase_bill&limit=200" : null)
   const [lines, setLines] = React.useState<Line[]>([])
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
@@ -104,6 +107,9 @@ function PurchaseForm() {
         setNotes(s.notes ?? "")
         setChargesPaise(s.chargesPaise || null)
         setChargesGstBp(s.chargesGstBp)
+        setSupplierRef(s.supplierRef ?? "")
+        setSupplierDate(s.supplierDate?.slice(0, 10) ?? "")
+        setReturnReason(s.returnReason ?? "")
       }
       if (kind === "purchase_bill" && s.kind === "goods_receipt" && s.supplierRef) setSupplierRef(s.supplierRef)
       const byId = new Map(items.filter(Boolean).map((i) => [i!.id, i!]))
@@ -113,20 +119,39 @@ function PurchaseForm() {
         const it = l.itemId ? byId.get(l.itemId) : undefined
         return [{
           key: l.id, itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, baseUnit: it?.unit ?? l.unit, altUnit: it?.altUnit ?? null, altFactor: it?.altFactor ?? null,
-          tracking: it?.tracking ?? "none", isProduct: it?.type === "product", quantity: kind === "purchase_return" ? "" : String(left), max: editId ? null : left,
-          unitPricePaise: l.unitPricePaise, discountPaise: kind === "purchase_return" ? 0 : Math.round((l.discountPaise * left) / (l.quantity || 1)), gstRateBp: l.gstRateBp, sourceLineId: editId ? null : l.id,
-          batchNo: l.batchNo ?? "", mfgDate: l.mfgDate?.slice(0, 10) ?? "", expiryDate: l.expiryDate?.slice(0, 10) ?? "", serialText: kind === "purchase_return" ? "" : l.serials.join(", "),
+          tracking: it?.tracking ?? "none", isProduct: it?.type === "product", quantity: kind === "purchase_return" && !editId ? "" : String(left), max: editId ? null : left,
+          unitPricePaise: l.unitPricePaise, discountPaise: kind === "purchase_return" ? 0 : Math.round((l.discountPaise * left) / (l.quantity || 1)), gstRateBp: l.gstRateBp, sourceLineId: editId ? (kind === "purchase_order" ? null : l.sourceLineId) : l.id,
+          batchNo: l.batchNo ?? "", mfgDate: l.mfgDate?.slice(0, 10) ?? "", expiryDate: l.expiryDate?.slice(0, 10) ?? "", serialText: kind === "purchase_return" && !editId ? "" : l.serials.join(", "),
         }]
       }))
     })
   }, [source.data, editId, kind])
 
-  if (!can(editId ? "inventory.purchase_order.edit" : PERM[kind])) return <PageHeader title={KIND_LABEL[kind]} description="You don't have access to this. Ask your admin." />
+  if (!can(editId && kind === "purchase_order" ? "inventory.purchase_order.edit" : PERM[kind])) return <PageHeader title={KIND_LABEL[kind]} description="You don't have access to this. Ask your admin." />
   if (!locations.data || ((fromId || editId) && !source.data)) return <div className="grid place-items-center py-24"><Spinner /></div>
 
   const fromDoc = fromId ? source.data : null
   const isReturn = kind === "purchase_return"
-  const stockIn = kind === "goods_receipt" || (kind === "purchase_bill" && fromDoc?.kind !== "goods_receipt")
+  // A return starts from an invoice; choosing one reloads the form with its items
+  if (isReturn && !fromId && !editId) {
+    const options = (invoices.data?.data ?? []).filter((d) => ["unpaid", "part_paid", "paid"].includes(d.status)).map((d) => ({ value: d.id, label: `${d.number} - ${d.supplier.name}`, keywords: d.supplierRef ?? undefined }))
+    return (
+      <>
+        <Link href={KIND_PATH[kind]} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> Back</Link>
+        <PageHeader title="Create purchase return" description="Choose the invoice the goods go back against." />
+        <Card><CardContent>
+          {invoices.error ? <FormError message={errorMessage(invoices.error)} /> : !invoices.data ? <Spinner /> : (
+            <Field label="Original invoice" required hint={options.length ? undefined : "Post an invoice first. Only posted invoices can have returns."}>
+              <SearchSelect value="" onChange={(id) => router.replace(`/app/m/purchase/new?kind=purchase_return&from=${id}`)} options={options} placeholder="Select invoice" searchable aria-label="Original invoice" />
+            </Field>
+          )}
+        </CardContent></Card>
+      </>
+    )
+  }
+  const madeFrom = fromDoc?.kind ?? (editId ? source.data?.sourceType : null)
+  const nothingLeft = isReturn && !editId && !!source.data && source.data.lines.every((l) => l.quantity - l.doneQuantity <= 0)
+  const stockIn = kind === "goods_receipt" || (kind === "purchase_bill" && madeFrom !== "goods_receipt")
   const godown = locationId || godowns.find((g) => g.isDefault)?.id || godowns[0]?.id || ""
 
   const pick = (picked: ItemOption) => {
@@ -142,7 +167,7 @@ function PurchaseForm() {
   const taxable = used.reduce((s, l) => s + Math.max(0, Math.round(lineQty(l) * (l.unitPricePaise ?? 0)) - (l.discountPaise ?? 0)), 0) + (isReturn ? 0 : chargesPaise ?? 0)
   const tax = supplier?.gstin || reverseCharge ? used.reduce((s, l) => s + Math.round(((Math.round(lineQty(l) * (l.unitPricePaise ?? 0)) - (l.discountPaise ?? 0)) * l.gstRateBp) / 10_000), 0) + (isReturn ? 0 : Math.round(((chargesPaise ?? 0) * chargesGstBp) / 10_000)) : 0
 
-  async function save() {
+  async function save(draft = false) {
     const errs: Record<string, string> = {}
     if (!supplier) errs.contactId = "Choose a supplier"
     if (!used.length) errs.lines = isReturn ? "Enter what goes back" : "Add at least one item"
@@ -151,17 +176,18 @@ function PurchaseForm() {
       if (!isReturn && !(n > 0)) errs[`lines.${i}.quantity`] = "Enter more than 0"
       if (l.max !== null && n > l.max) errs[`lines.${i}.quantity`] = `At most ${qty(l.max)}`
       if (!isReturn && l.unitPricePaise === null) errs[`lines.${i}.unitPricePaise`] = "Enter the price"
-      if (stockIn && l.isProduct && l.tracking === "batch" && !l.batchNo.trim()) errs[`lines.${i}.batchNo`] = "Enter the batch"
+      if (!draft && stockIn && l.isProduct && l.tracking === "batch" && !l.batchNo.trim()) errs[`lines.${i}.batchNo`] = "Enter the batch"
     })
-    if (kind === "purchase_bill" && !supplierRef.trim()) errs.supplierRef = "Enter the supplier's bill number"
-    if (kind === "purchase_bill" && !supplierDate) errs.supplierDate = "Enter the bill date"
+    if (isReturn && !returnReason) errs.returnReason = "Choose a reason"
+    if (kind === "purchase_bill" && !draft && !supplierRef.trim()) errs.supplierRef = "Enter the supplier's invoice number"
+    if (kind === "purchase_bill" && !draft && !supplierDate) errs.supplierDate = "Enter the invoice date"
     setErrors(errs)
     if (Object.keys(errs).length) return
     setBusy(true)
     setError(null)
     const body = {
       contactId: supplier!.id, issueDate, dueDate: dueDate || null, supplierRef: supplierRef.trim() || null, supplierDate: supplierDate || null,
-      locationId: isReturn ? null : godown || null, reverseCharge, chargesPaise: isReturn ? 0 : chargesPaise ?? 0, chargesGstBp, roundOff: true, notes: notes.trim() || null,
+      locationId: isReturn ? null : godown || null, reverseCharge, chargesPaise: isReturn ? 0 : chargesPaise ?? 0, chargesGstBp, roundOff: true, notes: notes.trim() || null, ...(isReturn ? { returnReason } : {}),
       sourceId: fromId, lines: lines.filter((l) => !isReturn || lineQty(l) > 0).map((l) => ({
         itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: lineQty(l), unitPricePaise: l.unitPricePaise ?? 0, discountPaise: l.discountPaise ?? 0,
         gstRateBp: l.gstRateBp, sourceLineId: l.sourceLineId,
@@ -170,10 +196,12 @@ function PurchaseForm() {
       })),
     }
     try {
-      const doc = editId
-        ? await api.put<PurchaseDoc>(`/purchases/${editId}`, { ...body, sourceId: null, version: source.data!.version })
-        : await api.post<PurchaseDoc>("/purchases", { kind, ...body })
-      toast.success(`${KIND_LABEL[kind]} ${doc.number} saved`)
+      const doc = editId && (kind === "purchase_bill" || isReturn)
+        ? await api.put<PurchaseDoc>(`/purchases/${editId}/draft`, { ...body, sourceId: null, version: source.data!.version, post: !draft })
+        : editId
+          ? await api.put<PurchaseDoc>(`/purchases/${editId}`, { ...body, sourceId: null, version: source.data!.version })
+          : await api.post<PurchaseDoc>("/purchases", { kind, ...body, ...(kind === "purchase_bill" || isReturn ? { draft } : {}) })
+      toast.success(kind === "purchase_bill" ? `${doc.number} ${draft ? "saved as draft" : "posted"}` : isReturn ? `${doc.number} saved as draft` : `${KIND_LABEL[kind]} ${doc.number} saved`)
       router.push(`/app/m/purchase/${doc.id}`)
     } catch (err) {
       if (err instanceof ApiError) setErrors(err.fields)
@@ -183,6 +211,7 @@ function PurchaseForm() {
   }
 
   const dateLabel = { purchase_order: "Order date", goods_receipt: "Received on", purchase_bill: "Goods received on", purchase_return: "Return date" }[kind]
+  const invoice = kind === "purchase_bill"
   return (
     <>
       <Link href={fromDoc ? `/app/m/purchase/${fromDoc.id}` : KIND_PATH[kind]} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {fromDoc ? fromDoc.number : "Back"}</Link>
@@ -195,14 +224,14 @@ function PurchaseForm() {
             </Field>
             <Field label={dateLabel} error={errors.issueDate}><Input type="date" value={issueDate} max={todayInIndia()} onChange={(e) => setIssueDate(e.target.value)} /></Field>
             {(kind === "purchase_order" || kind === "purchase_bill") && (
-              <Field label={kind === "purchase_order" ? "Expected by" : "Pay by"} hint={kind === "purchase_bill" ? "Empty: from the supplier's payment days" : undefined} error={errors.dueDate}>
+              <Field label={kind === "purchase_order" ? "Expected by" : "Due date"} hint={kind === "purchase_bill" ? "Empty: from the supplier's payment days" : undefined} error={errors.dueDate}>
                 <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
               </Field>
             )}
             {(kind === "goods_receipt" || kind === "purchase_bill") && (
               <>
-                <Field label={kind === "purchase_bill" ? "Supplier bill no." : "Challan no."} required={kind === "purchase_bill"} error={errors.supplierRef}><Input value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} maxLength={40} /></Field>
-                <Field label={kind === "purchase_bill" ? "Bill date" : "Challan date"} required={kind === "purchase_bill"} error={errors.supplierDate}><Input type="date" value={supplierDate} max={issueDate} onChange={(e) => setSupplierDate(e.target.value)} /></Field>
+                <Field label={kind === "purchase_bill" ? "Supplier invoice no." : "Challan no."} required={kind === "purchase_bill"} error={errors.supplierRef}><Input value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} maxLength={40} /></Field>
+                <Field label={kind === "purchase_bill" ? "Invoice date" : "Challan date"} required={kind === "purchase_bill"} error={errors.supplierDate}><Input type="date" value={supplierDate} max={issueDate} onChange={(e) => setSupplierDate(e.target.value)} /></Field>
               </>
             )}
             {!isReturn && godowns.length > 1 && (
@@ -213,6 +242,12 @@ function PurchaseForm() {
               </Field>
             )}
           </div>
+          {isReturn && (
+            <Field label="Return reason" required error={errors.returnReason} className="max-w-sm">
+              <SearchSelect value={returnReason} onChange={setReturnReason} options={RETURN_REASONS.map((r) => ({ value: r, label: r }))} placeholder="Select reason" aria-label="Return reason" />
+            </Field>
+          )}
+          {nothingLeft && <p className="rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">No items available for return. Everything on this invoice has already been returned.</p>}
           {fromDoc?.kind === "goods_receipt" && <p className="rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">Stock already came in on {fromDoc.number}. This bill only records what you owe.</p>}
           {supplier && !supplier.gstin && !isReturn && !reverseCharge && <p className="rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">This supplier has no GSTIN, so no GST is charged on this purchase.</p>}
 
@@ -304,7 +339,8 @@ function PurchaseForm() {
           <FormError message={error} />
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => router.back()}>Cancel</Button>
-            <Button disabled={busy} onClick={save}>{busy ? "Saving…" : `Save ${KIND_LABEL[kind].toLowerCase()}`}</Button>
+            {invoice && <Button variant="outline" disabled={busy} onClick={() => save(true)}>Save as draft</Button>}
+            <Button disabled={busy || nothingLeft} onClick={() => save(isReturn)}>{busy ? "Saving…" : invoice ? "Save and post" : isReturn ? (editId ? "Save changes" : "Create return") : `Save ${KIND_LABEL[kind].toLowerCase()}`}</Button>
           </div>
         </CardContent>
       </Card>
@@ -312,10 +348,16 @@ function PurchaseForm() {
   )
 }
 
+/** A new source document means a fresh form */
+function KeyedForm() {
+  const params = useSearchParams()
+  return <PurchaseForm key={`${params.get("kind")}-${params.get("from")}-${params.get("edit")}`} />
+}
+
 export default function NewPurchasePage() {
   return (
     <React.Suspense>
-      <PurchaseForm />
+      <KeyedForm />
     </React.Suspense>
   )
 }

@@ -36,9 +36,9 @@ export const SETTINGS_GROUPS: { label: string; items: SettingsItem[] }[] = [
   {
     label: "People",
     items: [
-      { key: "team", label: "Team", href: "/app/settings/team", permission: "tenant.member.view" },
-      { key: "roles", label: "Roles & permissions", href: "/app/settings/roles", permission: "tenant.role.view" },
-      { key: "security", label: "Users & security", href: "/app/settings/security", permission: "tenant.settings.view" },
+      { key: "team", label: "Users", href: "/app/settings/team", permission: "tenant.member.view" },
+      { key: "roles", label: "Roles", href: "/app/settings/roles", permission: "tenant.role.view" },
+      { key: "security", label: "Security", href: "/app/settings/security", permission: "tenant.settings.view" },
     ],
   },
   {
@@ -259,7 +259,7 @@ function useHashHighlight() {
 
 /** Pages from before Phase 2 that don't draw their own title */
 const TITLED: Record<string, [string, string]> = {
-  "/app/settings/team": ["Team", "Everyone who works in this business, their role and how they sign in."],
+  "/app/settings/team": ["Manage Users", "Everyone who works in this business, their role and how they sign in."],
   "/app/settings/branches": ["Branches", "Locations with their own GSTIN, address and invoice series."],
   "/app/settings/customization": ["Customization", "Your industry's words and extra fields on records."],
   "/app/settings/audit": ["Audit log", "Who changed what, and when."],
@@ -303,7 +303,7 @@ export function SettingsFrame({ children }: { children: React.ReactNode }) {
 /** Page title block used by every settings page. */
 export function SettingsPage({ title, description, crumb, actions, children, className }: { title: string; description?: React.ReactNode; crumb?: boolean; actions?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("flex max-w-5xl flex-col gap-4", className)}>
+    <div className={cn("flex w-full flex-col gap-4", className)}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
           {crumb && (

@@ -116,8 +116,9 @@ export default function TeamPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="pl-6">User</TableHead>
+                <TableHead>Mobile</TableHead>
                 <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Login status</TableHead>
                 <TableHead>Last sign-in</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
@@ -129,6 +130,7 @@ export default function TeamPage() {
                     <div className="font-medium">{m.user.name}</div>
                     <div className="text-xs text-muted-foreground">{m.user.email}</div>
                   </TableCell>
+                  <TableCell className="text-sm tabular-nums">{m.user.mobile || "—"}</TableCell>
                   <TableCell>
                     {can("tenant.member.edit") && m.role.key !== "owner" && m.user.id !== me?.user.id && assignable.length ? (
                       <NativeSelect className="h-8 w-48" value={m.role.id} onChange={(e) => patchMember(m, { roleId: e.target.value })} aria-label={`Role for ${m.user.name}`}>
@@ -145,7 +147,7 @@ export default function TeamPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      <Badge variant={m.status === "active" ? "secondary" : "outline"}>{m.status}</Badge>
+                      <Badge variant={m.status === "active" ? "secondary" : "outline"}>{m.status === "active" ? "Enabled" : m.status === "deactivated" ? "Disabled" : "Invited"}</Badge>
                       {m.user.mfaEnabled && <Badge variant="outline" title="Two-step verification is on">Two-step</Badge>}
                     </div>
                   </TableCell>
@@ -158,9 +160,9 @@ export default function TeamPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           {m.status === "active" ? (
-                            <DropdownMenuItem onClick={() => patchMember(m, { status: "deactivated" })}>Deactivate</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => patchMember(m, { status: "deactivated" })}>Disable login</DropdownMenuItem>
                           ) : (
-                            <DropdownMenuItem onClick={() => patchMember(m, { status: "active" })}>Reactivate</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => patchMember(m, { status: "active" })}>Enable login</DropdownMenuItem>
                           )}
                           {m.user.mfaEnabled && <DropdownMenuItem onClick={() => setResetFor(m)}>Reset two-step…</DropdownMenuItem>}
                         </DropdownMenuContent>

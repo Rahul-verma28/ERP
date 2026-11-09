@@ -104,7 +104,7 @@ function SetupWizard() {
           {leaving ? "Saving…" : "Finish later"}
         </Button>
       </header>
-      <div className="mx-auto flex w-full max-w-6xl flex-1">
+      <div className="flex w-full flex-1">
         <nav className="hidden w-64 shrink-0 border-r bg-background/60 p-4 md:block" aria-label="Setup steps">
           <ol className="grid gap-1">
             {[...SETUP_STEPS, { key: "done" as const, label: "Done", neededForInvoices: false }].map((s, i) => {

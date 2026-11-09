@@ -24,10 +24,10 @@ import { cn } from "@/lib/utils"
 // My account: password, two-step verification, backup codes, where you're signed in and the
 // last 30 days of sign-ins. Shown together on the one account page.
 
-const card = "flex flex-col gap-2.5 rounded-xl border bg-card px-[18px] py-4"
+const card = "flex flex-col gap-2.5 ui-surface px-[18px] py-4"
 
 export function Rows({ children }: { children: React.ReactNode }) {
-  return <div className="divide-y rounded-xl border bg-card">{children}</div>
+  return <div className="divide-y ui-surface">{children}</div>
 }
 
 /** One line of the page: what it is, its value, and the button that changes it. */

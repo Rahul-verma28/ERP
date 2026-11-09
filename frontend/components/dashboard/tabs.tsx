@@ -9,7 +9,7 @@ import { api, errorMessage } from "@/lib/api"
 import { formatDate, formatDateTime } from "@/lib/format"
 import { isError, type Query } from "@/lib/dashboard"
 import { cn } from "@/lib/utils"
-import { ActionButton, Bars, Kpi, KpiRow, Meter, MiniTable, SHADES, WARN, Widget, WidgetLink, money, pill, td, th, tones } from "./parts"
+import { ActionButton, AreaChart, Bars, Donut, Kpi, KpiRow, Meter, MiniTable, SHADES, WARN, Widget, WidgetLink, money, pill, td, th, tones } from "./parts"
 
 // Every widget of every dashboard tab. A renderer gets its widget's data (or undefined while
 // loading, or { error }) and says how wide it is in the 30-column grid.
@@ -186,7 +186,7 @@ function KpiSkeleton({ d }: { d: Any }) {
   return (
     <KpiRow>
       {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="h-[86px] animate-pulse rounded-xl border bg-card" />
+        <div key={i} className="h-[86px] animate-pulse ui-surface" />
       ))}
     </KpiRow>
   )
@@ -196,7 +196,7 @@ function TrendWidget({ d, c, title, labels }: { d: Any; c: WidgetCtx; title: str
   const empty = ok(d) && d.buckets.every((b: Any) => !b.invoiced && !b.collected)
   return (
     <Widget title={`${title} · ${formatDate(c.q.from)} – ${formatDate(c.q.to)}`} data={d} slow={c.slow} onRetry={c.reload} empty={empty && "No invoices in this period yet. Your first invoice shows here."}>
-      {ok(d) && <Bars pair={d.hasCollected} labels={d.hasCollected ? labels : undefined} height={150} rows={d.buckets.map((b: Any) => ({ label: b.label, a: b.invoiced, b: b.collected, title: `${b.from === b.to ? formatDate(b.from) : `${formatDate(b.from)} – ${formatDate(b.to)}`}: ${money(b.invoiced)}${d.hasCollected ? ` · collected ${money(b.collected)}` : ""}` }))} />}
+      {ok(d) && <AreaChart format={money} labels={d.hasCollected ? labels : undefined} rows={d.buckets.map((b: Any) => ({ label: b.label, a: b.invoiced, b: b.collected, title: `${b.from === b.to ? formatDate(b.from) : `${formatDate(b.from)} – ${formatDate(b.to)}`}: ${money(b.invoiced)}${d.hasCollected ? ` · collected ${money(b.collected)}` : ""}` }))} />}
     </Widget>
   )
 }
@@ -285,7 +285,7 @@ const billing: Record<string, WidgetDef> = {
     span: NARROW,
     render: (d, c) => (
       <Widget title="How customers paid" data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.total && "No payments in this period."}>
-        {ok(d) && d.rows.map((r: Any, i: number) => <Meter key={r.method} label={METHOD[r.method] ?? r.method} value={`${money(r.amount)} · ${r.share}%`} pct={r.share} color={SHADES[Math.min(i, 3)]} />)}
+        {ok(d) && <Donut rows={d.rows.map((r: Any) => ({ label: METHOD[r.method] ?? r.method, value: `${money(r.amount)} · ${r.share}%`, n: r.amount }))} />}
       </Widget>
     ),
   },
@@ -328,7 +328,7 @@ const sales: Record<string, WidgetDef> = {
     span: WIDE,
     render: (d, c) => (
       <Widget title="Quotations by result" right={<span className="text-xs text-muted-foreground">count · value</span>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.total && "No quotations sent in this period."}>
-        {ok(d) && d.rows.map((r: Any, i: number) => <Meter key={r.key} label={r.label} value={`${r.count} · ${money(r.value)}`} pct={d.total ? (r.count / d.total) * 100 : 0} color={["var(--primary)", "#2450D8", "#C27C0E", "var(--input)"][i]} />)}
+        {ok(d) && <Donut rows={d.rows.map((r: Any) => ({ label: r.label, value: `${r.count} · ${money(r.value)}`, n: r.count }))} />}
       </Widget>
     ),
   },
@@ -449,7 +449,7 @@ const crm: Record<string, WidgetDef> = {
     span: NARROW,
     render: (d, c) => (
       <Widget title="Where leads come from" data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.total && "No leads added in this period."}>
-        {ok(d) && d.rows.map((r: Any, i: number) => <Meter key={r.source ?? "none"} label={r.source ?? "Not recorded"} value={`${r.count} · ${r.share}%`} pct={r.share} color={r.source ? SHADES[Math.min(i, 3)] : SHADES[4]} />)}
+        {ok(d) && <Donut rows={d.rows.map((r: Any) => ({ label: r.source ?? "Not recorded", value: `${r.count} · ${r.share}%`, n: r.count }))} />}
       </Widget>
     ),
   },
@@ -620,7 +620,7 @@ const finance: Record<string, WidgetDef> = {
     span: THIRD,
     render: (d, c) => (
       <Widget title="Expenses by category" data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.total && "No expenses in this period."}>
-        {ok(d) && d.rows.map((r: Any, i: number) => <Meter key={r.category} label={r.category} value={`${money(r.amount)} · ${r.share}%`} pct={r.share} color={SHADES[Math.min(i, 4)]} />)}
+        {ok(d) && <Donut rows={d.rows.map((r: Any) => ({ label: r.category, value: `${money(r.amount)} · ${r.share}%`, n: r.amount }))} />}
       </Widget>
     ),
   },

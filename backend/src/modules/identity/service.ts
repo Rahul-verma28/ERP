@@ -155,6 +155,7 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
         isOwner: tenant.ownerUserId === userId, onboarding: tenant.onboarding, createdAt: tenant.createdAt,
         // Workspace look for every member; modules the owner chose at signup come first in the menu
         branding: withDefaults(tenant.preferences).branding,
+        purchaseOrders: withDefaults(tenant.preferences).inventory.purchaseOrders,
         preferredModules: ((tenant.profile ?? {}) as WorkspaceProfile).modules ?? [],
       },
       role: { ...role, name: role.key === 'service_provider' ? terms['role.service_provider'] : role.name },

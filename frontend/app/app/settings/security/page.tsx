@@ -33,7 +33,7 @@ interface SecurityData {
   adminsWithoutMfa: number
 }
 
-const card = "flex flex-col gap-2.5 rounded-xl border bg-card px-4 py-3.5"
+const card = "flex flex-col gap-2.5 ui-surface px-4 py-3.5"
 const k = "text-xs font-semibold text-muted-foreground"
 const pill = "inline-flex h-5 items-center rounded-full px-[7px] text-[11px] font-semibold"
 const MFA_LABEL: Record<SecurityPolicy["mfa"]["policy"], string> = { off: "Off", admins: "Owner & admins", everyone: "Everyone", roles: "Per role" }

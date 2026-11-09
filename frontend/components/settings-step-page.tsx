@@ -26,7 +26,7 @@ export function SettingsStepPage({ title, description, stepKey, Step, anchor, be
       ) : (
         <>
         {before?.({ tenant, refresh, readOnly })}
-        <fieldset id={anchor} disabled={readOnly} className="min-w-0 rounded-xl border bg-card p-5">
+        <fieldset id={anchor} disabled={readOnly} className="min-w-0 ui-surface p-5">
           <StepMode.Provider value="settings">
             <Step tenant={tenant} workspace={workspace} refresh={refresh} back={null} stepKey={stepKey} complete={async () => void toast.success(`${title} saved`)} />
           </StepMode.Provider>

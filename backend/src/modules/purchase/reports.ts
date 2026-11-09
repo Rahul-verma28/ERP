@@ -10,7 +10,8 @@ import { fromMilli, milli } from '../inventory/engine';
 import { createPurchase, getSupplier } from './service';
 
 const DAY = 86_400_000;
-const live = { not: 'cancelled' };
+/** Drafts and returns not yet completed have changed nothing */
+const live = { notIn: ['cancelled', 'draft', 'approved'] };
 export const RangeQuery = z.object({ from: DateStr, to: DateStr });
 
 /** What is owed to each supplier, by how late it is (from each bill's due date, else its date) */

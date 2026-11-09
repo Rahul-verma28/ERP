@@ -106,7 +106,7 @@ function TwoStepSetup() {
   const p = "m-0 text-[13px] leading-relaxed text-foreground/80"
 
   return (
-    <div className={cn("mx-auto flex w-full max-w-[1220px] flex-col gap-4", forced && "min-h-svh justify-center p-4 sm:p-7")}>
+    <div className={cn("flex w-full flex-col gap-4", forced && "min-h-svh justify-center p-4 sm:p-7")}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           {forced ? (
