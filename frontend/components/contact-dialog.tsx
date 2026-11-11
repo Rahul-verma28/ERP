@@ -15,6 +15,7 @@ import { CustomFieldsForm, useCustomFields } from "@/components/custom-fields"
 import { UserSelect } from "@/components/pickers"
 import { StateSelect } from "@/components/search-select"
 import { fyStart } from "@/components/customer-ledger"
+import { NumberStepper } from "@/components/number-stepper"
 import { api, ApiError } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
@@ -395,7 +396,7 @@ function CustomerForm({ contact, initialName, onClose, onSaved }: Props) {
                 </NativeSelect>
               </Field>
               {v.terms === "custom" ? (
-                <Field label="Payment days" required error={form.errors.customDays}><Input value={v.customDays} onChange={(e) => form.set("customDays", e.target.value.replace(/\D/g, "").slice(0, 3))} inputMode="numeric" aria-label="Payment days" /></Field>
+                <Field label="Payment days" required error={form.errors.customDays}><NumberStepper max={365} suffix="days" value={v.customDays} onChange={(x) => form.set("customDays", x)} placeholder="e.g. 21" aria-label="Payment days" /></Field>
               ) : <div className="hidden sm:block" />}
               <Field label="Credit limit" hint="Bills above this need approval. Empty: no limit.">
                 <MoneyInput value={v.creditLimitPaise} onChange={(a) => form.set("creditLimitPaise", a)} aria-label="Credit limit" />

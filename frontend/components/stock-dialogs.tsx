@@ -11,6 +11,7 @@ import { WarehouseSelect } from "@/components/creatable-select"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { ItemPicker } from "@/components/pickers"
 import { parseSerials } from "@/components/stock-line"
+import { NumberStepper } from "@/components/number-stepper"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate } from "@/lib/format"
@@ -135,7 +136,7 @@ export function StockDialog({ kind, item: given, onClose, onDone }: { kind: Kind
                   <span className="truncate font-medium">{item.name}</span>
                   <button type="button" aria-label="Change item" onClick={() => setItem(null)}><X className="size-4 text-muted-foreground" /></button>
                 </div>
-              ) : <ItemPicker onPick={(i) => setItem({ id: i.id, name: i.name, unit: i.unit, tracking: (i as { tracking?: StockTarget["tracking"] }).tracking, costPaise: i.costPricePaise ?? null })} placeholder="Search or scan an item" />}
+              ) : <ItemPicker onPick={(i) => setItem({ id: i.id, name: i.name, unit: i.unit, tracking: (i as { tracking?: StockTarget["tracking"] }).tracking, costPaise: i.costPricePaise ?? null })} price="cost" />}
             </Field>
           )}
           {given && <p className="rounded-xl bg-muted px-3 py-2 text-sm"><span className="font-medium">{given.name}</span>{given.sku ? ` · ${given.sku}` : ""}{tracking !== "none" && <span className="text-muted-foreground"> · tracked by {tracking}</span>}</p>}
@@ -173,7 +174,7 @@ export function StockDialog({ kind, item: given, onClose, onDone }: { kind: Kind
           ) : (
             <div className="grid grid-cols-2 gap-4">
               <Field label={counting ? "Counted quantity" : "Quantity"} required error={errors.quantity ?? errors["lines.0.quantity"] ?? errors["lines.0.counted"]}>
-                <Input inputMode="decimal" value={quantity} onChange={(e) => setQuantity(e.target.value.replace(/[^\d.]/g, ""))} placeholder={item?.unit ?? "0"} autoFocus={!!given} />
+                <NumberStepper decimals value={quantity} onChange={setQuantity} suffix={item?.unit} placeholder="0" autoFocus={!!given} />
               </Field>
               {kind === "adjust" && mode === "out" && <Field label="Reason" required><NativeSelect value={reason} onChange={(e) => setReason(e.target.value)} aria-label="Reason">{REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</NativeSelect></Field>}
               {counting && quantity !== "" && <p className="self-end pb-2 text-sm text-muted-foreground">{n === here ? "Matches the books" : `${n > here ? "+" : "−"}${qty(Math.abs(n - here))} ${item?.unit ?? ""} against the books`}</p>}

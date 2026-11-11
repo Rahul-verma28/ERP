@@ -1740,6 +1740,9 @@ model StockLocation {
   address   String?
   city      String?
   zipCode   String?  @map("zip_code") @db.VarChar(10)
+  /// GST state of the warehouse (dispatch-from on e-way bills)
+  stateCode String?  @map("state_code") @db.VarChar(2)
+  contactPerson String? @map("contact_person")
   phone     String?  @db.VarChar(20)
   email     String?
   isDefault Boolean  @default(false) @map("is_default")

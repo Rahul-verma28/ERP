@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Field } from "@/components/form"
+import { WarehouseFormDialog } from "@/components/warehouse-form"
+import type { StockLocation } from "@/lib/inventory"
 import { SearchSelect, type SelectOption } from "@/components/search-select"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -53,7 +55,7 @@ function NameRow({ initial, placeholder, onSave, onCancel }: { initial: string; 
   )
 }
 
-export function ManageDialog({ noun, plural, rows, typed, selected, canAdd, canEdit, canRemove, removeLabel = "Delete", removeQuestion, onAdd, onRename, onRemove, onApply, onClose }: {
+export function ManageDialog({ noun, plural, rows, typed, selected, canAdd, canEdit, canRemove, removeLabel = "Delete", removeQuestion, onAdd, onRename, onRemove, onApply, onClose, onOpenForm }: {
   noun: string
   plural: string
   rows: ManagedRow[]
@@ -70,8 +72,10 @@ export function ManageDialog({ noun, plural, rows, typed, selected, canAdd, canE
   onRemove: (id: string) => Promise<void>
   onApply: (id: string) => void
   onClose: () => void
+  /** Records with more than a name: add and edit open their full form instead of the inline name row */
+  onOpenForm?: (id: string | null) => void
 }) {
-  const [adding, setAdding] = React.useState(!!typed)
+  const [adding, setAdding] = React.useState(!!typed && !onOpenForm)
   const [editing, setEditing] = React.useState<string | null>(null)
   const [removing, setRemoving] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
@@ -85,7 +89,7 @@ export function ManageDialog({ noun, plural, rows, typed, selected, canAdd, canE
         </DialogHeader>
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{plural}</p>
-          {canAdd && <button type="button" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline" onClick={() => { setAdding(true); setEditing(null) }}><PlusCircle className="size-4" /> Add new {noun}</button>}
+          {canAdd && <button type="button" className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline" onClick={() => { if (onOpenForm) return onOpenForm(null); setAdding(true); setEditing(null) }}><PlusCircle className="size-4" /> Add new {noun}</button>}
         </div>
         <div className="max-h-[50svh] divide-y overflow-y-auto rounded-xl border">
           {adding && (
@@ -111,7 +115,7 @@ export function ManageDialog({ noun, plural, rows, typed, selected, canAdd, canE
                 ) : (
                   <span className="flex items-center gap-3">
                     <button type="button" className={link} onClick={() => onApply(r.id)}>Apply this {noun}</button>
-                    {canEdit && <button type="button" className={link} onClick={() => { setEditing(r.id); setAdding(false) }}><Pencil className="size-3.5" /> Edit</button>}
+                    {canEdit && <button type="button" className={link} onClick={() => { if (onOpenForm) return onOpenForm(r.id); setEditing(r.id); setAdding(false) }}><Pencil className="size-3.5" /> Edit</button>}
                     {canRemove && !r.locked && <button type="button" className={link} onClick={() => setRemoving(r.id)}><Trash2 className="size-3.5" /> {removeLabel}</button>}
                   </span>
                 )}
@@ -140,7 +144,7 @@ function ManagedSelect({ noun, plural, rows, placeholder, canManage, dialog, ...
   const [open, setOpen] = React.useState<string | null>(null)
   return (
     <>
-      <SearchSelect {...props} options={rows.map((r) => ({ value: r.id, label: r.name }))} placeholder={placeholder ?? `Select ${noun}`} searchPlaceholder={`Search ${noun}…`} onCreate={canManage ? setOpen : undefined} createLabel={`Manage or add ${plural}`} />
+      <SearchSelect {...props} options={rows.map((r) => ({ value: r.id, label: r.name }))} placeholder={placeholder ?? `Select ${noun}`} searchPlaceholder={`Search ${plural}…`} searchable onCreate={canManage ? setOpen : undefined} createLabel={`Manage or add ${plural}`} />
       {open !== null && dialog(open, () => setOpen(null))}
     </>
   )
@@ -189,37 +193,56 @@ export function CategorySelect(props: SelectProps) {
 
 export function WarehouseSelect(props: SelectProps) {
   const { can } = useAuth()
-  const list = useApi<{ data: (Named & { isActive: boolean; isDefault: boolean })[] }>("/stock-locations")
-  const rows = (list.data?.data ?? []).filter((w) => w.isActive).map((w) => ({ id: w.id, name: w.name, tag: w.isDefault ? "Default" : undefined, locked: w.isDefault }))
+  const list = useApi<{ data: StockLocation[] }>("/stock-locations")
+  const all = list.data?.data ?? []
+  const rows = all.filter((w) => w.isActive).map((w) => ({ id: w.id, name: w.city ? `${w.name} · ${w.city}` : w.name, tag: w.isDefault ? "Default" : undefined, locked: w.isDefault }))
   const canAdd = can("inventory.warehouse.create")
   const canEdit = can("inventory.warehouse.edit")
+  // null = closed; "new" = add; an id = edit that one
+  const [formFor, setFormFor] = React.useState<{ id: string | null; name: string } | null>(null)
   return (
-    <ManagedSelect
-      {...props}
-      noun="warehouse"
-      plural="warehouses"
-      rows={rows}
-      canManage={canAdd || canEdit}
-      dialog={(typed, close) => (
-        <ManageDialog
-          noun="warehouse"
-          plural="warehouses"
-          rows={rows}
-          typed={typed}
-          selected={props.value}
-          canAdd={canAdd}
-          canEdit={canEdit}
-          canRemove={canEdit}
-          removeLabel="Close"
-          removeQuestion="Close this warehouse?"
-          onClose={close}
-          onApply={(id) => { props.onChange(id); close() }}
-          onAdd={async (name) => { const w = await api.post<Named>("/stock-locations", { name }); await list.reload(); props.onChange(w.id); toast.success(`${name} added`) }}
-          onRename={async (id, name) => { await api.patch(`/stock-locations/${id}`, { name }); await list.reload() }}
-          onRemove={async (id) => { await api.patch(`/stock-locations/${id}`, { isActive: false }); await list.reload(); if (props.value === id) props.onChange("") }}
+    <>
+      <ManagedSelect
+        {...props}
+        noun="warehouse"
+        plural="warehouses"
+        rows={rows}
+        canManage={canAdd || canEdit}
+        dialog={(typed, close) =>
+          // Typed a name that is not in the list: go straight to the new warehouse form
+          typed.trim() && canAdd ? (
+            <WarehouseFormDialog warehouse={null} initialName={typed.trim()} onClose={close} onSaved={async (w) => { await list.reload(); props.onChange(w.id); close() }} />
+          ) : (
+            <ManageDialog
+              noun="warehouse"
+              plural="warehouses"
+              rows={rows}
+              typed=""
+              selected={props.value}
+              canAdd={canAdd}
+              canEdit={canEdit}
+              canRemove={canEdit}
+              removeLabel="Close"
+              removeQuestion="Close this warehouse?"
+              onClose={close}
+              onOpenForm={(id) => setFormFor({ id, name: "" })}
+              onApply={(id) => { props.onChange(id); close() }}
+              onAdd={async () => undefined}
+              onRename={async () => undefined}
+              onRemove={async (id) => { await api.patch(`/stock-locations/${id}`, { isActive: false }); await list.reload(); if (props.value === id) props.onChange("") }}
+            />
+          )
+        }
+      />
+      {formFor && (
+        <WarehouseFormDialog
+          warehouse={formFor.id ? all.find((w) => w.id === formFor.id) ?? null : null}
+          initialName={formFor.name}
+          onClose={() => setFormFor(null)}
+          onSaved={async (w) => { await list.reload(); if (!formFor.id) props.onChange(w.id); setFormFor(null) }}
         />
       )}
-    />
+    </>
   )
 }
 

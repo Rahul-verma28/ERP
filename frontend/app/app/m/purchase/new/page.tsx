@@ -15,6 +15,7 @@ import { Field, FormError, NativeSelect } from "@/components/form"
 import { ItemPicker, SupplierPicker, type ContactOption, type ItemOption } from "@/components/pickers"
 import { PurchaseReturnForm } from "@/components/purchase-return-form"
 import { parseSerials } from "@/components/stock-line"
+import { NumberStepper } from "@/components/number-stepper"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
@@ -227,7 +228,7 @@ function PurchaseForm({ kind, editId, fromId, supplierId }: { kind: FormKind; ed
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] text-sm">
                   <thead className="bg-muted/50 text-left text-[13px]">
-                    <tr><th className="py-3 pr-3 pl-5 font-semibold">Product</th><th className="w-28 px-2 font-semibold">Qty</th><th className="w-36 px-2 font-semibold">Unit price</th><th className="w-24 px-2 font-semibold">Discount %</th><th className="w-28 px-2 font-semibold">GST</th><th className="w-28 px-2 text-right font-semibold">Total</th><th className="w-12 pr-3" /></tr>
+                    <tr><th className="py-3 pr-3 pl-5 font-semibold">Product</th><th className="w-28 px-2 font-semibold">Qty</th><th className="w-36 px-2 font-semibold">Unit price</th><th className="w-28 px-2 font-semibold">Discount %</th><th className="w-28 px-2 font-semibold">GST</th><th className="w-28 px-2 text-right font-semibold">Total</th><th className="w-12 pr-3" /></tr>
                   </thead>
                   <tbody>
                     {lines.map((l, i) => {
@@ -246,9 +247,9 @@ function PurchaseForm({ kind, editId, fromId, supplierId }: { kind: FormKind; ed
                                 </NativeSelect>
                               )}
                             </td>
-                            <td className="px-2 py-2"><Input inputMode="decimal" className="h-9" value={serial ? String(parseSerials(l.serialText).length) : l.quantity} readOnly={serial} onChange={(e) => update(i, { quantity: e.target.value.replace(/[^\d.]/g, "") })} aria-label={`Quantity of ${l.description}`} aria-invalid={!!errors[`lines.${i}.quantity`]} />{errors[`lines.${i}.quantity`] && <p className="mt-1 text-xs text-destructive">{errors[`lines.${i}.quantity`]}</p>}</td>
+                            <td className="px-2 py-2"><NumberStepper decimals size="sm" value={serial ? String(parseSerials(l.serialText).length) : l.quantity} disabled={serial} title={serial ? "Counted from the serial numbers" : undefined} onChange={(v) => update(i, { quantity: v })} aria-label={`Quantity of ${l.description}`} aria-invalid={!!errors[`lines.${i}.quantity`]} />{errors[`lines.${i}.quantity`] && <p className="mt-1 text-xs text-destructive">{errors[`lines.${i}.quantity`]}</p>}</td>
                             <td className="px-2 py-2"><MoneyInput value={l.unitPricePaise} onChange={(v) => update(i, { unitPricePaise: v })} aria-label={`Price of ${l.description}`} />{errors[`lines.${i}.unitPricePaise`] && <p className="mt-1 text-xs text-destructive">{errors[`lines.${i}.unitPricePaise`]}</p>}</td>
-                            <td className="px-2 py-2"><Input inputMode="decimal" className="h-9" value={l.discountPct} onChange={(e) => update(i, { discountPct: e.target.value.replace(/[^\d.]/g, "").slice(0, 6) })} placeholder="0" aria-label={`Discount percent on ${l.description}`} /></td>
+                            <td className="px-2 py-2"><NumberStepper decimals size="sm" max={100} value={l.discountPct} onChange={(v) => update(i, { discountPct: v })} placeholder="0" aria-label={`Discount percent on ${l.description}`} /></td>
                             <td className="px-2 py-2"><NativeSelect className="h-9" value={String(l.gstRateBp)} onChange={(e) => update(i, { gstRateBp: Number(e.target.value) })} aria-label={`GST rate of ${l.description}`}>{RATES.map((r) => <option key={r} value={r}>{r / 100}%</option>)}</NativeSelect></td>
                             <td className="px-2 py-3 text-right font-medium tabular-nums">{formatPaise(taxableOf(l))}</td>
                             <td className="py-2 pr-3 text-right">{!l.sourceLineId && <Button variant="ghost" size="icon-sm" className="text-destructive" onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} aria-label={`Remove ${l.description}`}><Trash2 /></Button>}</td>
@@ -276,7 +277,7 @@ function PurchaseForm({ kind, editId, fromId, supplierId }: { kind: FormKind; ed
               </div>
             )}
             <div className="grid gap-2 border-t p-5">
-              {madeFrom !== "goods_receipt" && <ItemPicker onPick={pick} allowCreate placeholder="+ Search or scan an item to add" />}
+              {madeFrom !== "goods_receipt" && <ItemPicker onPick={pick} allowCreate price="cost" locationId={warehouse} />}
               {errors.lines && <p className="text-xs text-destructive">{errors.lines}</p>}
               <button type="button" className="w-fit text-[13px] font-medium text-primary hover:underline" aria-expanded={showMore} onClick={() => setShowMore(!showMore)}>{showMore ? "Hide freight and reverse charge" : "Add freight or reverse charge"}</button>
               {showMore && (

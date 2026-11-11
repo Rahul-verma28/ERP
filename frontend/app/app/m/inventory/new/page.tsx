@@ -14,6 +14,7 @@ import { WarehouseSelect } from "@/components/creatable-select"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { ItemPicker, type ItemOption } from "@/components/pickers"
 import { parseSerials } from "@/components/stock-line"
+import { NumberStepper } from "@/components/number-stepper"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
@@ -216,7 +217,7 @@ function EntryForm() {
                       </Field>
                     ) : (
                       <Field label="Quantity" error={errors[`lines.${i}.quantity`]}>
-                        <Input inputMode="decimal" value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value.replace(/[^\d.]/g, "") })} aria-label={`Quantity of ${l.name}`} placeholder={l.useAlt ? l.altUnit ?? "" : l.unit} />
+                        <NumberStepper decimals value={l.quantity} onChange={(v) => update(i, { quantity: v })} aria-label={`Quantity of ${l.name}`} suffix={l.useAlt ? l.altUnit ?? "" : l.unit} placeholder="0" />
                       </Field>
                     )}
                     {l.altUnit && l.altFactor && l.tracking !== "serial" && (
@@ -248,7 +249,7 @@ function EntryForm() {
                 </div>
               )
             })}
-            <ItemPicker onPick={pick} placeholder="Search or scan products to add" />
+            <ItemPicker onPick={pick} price="cost" locationId={from} />
             {errors.lines && <p className="text-xs text-destructive">{errors.lines}</p>}
             {costed && total > 0 && <p className="text-right text-sm font-medium">Value: <span className="tabular-nums">{formatPaise(Math.round(total))}</span></p>}
           </div>

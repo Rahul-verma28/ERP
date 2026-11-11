@@ -4,6 +4,7 @@ import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
 import { DateStr } from '../../kernel/query';
+import { zPhone, zPincode, zStateCode } from '../../kernel/zodRules';
 import { dateOnly, todayIST } from '../../kernel/gst';
 import { getRolePermissions } from '../access/service';
 import { audit } from '../audit/service';
@@ -20,7 +21,7 @@ const Serials = z.array(z.string().trim().min(1).max(40)).max(1000);
 
 // ---------------------------------------------------------------- warehouses
 
-const Blank = (schema: z.ZodString) => schema.optional().nullable().or(z.literal('').transform(() => null));
+const Blank = <S extends z.ZodTypeAny>(schema: S) => schema.optional().nullable().or(z.literal('').transform(() => null));
 export const LocationInput = z.object({
   name: z.string().trim().min(2, 'Use at least 2 characters').max(60),
   isDefault: z.boolean().optional(),
@@ -29,6 +30,16 @@ export const LocationInput = z.object({
   zipCode: Blank(z.string().trim().max(10)),
   phone: Blank(z.string().trim().max(20)),
   email: Blank(z.string().trim().email('Enter a valid email').max(200)),
+  stateCode: Blank(zStateCode),
+  contactPerson: Blank(z.string().trim().max(80)),
+});
+/** A new warehouse from the screens: where it is must be complete (e-way bills dispatch from here) */
+export const LocationCreate = LocationInput.extend({
+  address: z.string().trim().min(3, 'Enter the address').max(300),
+  city: z.string().trim().min(2, 'Enter the city').max(80),
+  zipCode: zPincode,
+  stateCode: zStateCode,
+  phone: Blank(zPhone),
 });
 
 export async function listLocations(ctx: TenantCtx) {
@@ -57,7 +68,7 @@ export async function createLocation(ctx: TenantCtx, input: z.infer<typeof Locat
     throw new AppError('VALIDATION_FAILED', 'A warehouse with this name already exists.', { fields: { name: 'Already used' } });
   }
   if (input.isDefault) await db().stockLocation.updateMany({ where: { tenantId: ctx.tenantId }, data: { isDefault: false } });
-  const row = await db().stockLocation.create({ data: { tenantId: ctx.tenantId, name: input.name, isDefault: !!input.isDefault, address: input.address ?? null, city: input.city ?? null, zipCode: input.zipCode ?? null, phone: input.phone ?? null, email: input.email ?? null } });
+  const row = await db().stockLocation.create({ data: { tenantId: ctx.tenantId, name: input.name, isDefault: !!input.isDefault, address: input.address ?? null, city: input.city ?? null, zipCode: input.zipCode ?? null, phone: input.phone ?? null, email: input.email ?? null, stateCode: input.stateCode ?? null, contactPerson: input.contactPerson ?? null } });
   await audit({ action: 'inventory.warehouse.create', entity: 'stock_location', entityId: row.id, after: { name: row.name } });
   return row;
 }
@@ -79,7 +90,7 @@ export async function updateLocation(ctx: TenantCtx, id: string, input: z.infer<
     if (input.isActive === false || !loc.isActive) throw new AppError('CONFLICT', 'A closed warehouse cannot be the default.');
     await db().stockLocation.updateMany({ where: { tenantId: ctx.tenantId }, data: { isDefault: false } });
   }
-  const row = await db().stockLocation.update({ where: { id }, data: { name: input.name, isDefault: input.isDefault || undefined, isActive: input.isActive, address: input.address, city: input.city, zipCode: input.zipCode, phone: input.phone, email: input.email } });
+  const row = await db().stockLocation.update({ where: { id }, data: { name: input.name, isDefault: input.isDefault || undefined, isActive: input.isActive, address: input.address, city: input.city, zipCode: input.zipCode, phone: input.phone, email: input.email, stateCode: input.stateCode, contactPerson: input.contactPerson } });
   await audit({ action: 'inventory.warehouse.edit', entity: 'stock_location', entityId: id, before: { name: loc.name, isActive: loc.isActive }, after: input });
   return row;
 }

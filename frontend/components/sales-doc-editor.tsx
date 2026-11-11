@@ -16,6 +16,7 @@ import { ContactPicker, ItemPicker, type ContactOption, type ItemOption } from "
 import { StateSelect } from "@/components/search-select"
 import { WarehouseSelect } from "@/components/creatable-select"
 import { termsLabel } from "@/components/contact-dialog"
+import { NumberStepper } from "@/components/number-stepper"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { GST_RATES, PAYMENT_METHODS } from "@/lib/money"
@@ -291,13 +292,13 @@ export function SalesDocEditor({ kind, doc, initialContact, cash = false }: { ki
           </div>
           {lines.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[700px] text-sm">
+              <table className="w-full min-w-[760px] text-sm">
                 <thead className="bg-muted/50 text-left text-[13px]">
                   <tr>
                     <th className="py-3 pr-3 pl-5 font-semibold">Item</th>
-                    <th className="w-20 px-2 font-semibold">Qty</th>
+                    <th className="w-28 px-2 font-semibold">Qty</th>
                     <th className="w-32 px-2 font-semibold">Rate</th>
-                    <th className="w-20 px-2 font-semibold">Disc %</th>
+                    <th className="w-28 px-2 font-semibold">Disc %</th>
                     <th className="w-24 px-2 font-semibold">GST</th>
                     <th className="w-28 px-2 text-right font-semibold">Amount</th>
                     <th className="w-12 pr-3" />
@@ -321,7 +322,7 @@ export function SalesDocEditor({ kind, doc, initialContact, cash = false }: { ki
                             {!l.itemId && <Input value={l.hsnSac ?? ""} onChange={(e) => update(i, { hsnSac: e.target.value.replace(/\D/g, "").slice(0, 8) || null })} placeholder="HSN/SAC" className="mt-1 h-8 w-28 text-xs" aria-label="HSN or SAC" />}
                           </td>
                           <td className="px-2 py-2">
-                            <Input inputMode="decimal" className="h-9 tabular-nums" value={String(l.quantity)} onChange={(e) => update(i, { quantity: e.target.value.replace(/[^\d.]/g, "") })} aria-label={`Quantity of ${l.description || "line"}`} aria-invalid={!!errors[`lines.${i}.quantity`]} />
+                            <NumberStepper decimals size="sm" value={String(l.quantity)} onChange={(v) => update(i, { quantity: v })} aria-label={`Quantity of ${l.description || "line"}`} aria-invalid={!!errors[`lines.${i}.quantity`]} />
                             {errors[`lines.${i}.quantity`] && <p className="mt-1 text-xs text-destructive">{errors[`lines.${i}.quantity`]}</p>}
                           </td>
                           <td className="px-2 py-2">
@@ -329,7 +330,7 @@ export function SalesDocEditor({ kind, doc, initialContact, cash = false }: { ki
                             {errors[`lines.${i}.unitPricePaise`] && <p className="mt-1 text-xs text-destructive">{errors[`lines.${i}.unitPricePaise`]}</p>}
                           </td>
                           <td className="px-2 py-2">
-                            <Input inputMode="decimal" className="h-9" value={l.discountPct} onChange={(e) => update(i, { discountPct: e.target.value.replace(/[^\d.]/g, "").slice(0, 6) })} placeholder="0" aria-label={`Discount percent on ${l.description || "line"}`} />
+                            <NumberStepper decimals size="sm" max={100} value={l.discountPct} onChange={(v) => update(i, { discountPct: v })} placeholder="0" aria-label={`Discount percent on ${l.description || "line"}`} />
                             {errors[`lines.${i}.discountPaise`] && <p className="mt-1 text-xs text-destructive">{errors[`lines.${i}.discountPaise`]}</p>}
                           </td>
                           <td className="px-2 py-2">
@@ -345,7 +346,7 @@ export function SalesDocEditor({ kind, doc, initialContact, cash = false }: { ki
                             <td colSpan={7} className="px-5 pb-3">
                               <div className="flex flex-wrap items-center gap-2">
                                 <LineStockFields line={l} onChange={(p) => update(i, p)} sale={stocked} />
-                                {stocked && <Input inputMode="decimal" value={l.freeQuantity ? String(l.freeQuantity) : ""} onChange={(e) => update(i, { freeQuantity: e.target.value.replace(/[^\d.]/g, "") })} placeholder="Free qty" className="h-8 w-24 text-xs" aria-label={`Free quantity of ${l.description}`} />}
+                                {stocked && <NumberStepper decimals size="sm" className="w-32" value={l.freeQuantity ? String(l.freeQuantity) : ""} onChange={(v) => update(i, { freeQuantity: v })} placeholder="Free" aria-label={`Free quantity of ${l.description}`} title="Given free, not billed" />}
                               </div>
                             </td>
                           </tr>
@@ -359,7 +360,7 @@ export function SalesDocEditor({ kind, doc, initialContact, cash = false }: { ki
           )}
           <div className="grid gap-2 border-t p-5">
             <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-              <ItemPicker allowCreate={can("catalog.item.create")} defaultGstRateBp={taxes?.defaultGstRateBp} onPick={(it) => addItem(it as ItemOption & ItemStock)} placeholder="+ Search or scan an item to add" />
+              <ItemPicker allowCreate={can("catalog.item.create")} defaultGstRateBp={taxes?.defaultGstRateBp} onPick={(it) => addItem(it as ItemOption & ItemStock)} locationId={stocked ? warehouse : null} />
               <Button variant="outline" onClick={addBlank}>Line without an item</Button>
             </div>
             {errors.lines && <p className="text-xs text-destructive">{errors.lines}</p>}

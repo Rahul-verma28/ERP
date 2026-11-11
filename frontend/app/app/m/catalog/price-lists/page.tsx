@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState, MoneyInput, SearchInput, Spinner } from "@/components/common"
 import { DataList, localList } from "@/components/data-list"
 import { Field, FormError } from "@/components/form"
+import { NumberStepper } from "@/components/number-stepper"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
@@ -74,7 +75,7 @@ function PriceListDialog({ list, onClose, onSaved }: { list: PriceList | null; o
         <form onSubmit={save} className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Name" required error={errors.name}><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Wholesale" autoFocus /></Field>
-            <Field label="Discount %" error={errors.discountBp}><Input inputMode="decimal" value={discount} onChange={(e) => setDiscount(e.target.value.replace(/[^\d.]/g, ""))} placeholder="0" /></Field>
+            <Field label="Discount %" error={errors.discountBp}><NumberStepper decimals max={100} suffix="%" value={discount} onChange={setDiscount} placeholder="e.g. 10" /></Field>
           </div>
           <SearchInput value={search} onChange={setSearch} placeholder="Search items" />
           {!items.data ? <div className="grid place-items-center py-6"><Spinner /></div> : items.data.data.length === 0 ? <p className="text-sm text-muted-foreground">No items yet.</p> : (

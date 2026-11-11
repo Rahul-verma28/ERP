@@ -17,6 +17,7 @@ import { DataList, periodFilter, type Column, type ViewPreset } from "@/componen
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { SalesDocView } from "@/components/sales-doc-view"
 import { EInvoiceButton } from "@/components/gst-files"
+import { NumberStepper } from "@/components/number-stepper"
 import { todayInIndia } from "@contracts/validation"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -494,7 +495,7 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
                         <td className="px-3 py-3">
                           <div className="ml-auto w-36">
                             {kind === "return" ? (
-                              <Input type="number" min="0" max={l.quantityLeft} step="any" inputMode="decimal" className="text-right" aria-label={`Return quantity for ${l.description}`} aria-invalid={!!err} disabled={done} value={quantities[l.id] ?? ""} onChange={(e) => { setQuantities({ ...quantities, [l.id]: e.target.value }); clear(`line.${l.id}`); clear("lines") }} />
+                              <NumberStepper decimals max={l.quantityLeft} suffix={l.unit} placeholder="0" aria-label={`Return quantity for ${l.description}`} aria-invalid={!!err} disabled={done} value={quantities[l.id] ?? ""} onChange={(v) => { setQuantities({ ...quantities, [l.id]: v }); clear(`line.${l.id}`); clear("lines") }} />
                             ) : (
                               <MoneyInput value={amounts[l.id] ?? null} disabled={done} aria-label={`${debit ? "Amount to add" : "Amount to reduce"} for ${l.description}`} onChange={(v) => { setAmounts({ ...amounts, [l.id]: v }); clear(`line.${l.id}`); clear("lines") }} />
                             )}

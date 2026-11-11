@@ -17,6 +17,7 @@ import { CustomFieldsForm, useCustomFields } from "@/components/custom-fields"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { ImagePicker } from "@/components/image-picker"
 import { Stepper, type Step } from "@/components/stepper"
+import { NumberStepper } from "@/components/number-stepper"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { categoryColour, type Category, type Item } from "@/lib/catalog"
@@ -264,7 +265,7 @@ export function ItemForm({ editId }: { editId?: string | null }) {
               <Field label="Sale price" required error={errors.pricePaise}><MoneyInput value={form.pricePaise} onChange={(v) => set("pricePaise", v)} disabled={!editable} aria-label="Sale price" /></Field>
               {canCost && <Field label="Purchase price" error={errors.costPricePaise}><MoneyInput value={form.costPricePaise} onChange={(v) => set("costPricePaise", v)} disabled={!editable} aria-label="Purchase price" /></Field>}
               <Field label="Unit" required error={errors.unit}><UnitSelect value={form.unit} onChange={(v) => set("unit", v)} disabled={!editable} aria-label="Unit" /></Field>
-              {!isProduct && <Field label="Duration (minutes)" hint="Used for bookings" error={errors.durationMin}><Input inputMode="numeric" value={form.durationMin} onChange={(e) => set("durationMin", e.target.value.replace(/\D/g, ""))} disabled={!editable} /></Field>}
+              {!isProduct && <Field label="Duration (minutes)" hint="Used for bookings" error={errors.durationMin}><NumberStepper step={15} max={1440} suffix="min" value={form.durationMin} onChange={(v) => set("durationMin", v)} placeholder="e.g. 30" disabled={!editable} /></Field>}
             </div>
           )}
 
@@ -288,11 +289,11 @@ export function ItemForm({ editId }: { editId?: string | null }) {
                 <div className="grid gap-4 md:grid-cols-2">
                   {canOpen && (
                     <>
-                      <Field label="Quantity in stock today" hint="Leave empty if none" error={errors.opening}><Input inputMode="decimal" value={form.openingQty} onChange={(e) => set("openingQty", e.target.value.replace(/[^\d.]/g, ""))} placeholder={form.unit} /></Field>
+                      <Field label="Quantity in stock today" hint="Leave empty if none" error={errors.opening}><NumberStepper decimals value={form.openingQty} onChange={(v) => set("openingQty", v)} suffix={form.unit} placeholder="0" /></Field>
                       <Field label="Warehouse" hint="Where this stock is kept" required={Number(form.openingQty) > 0} error={errors.locationId}><WarehouseSelect value={form.locationId} onChange={(v) => set("locationId", v)} aria-label="Warehouse" aria-invalid={!!errors.locationId} /></Field>
                     </>
                   )}
-                  <Field label="Low stock level" hint="Alert at or below this" error={errors.reorderLevel}><Input inputMode="decimal" value={form.reorderLevel} onChange={(e) => set("reorderLevel", e.target.value.replace(/[^\d.]/g, ""))} disabled={!editable} /></Field>
+                  <Field label="Low stock level" hint="Alert at or below this" error={errors.reorderLevel}><NumberStepper decimals value={form.reorderLevel} onChange={(v) => set("reorderLevel", v)} suffix={form.unit} placeholder="e.g. 5" disabled={!editable} /></Field>
                   <Field label="Track by" hint={item?.stockQty ? "Can change only when stock is zero" : form.tracking === "none" ? undefined : "Add this item's stock later, with its batch or serial numbers"} error={errors.tracking}>
                     <NativeSelect value={form.tracking} onChange={(e) => set("tracking", e.target.value as Form["tracking"])} disabled={!editable || !!item?.stockQty} aria-label="Track by">
                       <option value="none">Quantity only</option>
@@ -306,7 +307,7 @@ export function ItemForm({ editId }: { editId?: string | null }) {
                 <Field label="Barcode" hint="Scan into bills; printed on labels" error={errors.barcode}><Input value={form.barcode} onChange={(e) => set("barcode", e.target.value)} maxLength={48} disabled={!editable} /></Field>
                 <div className="grid grid-cols-[1fr_8rem] gap-2">
                   <Field label="Second unit" hint="e.g. box, carton" error={errors.altUnit}><Input value={form.altUnit} onChange={(e) => set("altUnit", e.target.value)} maxLength={20} disabled={!editable} /></Field>
-                  <Field label={`${form.unit} in one`} error={errors.altFactor}><Input inputMode="decimal" value={form.altFactor} onChange={(e) => set("altFactor", e.target.value.replace(/[^\d.]/g, ""))} disabled={!editable || !form.altUnit.trim()} /></Field>
+                  <Field label={`${form.unit} in one`} error={errors.altFactor}><NumberStepper decimals min={0} value={form.altFactor} onChange={(v) => set("altFactor", v)} suffix={form.unit} placeholder="e.g. 12" disabled={!editable || !form.altUnit.trim()} /></Field>
                 </div>
               </div>
             </div>

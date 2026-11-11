@@ -8,6 +8,8 @@ export interface StockLocation {
   address: string | null
   city: string | null
   zipCode: string | null
+  stateCode?: string | null
+  contactPerson?: string | null
   phone: string | null
   email: string | null
   valuePaise: number

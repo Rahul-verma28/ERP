@@ -13,7 +13,7 @@ router.use(tenantAuth);
 router.get('/stock-locations', requirePermission('inventory.stock.view'), tx(async (req, res) => {
   res.json(await inventory.listLocations(req.ctx!));
 }));
-router.post('/stock-locations', requirePermission('inventory.warehouse.create'), validate(inventory.LocationInput), tx(async (req, res) => {
+router.post('/stock-locations', requirePermission('inventory.warehouse.create'), validate(inventory.LocationCreate), tx(async (req, res) => {
   res.status(201).json(await inventory.createLocation(req.ctx!, req.body));
 }));
 router.patch('/stock-locations/:id', requirePermission('inventory.warehouse.edit'), validate(IdParam, 'params'), validate(inventory.LocationPatch), tx(async (req, res) => {
