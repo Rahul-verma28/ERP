@@ -96,6 +96,9 @@ export interface SalesDoc {
   sourceNumber?: string | null
   sourceDate?: string | null
   shipTo?: ShipTo | null
+  /** Warehouse the goods leave from (a return: come back to) */
+  locationId?: string | null
+  location?: { id: string; name: string } | null
   ewayBillNo?: string | null
   ewayBillDate?: string | null
   irn?: string | null

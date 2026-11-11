@@ -1274,6 +1274,8 @@ model Contact {
   gstin            String?     @db.VarChar(15)
   stateCode        String?     @map("state_code") @db.Char(2)
   address          Json?
+  /// Customers: where goods are delivered when not the billing address
+  shippingAddress  Json?       @map("shipping_address")
   leadStatus       LeadStatus? @map("lead_status")
   leadSource       String?     @map("lead_source")
   ownerId          String?     @map("owner_id") @db.Uuid
@@ -1384,6 +1386,8 @@ model SalesDocument {
   igstPaise     BigInt         @default(0) @map("igst_paise")
   /// Where the goods go when it is not the billing address: name, line1, city, pincode, stateCode
   shipTo        Json?          @map("ship_to")
+  /// Warehouse the goods leave from; a return: the one they come back to. Empty = the default warehouse
+  locationId    String?        @map("location_id") @db.Uuid
   /// Given back by the GST portals after the JSON upload
   ewayBillNo    String?        @map("eway_bill_no") @db.VarChar(12)
   ewayBillDate  DateTime?      @map("eway_bill_date") @db.Date
@@ -1426,6 +1430,7 @@ model SalesDocument {
   @@index([tenantId, kind, status, issueDate])
   @@index([tenantId, contactId])
   @@index([tenantId, sourceId])
+  @@index([tenantId, locationId])
   @@map("sales_documents")
 }
 

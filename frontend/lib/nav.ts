@@ -30,7 +30,7 @@ export interface ModuleNav {
 }
 
 export const MODULE_NAV: ModuleNav[] = [
-  { key: "crm", label: "CRM", termKey: "entity.contact.plural", icon: Users, description: "Contacts, leads, notes, calls and follow-ups", phase: 1 },
+  { key: "crm", label: "CRM", icon: Users, description: "Leads, notes, calls and follow-ups", phase: 1 },
   { key: "catalog", label: "Products & Services", termKey: "entity.item.plural", icon: Package, description: "Your shared catalogue with GST rates and HSN/SAC", phase: 1 },
   { key: "sales", label: "Sales & Orders", icon: FileText, description: "Quotations, sales orders, deliveries and returns", phase: 1 },
   { key: "billing", label: "Billing", icon: Receipt, description: "GST invoices, receipts, dues and POS", phase: 1 },
@@ -58,16 +58,9 @@ export const MODULE_SUBS: Partial<Record<ModuleKey, SubNav[]>> = {
     { label: "Items", href: "/app/m/catalog" },
     { label: "Price Lists", href: "/app/m/catalog/price-lists" },
   ],
-  sales: [
-    { label: "Quotations", href: "/app/m/sales", permission: "sales.quotation.view" },
-    { label: "Sales Orders", href: "/app/m/sales/orders", permission: "sales.order.view" },
-    { label: "Delivery Challans", href: "/app/m/sales/challans" },
-  ],
-  billing: [
-    { label: "Invoices", href: "/app/m/billing", permission: "billing.invoice.view" },
-    { label: "Credit Notes", href: "/app/m/billing/credit-notes" },
-    { label: "Debit Notes", href: "/app/m/billing/debit-notes" },
-    { label: "Dues", href: "/app/m/billing/dues" },
+  crm: [
+    { label: "Leads", href: "/app/m/crm", permission: "crm.lead.view" },
+    { label: "Follow-ups", href: "/app/m/crm/follow-ups", permission: "crm.activity.view" },
   ],
   inventory: [
     { label: "Stock", href: "/app/m/inventory", permission: "inventory.stock.view" },
@@ -76,6 +69,23 @@ export const MODULE_SUBS: Partial<Record<ModuleKey, SubNav[]>> = {
     { label: "Stock Entries", href: "/app/m/inventory/entries", permission: "inventory.stock.view" },
     { label: "Reports", href: "/app/m/inventory/reports", permission: "inventory.stock.view" },
   ],
+}
+
+/**
+ * Sales & Revenue: one group over three modules (CRM for customers, Sales for quotations,
+ * Billing for invoices). Each page is hidden when its module is off or the person lacks the permission.
+ * The menu is fixed; Sales Orders and Delivery Challans are reached from the lists' ⋯ menu.
+ */
+export const SALES_NAV = {
+  label: "Sales",
+  icon: FileText,
+  subs: [
+    { label: "Customers", href: "/app/m/sales/customers", permission: "crm.contact.view" },
+    { label: "Quotations", href: "/app/m/sales", permission: "sales.quotation.view" },
+    { label: "Sales Invoices", href: "/app/m/billing", permission: "billing.invoice.view" },
+    { label: "Sales Returns", href: "/app/m/billing/credit-notes", permission: "billing.invoice.view" },
+    { label: "Payments Received", href: "/app/m/billing/dues", permission: "billing.invoice.view" },
+  ] as SubNav[],
 }
 
 /** Purchase sits inside the Inventory module but has its own place in the menu */
@@ -101,12 +111,12 @@ export const USER_NAV = {
 
 export const DASHBOARD_NAV = { label: "Dashboard", icon: LayoutDashboard }
 
-export type NavEntry = ModuleKey | "dashboard" | "purchase" | "users" | "plan" | "settings"
+export type NavEntry = ModuleKey | "dashboard" | "salesgroup" | "purchase" | "users" | "plan" | "settings"
 
 /** The menu, by business area. Each area holds modules, and each module its own pages. */
 export const NAV_SECTIONS: { label: string; entries: NavEntry[] }[] = [
   { label: "Overview", entries: ["dashboard", "reports"] },
-  { label: "Sales & Revenue", entries: ["sales", "billing", "crm"] },
+  { label: "Sales & Revenue", entries: ["salesgroup", "crm"] },
   { label: "Purchase & Inventory", entries: ["purchase", "inventory", "catalog"] },
   { label: "Project Management", entries: ["tasks", "bookings"] },
   { label: "Accounting & Finance", entries: ["finance"] },

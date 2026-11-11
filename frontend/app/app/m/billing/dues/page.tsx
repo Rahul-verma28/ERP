@@ -123,7 +123,7 @@ export default function DuesPage() {
       columns={columns}
       searchPlaceholder="Search customer or mobile"
       presets={[{ key: "all", label: "All", params: {} }, { key: "overdue", label: "Overdue", params: { overdue: "true" } }]}
-      rowHref={(r) => `/app/m/crm/${r.id}?tab=ledger`}
+      rowHref={(r) => `/app/m/sales/customers/${r.id}`}
       exportName="dues"
       emptyState={<EmptyState icon={Wallet} title="Nobody owes you money" description="Customers with unpaid bills show here, with a one-click reminder." />}
     />

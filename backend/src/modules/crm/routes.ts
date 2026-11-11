@@ -1,7 +1,7 @@
 import type { TenantCtx } from '../../kernel/context';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { z } from 'zod';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { db, withTenant } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import { normaliseEmail } from '../../kernel/crypto';
@@ -13,6 +13,8 @@ import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { validateCustom } from '../config/service';
 import { audit } from '../audit/service';
 import { notify } from '../notifications/service';
+import { getRolePermissions } from '../access/service';
+import { customerBalances, setOpeningBalance } from '../billing/ledger';
 
 // CRM basic (CRM-01..04): customers, leads → convert, timeline, CSV import with de-duplication.
 
@@ -30,7 +32,16 @@ const ContactInput = z.object({
   email: optional(zEmail),
   gstin: optional(zGstin),
   stateCode: optional(zStateCode),
-  address: z.object({ line1: z.string().max(200).optional(), city: z.string().max(80).optional(), pincode: zPincode.optional().or(z.literal('')) }).optional().nullable(),
+  address: z.object({ line1: z.string().trim().max(200).optional(), line2: z.string().trim().max(200).optional(), city: z.string().trim().max(80).optional(), pincode: zPincode.optional().or(z.literal('')) }).optional().nullable(),
+  /** Customers: where goods go when not the billing address. Given = complete. */
+  shippingAddress: z.object({
+    name: optional(z.string().trim().max(160)),
+    line1: z.string().trim().min(1, 'Enter the delivery address').max(200),
+    line2: optional(z.string().trim().max(200)),
+    city: z.string().trim().min(1, 'Enter the city').max(80),
+    pincode: zPincode,
+    stateCode: zStateCode,
+  }).optional().nullable(),
   leadStatus: z.enum(['new', 'contacted', 'qualified', 'lost']).optional(),
   leadSource: optional(z.string().trim().max(60)),
   ownerId: optional(z.string().uuid()),
@@ -40,13 +51,31 @@ const ContactInput = z.object({
   custom: z.record(z.unknown()).optional(),
   /** Empty = no limit */
   creditLimitPaise: Paise.optional().nullable(),
+  /** Invoices fall due this many days after their date; empty = due on receipt */
+  paymentDays: z.number().int().min(0, 'Use 0 to 365').max(365, 'Use 0 to 365').optional().nullable(),
   priceListId: z.string().uuid().optional().nullable(),
 });
 const ContactPatch = ContactInput.partial().extend({ version: z.number().int() });
+/** What the customer already owed before AHEAD, set while adding them */
+const OpeningInput = z.object({ amountPaise: Paise.refine((v) => v > 0, 'Enter an amount'), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Choose a date') });
+
+/** Rules beyond the field formats. A customer is billed, so the mobile and the state (place of supply) are needed. */
+function checkContact(kind: Kind, c: { phone?: string | null; email?: string | null; gstin?: string | null; stateCode?: string | null }) {
+  const fields: Record<string, string> = {};
+  if (kind === 'customer') {
+    if (!c.phone) fields.phone = 'Enter the mobile number';
+    if (!c.stateCode) fields.stateCode = 'Choose the state';
+  } else if (!c.phone && !c.email) fields.phone = 'Enter a phone number or an email';
+  const mismatch = rules.gstinStateMismatch(c.gstin, c.stateCode);
+  if (mismatch) fields.gstin = mismatch;
+  if (Object.keys(fields).length) throw new AppError('VALIDATION_FAILED', Object.values(fields)[0], { fields });
+}
 
 const ContactList = ListQuery.extend({
   status: z.enum(['new', 'contacted', 'qualified', 'lost', 'converted']).optional(),
   active: z.enum(['true', 'false', 'all']).default('true'),
+  /** Customers only: owes = has a balance due, overdue = has invoices past their due date */
+  dues: z.enum(['owes', 'overdue']).optional(),
 });
 
 type Kind = 'customer' | 'lead';
@@ -76,9 +105,11 @@ async function loadInScope(req: Request, kind?: Kind) {
 function registerContactRoutes(kind: Kind, base: string) {
   router.get(base, requirePermission(perm(kind, 'view')), validate(ContactList, 'query'), tx(async (req, res) => {
     const q = req.query as unknown as z.infer<typeof ContactList>;
+    const dueIds = kind === 'customer' && q.dues ? [...(await customerBalances())].filter(([, b]) => (q.dues === 'overdue' ? b.overduePaise > 0n : b.balancePaise > 0n)).map(([id]) => id) : null;
     const where: Prisma.ContactWhereInput = {
       AND: [
         { type: kind },
+        dueIds ? { id: { in: dueIds } } : {},
         scopeWhere(req.ctx!, OWNER_FIELDS),
         kind === 'lead' ? { leadStatus: q.status ?? { not: 'converted' } } : { isActive: q.active === 'all' ? undefined : q.active === 'true' },
         q.q
@@ -87,12 +118,20 @@ function registerContactRoutes(kind: Kind, base: string) {
       ],
     };
     const rows = await db().contact.findMany({ where, ...pageArgs(q) });
-    res.json(page(rows, q.limit));
+    const result = page(rows, q.limit);
+    // Customers carry what they owe, for people who may see dues
+    if (kind === 'customer' && (await getRolePermissions(req.ctx!.roleId)).has('billing.dues.view')) {
+      const owed = await customerBalances(result.data.map((c) => c.id));
+      return res.json({ ...result, data: result.data.map((c) => ({ ...c, ...(owed.get(c.id) ?? { balancePaise: 0n, overduePaise: 0n }) })) });
+    }
+    res.json(result);
   }));
 
-  router.post(base, requirePermission(perm(kind, 'create')), validate(ContactInput.extend({ allowDuplicate: z.boolean().default(false) })), tx(async (req, res) => {
+  router.post(base, requirePermission(perm(kind, 'create')), validate(ContactInput.extend({ allowDuplicate: z.boolean().default(false), opening: OpeningInput.optional().nullable() })), tx(async (req, res) => {
     const ctx = req.ctx!;
-    const { allowDuplicate, ...body } = req.body as z.infer<typeof ContactInput> & { allowDuplicate: boolean };
+    const { allowDuplicate, opening, ...body } = req.body as z.infer<typeof ContactInput> & { allowDuplicate: boolean; opening?: z.infer<typeof OpeningInput> | null };
+    body.stateCode = body.stateCode ?? (body.gstin ? body.gstin.slice(0, 2) : null);
+    checkContact(kind, body);
     await assertRecordLimit(ctx, 'contacts', () => db().contact.count(), 'customers and leads');
     await checkOwner(body.ownerId);
     if (!allowDuplicate) {
@@ -104,6 +143,7 @@ function registerContactRoutes(kind: Kind, base: string) {
       data: {
         ...body,
         address: body.address ?? undefined,
+        shippingAddress: body.shippingAddress ?? undefined,
         tenantId: ctx.tenantId,
         type: kind,
         leadStatus: kind === 'lead' ? (body.leadStatus ?? 'new') : null,
@@ -113,6 +153,7 @@ function registerContactRoutes(kind: Kind, base: string) {
       },
     });
     if (kind === 'customer') await markOnboarding(ctx, 'firstCustomer');
+    if (kind === 'customer' && opening) await setOpeningBalance(ctx, contact.id, opening);
     if (contact.ownerId && contact.ownerId !== ctx.userId) await notify(contact.ownerId, `New ${kind} assigned: ${contact.name}`, undefined, `/app/m/crm/${contact.id}`);
     res.status(201).json(contact);
   }));
@@ -151,6 +192,12 @@ const dynamicPermission = (action: string) => async (req: Request, res: Response
 
 router.get('/contacts/:id', validate(IdParam, 'params'), dynamicPermission('view'), tx(async (req, res) => {
   const c = await loadInScope(req);
+  const balances = async () => (c.type === 'customer' && (await getRolePermissions(req.ctx!.roleId)).has('billing.dues.view') ? ((await customerBalances([c.id])).get(c.id) ?? { balancePaise: 0n, overduePaise: 0n }) : {});
+  // ?view=summary: the customer page needs the record, owner and balance, not the timeline
+  if (req.query.view === 'summary') {
+    const [owner, owed] = await Promise.all([c.ownerId ? db().user.findUnique({ where: { id: c.ownerId }, select: { id: true, name: true } }) : null, balances()]);
+    return res.json({ ...c, ...owed, owner });
+  }
   const [activities, invoices, appointments, owner] = await Promise.all([
     db().activity.findMany({ where: { contactId: c.id }, orderBy: { createdAt: 'desc' }, take: 100 }),
     db().salesDocument.findMany({
@@ -165,7 +212,8 @@ router.get('/contacts/:id', validate(IdParam, 'params'), dynamicPermission('view
   const userIds = [...new Set(activities.flatMap((a) => [a.createdBy, a.assigneeId]).filter(Boolean))] as string[];
   const users = await db().user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true } });
   const names = Object.fromEntries(users.map((u) => [u.id, u.name]));
-  res.json({ ...c, owner, activities: activities.map((a) => ({ ...a, createdByName: a.createdBy ? names[a.createdBy] : null, assigneeName: a.assigneeId ? names[a.assigneeId] : null })), documents: invoices, appointments });
+  const owed = await balances();
+  res.json({ ...c, ...owed, owner, activities: activities.map((a) => ({ ...a, createdByName: a.createdBy ? names[a.createdBy] : null, assigneeName: a.assigneeId ? names[a.assigneeId] : null })), documents: invoices, appointments });
 }));
 
 router.patch('/contacts/:id', validate(IdParam, 'params'), dynamicPermission('edit'), validate(ContactPatch), tx(async (req, res) => {
@@ -174,6 +222,7 @@ router.patch('/contacts/:id', validate(IdParam, 'params'), dynamicPermission('ed
   const { version, ...body } = req.body as z.infer<typeof ContactPatch>;
   assertVersion(c.version, version, 'record');
   await checkOwner(body.ownerId);
+  if (c.type !== 'supplier') checkContact(c.type as Kind, { phone: body.phone === undefined ? c.phone : body.phone, email: body.email === undefined ? c.email : body.email, gstin: body.gstin === undefined ? c.gstin : body.gstin, stateCode: body.stateCode === undefined ? c.stateCode : body.stateCode });
   if (body.phone || body.email) {
     const dup = await findDuplicate(body.phone, body.email, c.id);
     if (dup) throw new AppError('CONFLICT', `${dup.name} already has this phone or email.`, { duplicateId: dup.id });
@@ -181,7 +230,7 @@ router.patch('/contacts/:id', validate(IdParam, 'params'), dynamicPermission('ed
   const custom = body.custom ? await validateCustom(ctx.tenantId, c.type === 'lead' ? 'lead' : 'contact', body.custom, c.custom as Record<string, unknown>) : undefined;
   const updated = await db().contact.update({
     where: { id: c.id },
-    data: { ...body, address: body.address === null ? undefined : body.address, leadStatus: c.type === 'lead' ? body.leadStatus : undefined, custom: custom as Prisma.InputJsonValue | undefined, version: { increment: 1 } },
+    data: { ...body, address: body.address === null ? undefined : body.address, shippingAddress: body.shippingAddress === undefined ? undefined : (body.shippingAddress ?? Prisma.JsonNull), leadStatus: c.type === 'lead' ? body.leadStatus : undefined, custom: custom as Prisma.InputJsonValue | undefined, version: { increment: 1 } },
   });
   if (body.ownerId && body.ownerId !== c.ownerId && body.ownerId !== ctx.userId) await notify(body.ownerId, `${c.name} was assigned to you`, undefined, `/app/m/crm/${c.id}`);
   res.json(updated);

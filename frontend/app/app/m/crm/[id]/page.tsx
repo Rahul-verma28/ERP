@@ -11,7 +11,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { AdvancesCard } from "@/components/advances"
-import { CustomerLedger } from "@/components/customer-ledger"
 import { ConfirmDialog, Spinner, StatusBadge } from "@/components/common"
 import { NativeSelect } from "@/components/form"
 import { api, errorMessage } from "@/lib/api"
@@ -20,7 +19,7 @@ import { useApi } from "@/lib/use-api"
 import { useCustomFields } from "@/components/custom-fields"
 import { GST_STATES, formatDate, formatDateTime, formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { ContactDialog, type Contact } from "../contact-form"
+import { ContactDialog, type Contact } from "@/components/contact-dialog"
 
 interface Detail extends Contact {
   owner: { id: string; name: string } | null
@@ -85,19 +84,17 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
   const fields = useCustomFields(c?.type === "lead" ? "lead" : "contact")
   const [editing, setEditing] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
-  const [tab, setTab] = React.useState<"overview" | "ledger">("overview")
 
   if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
   if (!c) return <div className="grid place-items-center py-24"><Spinner /></div>
   const isLead = c.type === "lead"
   const permBase = isLead ? "crm.lead" : "crm.contact"
-  const showLedger = !isLead && can("billing.dues.view")
 
   async function convert() {
     try {
       await api.post(`/leads/${id}/convert`)
       toast.success(`Converted to ${term("entity.contact.singular", "customer").toLowerCase()}`)
-      await reload()
+      router.push(`/app/m/sales/customers/${id}`)
     } catch (e) {
       toast.error(errorMessage(e))
     }
@@ -114,7 +111,7 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
 
   return (
     <>
-      <Link href="/app/m/crm" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> CRM</Link>
+      <Link href={isLead ? "/app/m/crm" : `/app/m/sales/customers/${c.id}`} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {isLead ? "Leads" : "Customer page"}</Link>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
@@ -137,14 +134,6 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
         </div>
       </div>
 
-      {showLedger && (
-        <div className="mb-5 flex gap-1 ui-surface w-fit max-w-full rounded-2xl p-1" role="tablist">
-          {(["overview", "ledger"] as const).map((t) => (
-            <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)} className={cn("shrink-0 rounded-[11px] px-3.5 py-2 text-sm font-medium capitalize text-muted-foreground transition-colors hover:text-foreground", tab === t && "bg-primary text-primary-foreground hover:text-primary-foreground")}>{t}</button>
-          ))}
-        </div>
-      )}
-      {showLedger && tab === "ledger" ? <CustomerLedger contactId={c.id} /> : (
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="grid content-start gap-6 lg:col-span-2">
           <Card>
@@ -262,7 +251,6 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
           )}
         </div>
       </div>
-      )}
 
       {editing && <ContactDialog kind={c.type} contact={c} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); void reload() }} />}
       <ConfirmDialog
@@ -276,7 +264,7 @@ export default function ContactDetailPage({ params }: { params: Promise<{ id: st
           try {
             await api.delete(`/contacts/${id}`)
             toast.success("Deleted")
-            router.replace("/app/m/crm")
+            router.replace(isLead ? "/app/m/crm" : "/app/m/sales/customers")
           } catch (e) {
             toast.error(errorMessage(e))
           }

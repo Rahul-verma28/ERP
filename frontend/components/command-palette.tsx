@@ -24,7 +24,7 @@ const ACTIONS = [
   { title: "New invoice", href: "/app/m/billing/new", permission: "billing.invoice.create" },
   { title: "New quotation", href: "/app/m/sales/new", permission: "sales.quotation.create" },
   { title: "Book appointment", href: "/app/m/bookings", permission: "bookings.appointment.create" },
-  { title: "Add customer", href: "/app/m/crm", permission: "crm.contact.create" },
+  { title: "Add customer", href: "/app/m/sales/customers", permission: "crm.contact.create" },
   { title: "Add expense", href: "/app/m/finance", permission: "finance.expense.create" },
   { title: "New task", href: "/app/m/tasks", permission: "tasks.task.create" },
 ]

@@ -11,10 +11,10 @@ import { getEntitlements } from '../subscription/entitlements';
 import { validateCustom } from '../config/service';
 import { audit } from '../audit/service';
 import { publish } from '../events/outbox';
-import { optionalText, zEmail, zGstin, zHsnOrSac, zPhone, zStateCode } from '../../kernel/zodRules';
+import { optionalText, zEmail, zGstin, zHsnOrSac, zPhone, zPincode, zStateCode } from '../../kernel/zodRules';
 import { gstinStateMismatch } from '../../contracts/validation';
 import { withDefaults, type WorkspaceProfile } from '../../contracts/workspace';
-import { postDocumentStock, reverseSource } from '../inventory/engine';
+import { defaultLocation, postDocumentStock, reverseSource } from '../inventory/engine';
 
 // Sales documents: quotations (SAL-01) and GST tax invoices (BIL-01..04) share one engine.
 
@@ -67,14 +67,16 @@ export const DocInput = z.object({
   pricesIncludeGst: z.boolean().optional(),
   /** Round the total to the whole rupee */
   roundOff: z.boolean().optional(),
-  /** Goods go somewhere other than the billing address */
+  /** Goods go somewhere other than the billing address: then the whole address is needed */
   shipTo: z.object({
     name: optionalText(z.string().trim().max(160)),
-    line1: optionalText(z.string().trim().max(200)),
-    city: optionalText(z.string().trim().max(80)),
-    pincode: optionalText(z.string().trim().max(10)),
-    stateCode: zStateCode.optional().nullable(),
+    line1: z.string().trim().min(1, 'Enter the delivery address').max(200),
+    city: z.string().trim().min(1, 'Enter the city').max(80),
+    pincode: zPincode,
+    stateCode: zStateCode,
   }).optional().nullable(),
+  /** Warehouse the goods leave from; empty = the default warehouse */
+  locationId: z.string().uuid().optional().nullable(),
   /** Quotation printed as a proforma invoice */
   proforma: z.boolean().optional(),
 });
@@ -123,6 +125,14 @@ async function resolveLines(lines: DocInput['lines']) {
   });
 }
 
+/** The warehouse named on the document, or the default one. Must be active. */
+export async function resolveLocation(ctx: TenantCtx, id: string | null) {
+  if (!id) return (await defaultLocation(ctx)).id;
+  const found = await db().stockLocation.findFirst({ where: { id, tenantId: ctx.tenantId, isActive: true }, select: { id: true } });
+  if (!found) throw new AppError('VALIDATION_FAILED', 'Choose an active warehouse.', { fields: { locationId: 'Unknown or closed warehouse' } });
+  return found.id;
+}
+
 /** Compute snapshot, place of supply and GST split; returns data for create/update. */
 async function prepare(ctx: TenantCtx, input: DocInput, existing?: SalesDocument) {
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId } });
@@ -139,6 +149,15 @@ async function prepare(ctx: TenantCtx, input: DocInput, existing?: SalesDocument
   const { lines: computed, totals } = computeDocument(lines, intraState);
   const roundOffPaise = input.roundOff ? divRound(totals.totalPaise, 100n) * 100n - totals.totalPaise : 0n;
   const custom = await validateCustom(ctx.tenantId, 'invoice', input.custom, (existing?.custom as Record<string, unknown>) ?? {});
+  const locationId = await resolveLocation(ctx, input.locationId ?? existing?.locationId ?? null);
+  // No due date given: the customer's payment days decide it (empty = due on the bill date)
+  const issueDate = dateOnly(input.issueDate ?? todayIST());
+  let dueDate = input.dueDate ? dateOnly(input.dueDate) : null;
+  if (input.dueDate === undefined && contactId) {
+    const terms = await db().contact.findUnique({ where: { id: contactId }, select: { paymentDays: true } });
+    if (terms?.paymentDays != null) dueDate = new Date(issueDate.getTime() + terms.paymentDays * 86_400_000);
+  }
+  if (dueDate && dueDate < issueDate) throw new AppError('VALIDATION_FAILED', "The due date can't be before the bill date.", { fields: { dueDate: 'Before the bill date' } });
   if (input.branchId && !(await db().branch.findUnique({ where: { id: input.branchId } }))) {
     throw new AppError('VALIDATION_FAILED', 'Unknown branch.', { fields: { branchId: 'Unknown branch' } });
   }
@@ -151,8 +170,9 @@ async function prepare(ctx: TenantCtx, input: DocInput, existing?: SalesDocument
       noteType: input.proforma === undefined ? (existing?.noteType ?? null) : input.proforma ? 'proforma' : null,
       placeOfSupply,
       branchId: input.branchId ?? existing?.branchId ?? ctx.branchIds[0] ?? null,
-      issueDate: dateOnly(input.issueDate ?? todayIST()),
-      dueDate: input.dueDate ? dateOnly(input.dueDate) : null,
+      issueDate,
+      dueDate,
+      locationId,
       notes: input.notes ?? null,
       terms: input.terms ?? null,
       custom: custom as Prisma.InputJsonValue,
@@ -539,6 +559,8 @@ export async function convertQuotation(ctx: TenantCtx, id: string, target: 'invo
       branchId: q.branchId,
       notes: q.notes,
       terms: q.terms,
+      shipTo: q.shipTo as DocInput['shipTo'],
+      locationId: q.locationId,
       lines: q.lines.map((l) => ({ itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: Number(l.unitPricePaise), discountPaise: Number(l.discountPaise), gstRateBp: l.gstRateBp })),
     },
     { sourceType: 'quotation', sourceId: q.id },

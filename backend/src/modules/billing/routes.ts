@@ -36,6 +36,8 @@ const DocList = ListQuery.extend({
   overdue: z.enum(['true', 'false']).optional(),
   /** Credit notes of one invoice */
   sourceId: z.string().uuid().optional(),
+  /** Documents of one warehouse */
+  locationId: z.string().uuid().optional(),
   /** Include the number of matching rows ("Showing 1–25 of 64") */
   withTotal: z.enum(['1']).optional(),
 });
@@ -46,6 +48,7 @@ const overdueWhere = (): Prisma.SalesDocumentWhereInput => ({ ...OPEN, dueDate: 
 const SUMMARY_SELECT = {
   id: true, kind: true, status: true, number: true, contactId: true, buyer: true, issueDate: true, dueDate: true,
   totalPaise: true, paidPaise: true, createdAt: true, createdBy: true, branchId: true, noteType: true, sourceId: true, sourceNumber: true,
+  taxablePaise: true, cgstPaise: true, sgstPaise: true, igstPaise: true, locationId: true, sourceType: true,
 } satisfies Prisma.SalesDocumentSelect;
 
 function registerReadRoutes(kind: SalesDocKind, base: string, module: 'sales.quotation' | 'billing.invoice' | 'billing.credit_note' | 'sales.order' | 'sales.delivery') {
@@ -60,6 +63,7 @@ function registerReadRoutes(kind: SalesDocKind, base: string, module: 'sales.quo
         q.overdue === 'true' ? overdueWhere() : {},
         q.contactId ? { contactId: q.contactId } : {},
         q.sourceId ? { sourceId: q.sourceId } : {},
+        q.locationId ? { locationId: q.locationId } : {},
         q.from || q.to ? { issueDate: { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } } : {},
         q.q
           ? {
@@ -77,7 +81,11 @@ function registerReadRoutes(kind: SalesDocKind, base: string, module: 'sales.quo
       db().salesDocument.findMany({ where, select: SUMMARY_SELECT, ...pageArgs(q) }),
       q.withTotal ? db().salesDocument.count({ where }) : Promise.resolve(undefined),
     ]);
-    res.json({ ...page(rows, q.limit), ...(total !== undefined ? { total } : {}) });
+    // The warehouse name, for the list's Warehouse column
+    const ids = [...new Set(rows.map((r) => r.locationId).filter(Boolean))] as string[];
+    const places = ids.length ? new Map((await db().stockLocation.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map((l) => [l.id, l])) : new Map();
+    const result = page(rows.map((r) => ({ ...r, location: r.locationId ? (places.get(r.locationId) ?? null) : null })), q.limit);
+    res.json({ ...result, ...(total !== undefined ? { total } : {}) });
   }));
 
   // Tab counts on the list page (All · 64, Overdue · 18 …), within the user's scope
@@ -97,7 +105,9 @@ function registerReadRoutes(kind: SalesDocKind, base: string, module: 'sales.quo
   }));
 
   router.get(`${base}/:id`, requirePermission(`${module}.view`), validate(IdParam, 'params'), tx(async (req, res) => {
-    res.json(await billing.getDocument(req.ctx!, String(req.params.id), kind));
+    const doc = await billing.getDocument(req.ctx!, String(req.params.id), kind);
+    const location = doc.locationId ? await db().stockLocation.findUnique({ where: { id: doc.locationId }, select: { id: true, name: true } }) : null;
+    res.json({ ...doc, location });
   }));
 }
 

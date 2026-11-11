@@ -89,6 +89,27 @@ export async function customerLedger(ctx: TenantCtx, contactId: string, period: 
   };
 }
 
+/**
+ * What each customer owes, worked out the same way as the ledger's closing balance: everything billed
+ * less everything received (advances included). Negative = the business holds their money.
+ * Overdue is the unpaid part of posted invoices whose due date has passed.
+ */
+export async function customerBalances(contactIds?: string[]) {
+  const only = contactIds ? { contactId: { in: contactIds } } : { contactId: { not: null } };
+  const today = dateOnly(todayIST());
+  const [docs, paid, late] = await Promise.all([
+    db().salesDocument.groupBy({ by: ['contactId', 'kind'], where: { ...only, kind: { in: ['invoice', 'credit_note', 'opening_balance', 'debit_note'] }, status: { notIn: ['draft', 'cancelled'] } }, _sum: { totalPaise: true } }),
+    db().payment.groupBy({ by: ['contactId'], where: only, _sum: { amountPaise: true } }),
+    db().salesDocument.groupBy({ by: ['contactId'], where: { ...only, kind: 'invoice', status: { in: ['issued', 'partially_paid'] }, dueDate: { lt: today } }, _sum: { totalPaise: true, paidPaise: true } }),
+  ]);
+  const out = new Map<string, { balancePaise: bigint; overduePaise: bigint }>();
+  const row = (id: string) => out.get(id) ?? out.set(id, { balancePaise: 0n, overduePaise: 0n }).get(id)!;
+  for (const d of docs) if (d.contactId) row(d.contactId).balancePaise += (d.kind === 'credit_note' ? -1n : 1n) * (d._sum.totalPaise ?? 0n);
+  for (const p of paid) if (p.contactId) row(p.contactId).balancePaise -= p._sum.amountPaise ?? 0n;
+  for (const l of late) if (l.contactId) row(l.contactId).overduePaise = (l._sum.totalPaise ?? 0n) - (l._sum.paidPaise ?? 0n);
+  return out;
+}
+
 export const OpeningBalanceInput = z.object({ amountPaise: Paise.refine((v) => v > 0, 'Enter an amount'), date: DateStr });
 
 /** Set or change what the customer owed before AHEAD. Fixed once a payment has gone against it. */

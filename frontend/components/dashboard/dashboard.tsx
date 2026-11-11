@@ -34,7 +34,7 @@ const PRESETS: { key: RangePreset; label: string }[] = [
 const NEW_ITEMS = [
   { label: "Invoice", href: "/app/m/billing/new", permission: "billing.invoice.create" },
   { label: "Quotation", href: "/app/m/sales/new", permission: "sales.quotation.create" },
-  { label: "Customer", href: "/app/m/crm", permission: "crm.contact.create" },
+  { label: "Customer", href: "/app/m/sales/customers", permission: "crm.contact.create" },
   { label: "Appointment", href: "/app/m/bookings", permission: "bookings.appointment.create" },
   { label: "Expense", href: "/app/m/finance", permission: "finance.expense.create" },
   { label: "Task", href: "/app/m/tasks", permission: "tasks.task.create" },

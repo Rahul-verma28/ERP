@@ -358,7 +358,7 @@ export function DataStep({ complete, back, importKind, onImported }: StepProps &
               {result.duplicates.length > 0 && <p>{result.duplicates.length} skipped — already in AHEAD.</p>}
               {result.errors.length > 0 && <p>{result.errors.length} rows had problems and were not imported.</p>}
               <div className="flex gap-4">
-                <Link href={kind === "customers" ? "/app/m/crm" : "/app/m/catalog"} target="_blank" className="font-semibold underline underline-offset-2">
+                <Link href={kind === "customers" ? "/app/m/sales/customers" : "/app/m/catalog"} target="_blank" className="font-semibold underline underline-offset-2">
                   Open {kindLabel}
                 </Link>
                 <button type="button" className="font-semibold underline underline-offset-2" onClick={() => reset(kind === "customers" ? "items" : "customers")}>

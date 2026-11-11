@@ -9,7 +9,7 @@ import { allocateNumber } from '../../kernel/sequences';
 import { DateStr, Paise } from '../../kernel/query';
 import { audit } from '../audit/service';
 import { publish } from '../events/outbox';
-import { getDocument, PaymentInput, setCreditUsed, setPaid } from './service';
+import { getDocument, PaymentInput, resolveLocation, setCreditUsed, setPaid } from './service';
 
 // Credit notes (issued invoices are never edited): goods came back, or the value is reduced.
 // GST follows the invoice line. GST rules here must be validated by the client's CA.
@@ -27,6 +27,8 @@ export const CreditNoteInput = z.object({
   type: z.enum(['return', 'amount']),
   issueDate: DateStr.optional(),
   notes: z.string().trim().max(2000).optional().nullable(),
+  /** Goods returned: the warehouse they come back to; empty = where the sale left from */
+  locationId: z.string().uuid().optional().nullable(),
   lines: z.array(z.object({
     sourceLineId: z.string().uuid(),
     /** Goods returned */
@@ -144,6 +146,7 @@ export async function createCreditNote(ctx: TenantCtx, invoiceId: string, input:
     data: {
       tenantId: ctx.tenantId, kind: 'credit_note', status: 'issued', number, fy, noteType: input.type, sourceType: 'invoice', sourceId: doc.id, sourceNumber: doc.number, sourceDate: doc.issueDate,
       branchId: doc.branchId, contactId: doc.contactId, buyer: doc.buyer as object, seller: doc.seller as object, placeOfSupply: doc.placeOfSupply,
+      locationId: input.type === 'return' ? await resolveLocation(ctx, input.locationId ?? doc.locationId ?? null) : null,
       issueDate: dateOnly(issueDate), ...totals, roundOffPaise, paidPaise: applied, notes: input.notes ?? null, shareToken: randomToken(18), createdBy: ctx.userId, issuedAt: new Date(),
       lines: { create: lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) },
     },

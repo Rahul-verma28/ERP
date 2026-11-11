@@ -251,7 +251,10 @@ export async function postDocumentStock(ctx: TenantCtx, documentId: string) {
   const byId = new Map(items.map((i) => [i.id, i]));
   const lines = doc.lines.filter((l) => l.itemId && byId.has(l.itemId));
   if (!lines.length) return;
-  const location = await defaultLocation(ctx);
+  // The document's warehouse; a return without one goes back where the sale left from
+  const source = !doc.locationId && doc.kind === 'credit_note' && doc.sourceId ? await db().salesDocument.findUnique({ where: { id: doc.sourceId }, select: { locationId: true } }) : null;
+  const where = doc.locationId ?? source?.locationId ?? null;
+  const location = (where && (await db().stockLocation.findFirst({ where: { id: where, tenantId: ctx.tenantId } }))) || (await defaultLocation(ctx));
   const rules = await loadRules(ctx);
   const back = doc.kind === 'credit_note';
   const kind = back ? 'sale_return' : 'sale';

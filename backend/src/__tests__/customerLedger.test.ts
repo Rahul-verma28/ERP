@@ -4,7 +4,7 @@ import { prisma, db, withPlatform } from '../kernel/db';
 import type { TenantCtx } from '../kernel/context';
 import * as billing from '../modules/billing/service';
 import { createCreditNote, refundCreditNote } from '../modules/billing/creditNotes';
-import { customerLedger, removeOpeningBalance, setOpeningBalance } from '../modules/billing/ledger';
+import { customerBalances, customerLedger, removeOpeningBalance, setOpeningBalance } from '../modules/billing/ledger';
 import { todayIST } from '../kernel/gst';
 
 // Sales & Billing step 3: the customer's khata. Database tests run in a rolled-back transaction.
@@ -63,6 +63,8 @@ describe('the khata', () => {
       // Owed on invoices, less the money held
       const dues = await db().salesDocument.findUniqueOrThrow({ where: { id: a.id } });
       expect(dues.totalPaise - dues.paidPaise - l.advancePaise).toBe(l.balancePaise);
+      // The Customers list shows the same figure as the ledger
+      expect((await customerBalances([contact.id])).get(contact.id)?.balancePaise).toBe(l.balancePaise);
     });
   });
 
@@ -85,6 +87,7 @@ describe('the khata', () => {
       l = await customerLedger(ctx, contact.id, {});
       expect(l.rows.at(-1)).toMatchObject({ type: 'refund', debitPaise: 10_000n });
       expect(l.balancePaise).toBe(0n);
+      expect((await customerBalances([contact.id])).get(contact.id)?.balancePaise).toBe(0n);
     });
   });
 

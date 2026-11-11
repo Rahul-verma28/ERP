@@ -422,7 +422,7 @@ const crm: Record<string, WidgetDef> = {
         <KpiRow>
           <Kpi label="New leads" value={d.leads.value} change={d.leads.change} absolute={(n) => String(n)} note="vs previous period" href="/app/m/crm" />
           <Kpi label="Converted" value={`${d.converted.value}${d.converted.rate !== null ? ` · ${d.converted.rate}%` : ""}`} change={d.converted.change} absolute={(n) => `${n} pts`} note="lead → customer" />
-          <Kpi label="New customers" value={d.customers.value} change={d.customers.change} absolute={(n) => String(n)} note="incl. walk-ins" href="/app/m/crm" />
+          <Kpi label="New customers" value={d.customers.value} change={d.customers.change} absolute={(n) => String(n)} note="incl. walk-ins" href="/app/m/sales/customers" />
           {d.followUps && <Kpi label="Follow-ups due" value={d.followUps.value} note={d.followUps.overdue ? `${d.followUps.overdue} overdue` : "today and earlier"} tone={d.followUps.overdue ? "red" : undefined} />}
         </KpiRow>
       ),
@@ -456,7 +456,7 @@ const crm: Record<string, WidgetDef> = {
   followups: {
     span: WIDE,
     render: (d, c) => (
-      <Widget title={ok(d) ? `Follow-ups due · ${d.rows.length}` : "Follow-ups due"} right={<WidgetLink href="/app/m/crm">All activities</WidgetLink>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.rows.length && "No follow-ups due."}>
+      <Widget title={ok(d) ? `Follow-ups due · ${d.rows.length}` : "Follow-ups due"} right={<WidgetLink href="/app/m/crm/follow-ups">All activities</WidgetLink>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.rows.length && "No follow-ups due."}>
         {ok(d) && (
           <MiniTable>
             <thead>

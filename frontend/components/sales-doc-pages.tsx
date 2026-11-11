@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeft, Ban, Copy, FileMinus, FileText, IndianRupee, Pencil, Plus, Printer, Send, Trash2, Truck, Undo2 } from "lucide-react"
+import { ArrowLeft, Ban, CalendarDays, Copy, Eye, FileMinus, FileOutput, FileText, IndianRupee, Pencil, Plus, Printer, Send, Trash2, Truck, Undo2 } from "lucide-react"
 import { UseAdvanceDialog, type AdvanceList } from "@/components/advances"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -12,7 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
-import { ConfirmDialog, EmptyState, MoneyInput, Spinner, StatusBadge } from "@/components/common"
+import { ConfirmDialog, EmptyState, MoneyInput, Spinner } from "@/components/common"
 import { DataList, HeaderLink, periodFilter, type Column, type ViewPreset } from "@/components/data-list"
 import { todayInIndia } from "@contracts/validation"
 import { Field, FormError, NativeSelect } from "@/components/form"
@@ -30,20 +30,37 @@ import { docApi, docLabel, docPath, type DocKind, type SalesDoc } from "@/lib/sa
 
 type Kind = DocKind
 const perm = (kind: Kind) => ({ invoice: "billing.invoice", quotation: "sales.quotation", sales_order: "sales.order", delivery_challan: "sales.delivery" })[kind]
-const LIST_NAME = { invoice: "Invoices", quotation: "Quotations", sales_order: "Sales orders", delivery_challan: "Delivery challans" }
+const LIST_NAME = { invoice: "Sales Invoices", quotation: "Quotations", sales_order: "Sales Orders", delivery_challan: "Delivery Challans" }
 
 interface Row {
   id: string
   status: string
   number: string | null
-  buyer: { name: string }
+  buyer: { name: string; phone?: string | null; gstin?: string | null }
   issueDate: string
   dueDate: string | null
+  taxablePaise?: number
+  cgstPaise?: number
+  sgstPaise?: number
+  igstPaise?: number
   totalPaise: number
   paidPaise: number
   branchId: string | null
   noteType?: string | null
+  sourceNumber?: string | null
+  location?: { id: string; name: string } | null
 }
+
+const DATE_HEADER: Record<Kind, string> = { invoice: "Invoice date", quotation: "Quotation date", sales_order: "Order date", delivery_challan: "Challan date" }
+const DUE_HEADER: Record<Kind, string> = { invoice: "Due date", quotation: "Valid until", sales_order: "Deliver by", delivery_challan: "Deliver by" }
+const LIST_HINT: Record<Kind, string> = {
+  invoice: "GST bills to customers. Posting one takes stock out of its warehouse and adds to what the customer owes.",
+  quotation: "Rates sent to customers. Nothing moves until a quotation becomes an invoice.",
+  sales_order: "What customers ordered, invoiced in one go or in parts.",
+  delivery_challan: "Goods sent before the bill. Make the invoice from the challan.",
+}
+const initials = (name: string) => name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("")
+const dated = (iso: string) => <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><CalendarDays className="size-3.5 text-muted-foreground" aria-hidden />{formatDate(iso)}</span>
 
 const STATUS_FILTERS: Record<Kind, { value: string; label: string }[]> = {
   invoice: [
@@ -109,10 +126,16 @@ function listStatus(kind: Kind, r: Row, today: string): { label: string; tone: k
 
 export function SalesDocList({ kind }: { kind: Kind }) {
   const { can, me } = useAuth()
+  const router = useRouter()
   const today = todayInIndia()
   const label = docLabel(kind)
   const canCreate = can(`${perm(kind)}.create`)
+  const canEdit = can(`${perm(kind)}.edit`)
+  const [version, setVersion] = React.useState(0)
+  const [deleting, setDeleting] = React.useState<Row | null>(null)
+  const [busy, setBusy] = React.useState<string | null>(null)
   const branches = useApi<{ data: { id: string; name: string }[] }>(can("tenant.branch.view") ? "/branches" : null)
+  const warehouses = useApi<{ data: { id: string; name: string; isActive: boolean }[] }>(kind !== "quotation" ? "/stock-locations" : null)
   const branchName = (id: string | null | undefined) => branches.data?.data.find((b) => b.id === id)?.name ?? "—"
   const newButton = canCreate && (
     <HeaderLink href={`/app/m/${docPath(kind)}/new`} primary>
@@ -126,31 +149,95 @@ export function SalesDocList({ kind }: { kind: Kind }) {
   const openBulk = (type: "eway" | "einvoice") => (rows: Row[]) => {
     const ids = issuedOnly(rows)
     if (ids.length) setBulk({ type, ids })
-    else toast.error("Choose issued bills")
+    else toast.error("Choose posted bills")
   }
   const bulkActions =
     (kind === "invoice" || kind === "delivery_challan") && me?.tenant?.gstin
       ? [{ label: "E-way bill JSON", run: openBulk("eway") }, ...(kind === "invoice" && eInvoicing ? [{ label: "E-invoice JSON", run: openBulk("einvoice") }] : [])]
       : []
-  const due = (r: Row) => Math.max(0, r.totalPaise - r.paidPaise)
+  const due = (r: Row) => (r.status === "draft" || r.status === "cancelled" ? 0 : Math.max(0, r.totalPaise - r.paidPaise))
+  const tax = (r: Row) => (r.cgstPaise ?? 0) + (r.sgstPaise ?? 0) + (r.igstPaise ?? 0)
+  const editable = (r: Row) => (kind === "invoice" ? r.status === "draft" : kind === "sales_order" ? r.status === "open" : kind === "delivery_challan" ? r.status === "issued" : ["draft", "sent"].includes(r.status))
+  const open = (r: Row) => kind === "invoice" && ["issued", "partially_paid"].includes(r.status)
+  const icon = buttonVariants({ variant: "ghost", size: "icon-sm" })
+
+  async function act(r: Row, path: string, done: string, then?: (d: SalesDoc) => void) {
+    setBusy(r.id)
+    try {
+      const d = await api.post<SalesDoc>(path)
+      toast.success(done)
+      if (then) then(d)
+      else setVersion((v) => v + 1)
+    } catch (e) {
+      // A bill over the credit limit is posted from its own page, where it can be approved
+      if (e instanceof ApiError && e.details?.creditLimit) router.push(`/app/m/${docPath(kind)}/${r.id}`)
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const columns: Column<Row>[] = [
-    { key: "number", header: "Number", hideable: false, cell: (r) => <span className="font-semibold">{r.number ?? "Draft"}{r.noteType === "proforma" && <span className="ml-2 text-xs font-normal text-muted-foreground">Proforma</span>}</span>, csv: (r) => r.number ?? "Draft", sort: (r) => r.number ?? "" },
-    { key: "date", header: "Date", cell: (r) => formatDate(r.issueDate), csv: (r) => r.issueDate.slice(0, 10), sort: (r) => r.issueDate },
-    { key: "customer", header: "Customer", cell: (r) => r.buyer?.name ?? "—", csv: (r) => r.buyer?.name, sort: (r) => r.buyer?.name?.toLowerCase() ?? "" },
-    { key: "branch", header: "Branch", defaultHidden: (branches.data?.data.length ?? 0) < 2, cell: (r) => branchName(r.branchId), csv: (r) => branchName(r.branchId) },
-    { key: "amount", header: "Amount", align: "right", cell: (r) => formatPaise(r.totalPaise), csv: (r) => (r.totalPaise / 100).toFixed(2), sort: (r) => r.totalPaise },
+    {
+      key: "number", header: `${label} no.`, hideable: false, sort: (r) => r.number ?? "", csv: (r) => r.number ?? "Draft",
+      cell: (r) => (
+        <span className="inline-flex flex-col gap-0.5">
+          <span className={cn("inline-flex w-fit rounded-lg border px-2 py-0.5 font-mono text-xs font-medium", r.number ? "text-primary" : "text-muted-foreground")}>{r.number ?? "Draft"}</span>
+          {r.noteType === "proforma" && <span className="text-xs text-muted-foreground">Proforma</span>}
+          {r.sourceNumber && <span className="text-xs text-muted-foreground">from {r.sourceNumber}</span>}
+        </span>
+      ),
+    },
+    {
+      key: "customer", header: "Customer", sort: (r) => r.buyer?.name?.toLowerCase() ?? "", csv: (r) => r.buyer?.name,
+      cell: (r) => (
+        <span className="flex items-center gap-2.5">
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{initials(r.buyer?.name ?? "?")}</span>
+          <span className="min-w-0"><span className="block font-medium">{r.buyer?.name ?? "—"}</span>{(r.buyer?.phone || r.buyer?.gstin) && <span className="block text-xs text-muted-foreground">{r.buyer.gstin ?? r.buyer.phone}</span>}</span>
+        </span>
+      ),
+    },
+    { key: "date", header: DATE_HEADER[kind], sort: (r) => r.issueDate, csv: (r) => r.issueDate.slice(0, 10), cell: (r) => dated(r.issueDate) },
+    ...(kind !== "delivery_challan"
+      ? [{
+          key: "due", header: DUE_HEADER[kind], sort: (r: Row) => r.dueDate ?? "", csv: (r: Row) => r.dueDate?.slice(0, 10) ?? "",
+          cell: (r: Row) => {
+            if (!r.dueDate) return <span className="text-muted-foreground">—</span>
+            const late = r.dueDate.slice(0, 10) < today && (open(r) || (kind === "quotation" && ["draft", "sent"].includes(r.status)))
+            return <span className={late ? "text-destructive" : ""}>{dated(r.dueDate)}{late && <span className="block text-xs">{kind === "quotation" ? "Expired" : "Overdue"}</span>}</span>
+          },
+        }]
+      : []),
+    ...(kind !== "quotation" ? [{ key: "warehouse", header: "Warehouse", defaultHidden: (warehouses.data?.data.length ?? 0) < 2, csv: (r: Row) => r.location?.name ?? "", cell: (r: Row) => (r.location ? <Badge variant="outline">{r.location.name}</Badge> : "—") }] : []),
+    { key: "branch", header: "Branch", defaultHidden: true, cell: (r) => branchName(r.branchId), csv: (r) => branchName(r.branchId) },
+    { key: "subtotal", header: "Subtotal", align: "right", defaultHidden: true, sort: (r) => r.taxablePaise ?? 0, csv: (r) => ((r.taxablePaise ?? 0) / 100).toFixed(2), cell: (r) => <span className="tabular-nums">{formatPaise(r.taxablePaise ?? 0)}</span> },
+    { key: "tax", header: "Tax", align: "right", defaultHidden: true, csv: (r) => (tax(r) / 100).toFixed(2), cell: (r) => <span className="tabular-nums">{formatPaise(tax(r))}</span> },
+    { key: "amount", header: "Total", align: "right", sort: (r) => r.totalPaise, csv: (r) => (r.totalPaise / 100).toFixed(2), cell: (r) => <span className="font-semibold tabular-nums">{formatPaise(r.totalPaise)}</span> },
     ...(kind === "invoice"
-      ? [{ key: "due", header: "Due", align: "right" as const, cell: (r: Row) => formatPaise(due(r)), csv: (r: Row) => (due(r) / 100).toFixed(2), sort: (r: Row) => due(r) }]
+      ? [{ key: "balance", header: "Balance", align: "right" as const, sort: (r: Row) => due(r), csv: (r: Row) => (due(r) / 100).toFixed(2), cell: (r: Row) => <span className={cn("font-medium tabular-nums", r.status === "paid" ? "text-emerald-700 dark:text-emerald-300" : due(r) > 0 && "text-orange-600 dark:text-orange-300")}>{r.status === "draft" ? "—" : formatPaise(due(r))}</span> }]
       : []),
     {
-      key: "status",
-      header: "Status",
+      key: "status", header: "Status", csv: (r) => status(r).label,
       cell: (r) => {
         const s = status(r)
-        return <span className={cn("inline-flex h-[22px] items-center rounded-full px-2 text-xs font-semibold", PILL[s.tone], r.status === "cancelled" && "line-through")}>{s.label}</span>
+        return <span className={cn("inline-flex h-[22px] items-center rounded-full px-2 text-xs font-semibold whitespace-nowrap", PILL[s.tone], r.status === "cancelled" && "line-through")}>{s.label}</span>
       },
-      csv: (r) => status(r).label,
+    },
+    {
+      key: "actions", header: "Actions", hideable: false,
+      cell: (r) => (
+        <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+          <Link href={`/app/m/${docPath(kind)}/${r.id}`} className={icon} title="View" aria-label={`View ${r.number ?? "draft"}`}><Eye /></Link>
+          {r.status !== "draft" && <a href={`/print/${kind}/${r.id}`} target="_blank" rel="noreferrer" className={icon} title="Print or PDF" aria-label={`Print ${r.number}`}><Printer /></a>}
+          {kind === "invoice" && r.status === "draft" && canCreate && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Post" aria-label={`Post draft for ${r.buyer?.name}`} onClick={() => act(r, `/invoices/${r.id}/issue`, "Invoice posted")}><Send /></Button>}
+          {open(r) && can("billing.payment.create") && <Link href={`/app/m/billing/${r.id}?pay=1`} className={icon} title="Receive payment" aria-label={`Receive payment on ${r.number}`}><IndianRupee /></Link>}
+          {kind === "quotation" && ["draft", "sent", "accepted"].includes(r.status) && can("billing.invoice.create") && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Convert to invoice" aria-label={`Convert ${r.number} to invoice`} onClick={() => act(r, `/quotations/${r.id}/convert`, "Draft invoice made from the quotation", (d) => router.push(`/app/m/billing/${d.id}`))}><FileOutput /></Button>}
+          {kind === "delivery_challan" && r.status === "issued" && can("billing.invoice.create") && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Make invoice" aria-label={`Make invoice from ${r.number}`} onClick={() => act(r, `/delivery-challans/${r.id}/invoice`, "Draft invoice made from the challan", (d) => router.push(`/app/m/billing/${d.id}`))}><FileOutput /></Button>}
+          {kind === "sales_order" && ["open", "part_invoiced"].includes(r.status) && can("billing.invoice.create") && <Link href={`/app/m/sales/orders/${r.id}`} className={icon} title="Make invoice" aria-label={`Make invoice from ${r.number}`}><FileOutput /></Link>}
+          {editable(r) && canEdit && <Link href={`/app/m/${docPath(kind)}/${r.id}/edit`} className={icon} title="Edit" aria-label={`Edit ${r.number ?? "draft"}`}><Pencil /></Link>}
+          {r.status === "draft" && canEdit && <Button variant="ghost" size="icon-sm" className="text-destructive" title="Delete draft" aria-label={`Delete draft for ${r.buyer?.name}`} onClick={() => setDeleting(r)}><Trash2 /></Button>}
+        </span>
+      ),
     },
   ]
 
@@ -160,46 +247,73 @@ export function SalesDocList({ kind }: { kind: Kind }) {
           { key: "all", label: "All", params: {}, countKey: "all" },
           { key: "overdue", label: "Overdue", params: { overdue: "true" }, countKey: "overdue" },
           { key: "unpaid", label: "Unpaid", params: { unpaid: "true" }, countKey: "unpaid" },
+          { key: "partial", label: "Partly paid", params: { status: "partially_paid" }, countKey: "partially_paid" },
           { key: "draft", label: "Draft", params: { status: "draft" }, countKey: "draft" },
           { key: "paid", label: "Paid", params: { status: "paid" }, countKey: "paid" },
           { key: "cancelled", label: "Cancelled", params: { status: "cancelled" }, countKey: "cancelled" },
         ]
       : STATUS_FILTERS[kind].map((f) => ({ key: f.value || "all", label: f.label, params: (f.value ? { status: f.value } : {}) as Record<string, string>, countKey: f.value || "all" }))
+  const places = (warehouses.data?.data ?? []).filter((w) => w.isActive)
+  const slug = { invoice: "invoices", quotation: "quotations", sales_order: "sales-orders", delivery_challan: "delivery-challans" }[kind]
 
   return (
     <>
-    <DataList<Row>
-      id={{ invoice: "invoices", quotation: "quotations", sales_order: "sales-orders", delivery_challan: "delivery-challans" }[kind]}
-      path={docApi(kind)}
-      countsPath={`${docApi(kind)}/counts`}
-      header={{
-        breadcrumb: { invoice: "Billing › Invoices", quotation: "Sales › Quotations", sales_order: "Sales › Sales orders", delivery_challan: "Sales › Delivery challans" }[kind],
-        title: LIST_NAME[kind],
-        actions: (
-          <>
-            {kind === "invoice" && canCreate && can("billing.payment.create") && <HeaderLink href="/app/m/billing/new?cash=1">Cash bill</HeaderLink>}
-          </>
-        ),
-        primary: newButton,
-      }}
-      columns={columns}
-      searchPlaceholder="Search number, customer, mobile, GSTIN"
-      presets={presets}
-      filters={[periodFilter(me?.tenant?.fyStartMonth ?? 4)]}
-      rowHref={(r) => `/app/m/${docPath(kind)}/${r.id}`}
-      bulkActions={bulkActions}
-      exportName={{ invoice: "invoices", quotation: "quotations", sales_order: "sales-orders", delivery_challan: "delivery-challans" }[kind]}
-      emptyState={
-        <EmptyState
-          icon={FileText}
-          title={`No ${label.toLowerCase()}s yet`}
-          description={{ invoice: "Create a GST invoice in under a minute, or bring your old invoices in.", quotation: "Send a quotation and convert it to an invoice when accepted.", sales_order: "Write down what the customer ordered, then invoice it in one go or in parts.", delivery_challan: "Send goods with a challan, then make the invoice from it." }[kind]}
-          action={newButton}
-        />
-      }
-    />
-    {bulk?.type === "eway" && <EwayBillDialog ids={bulk.ids} label={`${bulk.ids.length}-bills`} hasChallan={kind === "delivery_challan"} onClose={() => setBulk(null)} />}
-    {bulk?.type === "einvoice" && <EInvoiceDialog ids={bulk.ids} label={`${bulk.ids.length}-bills`} onClose={() => setBulk(null)} />}
+      <DataList<Row>
+        id={slug}
+        path={docApi(kind)}
+        params={{ v: String(version) }}
+        countsPath={`${docApi(kind)}/counts`}
+        header={{
+          title: LIST_NAME[kind],
+          description: LIST_HINT[kind],
+          actions: kind === "invoice" && canCreate && can("billing.payment.create") ? <HeaderLink href="/app/m/billing/new?cash=1">Cash bill</HeaderLink> : undefined,
+          primary: newButton,
+          // Pages kept off the fixed Sales menu, for businesses that use them
+          more: [
+            ...(kind !== "sales_order" && can("sales.order.view") ? [{ label: "Sales Orders", href: "/app/m/sales/orders" }] : []),
+            ...(kind !== "delivery_challan" && can("sales.delivery.view") ? [{ label: "Delivery Challans", href: "/app/m/sales/challans" }] : []),
+            ...(kind === "invoice" && can("billing.invoice.view") ? [{ label: "Debit Notes", href: "/app/m/billing/debit-notes" }] : []),
+            ...(kind !== "invoice" && can("billing.invoice.view") ? [{ label: "Sales Invoices", href: "/app/m/billing" }] : []),
+          ],
+        }}
+        columns={columns}
+        searchPlaceholder="Search number, customer, mobile or GSTIN"
+        presets={presets}
+        filters={[
+          periodFilter(me?.tenant?.fyStartMonth ?? 4),
+          ...(kind !== "quotation" && places.length > 1 ? [{ key: "locationId", label: "Warehouse", options: places.map((w) => ({ value: w.id, label: w.name })) }] : []),
+        ]}
+        rowHref={(r) => `/app/m/${docPath(kind)}/${r.id}`}
+        bulkActions={bulkActions}
+        exportName={slug}
+        emptyState={
+          <EmptyState
+            icon={FileText}
+            title={`No ${label.toLowerCase()}s yet`}
+            description={{ invoice: "Make a GST invoice in under a minute. Posting it takes the stock out and adds it to what the customer owes.", quotation: "Send a customer your rates, then turn the quotation into an invoice when they agree.", sales_order: "Write down what the customer ordered, then invoice it in one go or in parts.", delivery_challan: "Send goods with a challan, then make the invoice from it." }[kind]}
+            action={newButton}
+          />
+        }
+      />
+      {bulk?.type === "eway" && <EwayBillDialog ids={bulk.ids} label={`${bulk.ids.length}-bills`} hasChallan={kind === "delivery_challan"} onClose={() => setBulk(null)} />}
+      {bulk?.type === "einvoice" && <EInvoiceDialog ids={bulk.ids} label={`${bulk.ids.length}-bills`} onClose={() => setBulk(null)} />}
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        destructive
+        title="Delete this draft?"
+        description={`The draft for ${deleting?.buyer?.name ?? "this customer"} is removed. Nothing was posted, so stock and dues don't change.`}
+        confirmLabel="Delete draft"
+        onConfirm={async () => {
+          try {
+            await api.delete(`${docApi(kind)}/${deleting!.id}`)
+            toast.success("Draft deleted")
+            setVersion((v) => v + 1)
+          } catch (e) {
+            toast.error(errorMessage(e))
+          }
+        }}
+      />
     </>
   )
 }
@@ -269,7 +383,7 @@ function PaymentDialog({ doc, onClose, onSaved }: { doc: SalesDoc; onClose: () =
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Record payment</DialogTitle>
+          <DialogTitle>Receive payment</DialogTitle>
           <DialogDescription>Balance due on {doc.number}: {formatPaise(balance)}</DialogDescription>
         </DialogHeader>
         <form onSubmit={save} className="grid gap-4">
@@ -284,7 +398,7 @@ function PaymentDialog({ doc, onClose, onSaved }: { doc: SalesDoc; onClose: () =
             <Field label="Reference" hint="UPI ref, cheque no., etc."><Input value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
           </div>
           <FormError message={error} />
-          <DialogFooter><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Record payment"}</Button></DialogFooter>
+          <DialogFooter><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save payment"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -350,7 +464,8 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
   const debitNotes = useApi<{ data: { id: string; number: string; status: string; issueDate: string; totalPaise: number }[] }>(kind === "invoice" && can("billing.credit_note.view") ? `/debit-notes?sourceId=${id}&limit=50` : null)
   const [invoicingOrder, setInvoicingOrder] = React.useState<null | "invoice" | "challan">(null)
   const [overLimit, setOverLimit] = React.useState<string | null>(null)
-  const [paying, setPaying] = React.useState(false)
+  const search = useSearchParams()
+  const [paying, setPaying] = React.useState(kind === "invoice" && search.get("pay") === "1")
   const [usingAdvance, setUsingAdvance] = React.useState(false)
   const [reversing, setReversing] = React.useState<NonNullable<SalesDoc["payments"]>[number] | null>(null)
   const [cancelling, setCancelling] = React.useState(false)
@@ -388,10 +503,15 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
-            {doc.number ?? `Draft ${docLabel(kind).toLowerCase()}`} <StatusBadge status={kind === "delivery_challan" && doc.status === "converted" ? "invoiced" : kind === "delivery_challan" && doc.status === "issued" ? "not_billed" : doc.status} />
+            {doc.number ?? `Draft ${docLabel(kind).toLowerCase()}`}
+            {(() => {
+              // The same words and colours as the list
+              const s = listStatus(kind, doc as unknown as Row, todayInIndia())
+              return <span className={cn("inline-flex h-6 items-center rounded-full px-2.5 text-xs font-semibold", PILL[s.tone])}>{s.label}</span>
+            })()}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {doc.buyer.name} · {formatPaise(doc.totalPaise)}
+            {doc.buyer.name} · {formatPaise(doc.totalPaise)}{doc.location ? ` · ${doc.location.name}` : ""}
             {kind === "invoice" && doc.paidPaise > 0 && balance > 0 && ` · ${formatPaise(balance)} due`}
             {doc.cancelReason && ` · Cancelled: ${doc.cancelReason}`}
           </p>
@@ -403,17 +523,17 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
               setBusy(true)
               try {
                 setData(await api.post<SalesDoc>(`/invoices/${id}/issue`))
-                toast.success("Invoice issued")
+                toast.success("Invoice posted")
               } catch (e) {
                 if (e instanceof ApiError && e.details?.creditLimit && can("billing.invoice.approve")) setOverLimit(e.message)
                 else toast.error(errorMessage(e))
               } finally {
                 setBusy(false)
               }
-            }}><Send /> Issue invoice</Button>
+            }}><Send /> Post invoice</Button>
           )}
           {kind === "invoice" && ["issued", "partially_paid"].includes(doc.status) && can("billing.payment.create") && (
-            <Button onClick={() => setPaying(true)}><IndianRupee /> Record payment</Button>
+            <Button onClick={() => setPaying(true)}><IndianRupee /> Receive payment</Button>
           )}
           {kind === "invoice" && ["issued", "partially_paid"].includes(doc.status) && can("billing.payment.create") && spendable > 0 && (
             <Button variant="outline" onClick={() => setUsingAdvance(true)}>Use advance or credit ({formatPaise(spendable)})</Button>
@@ -671,8 +791,8 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
         onOpenChange={(o) => !o && setOverLimit(null)}
         title="Over the credit limit"
         description={overLimit ?? ""}
-        confirmLabel="Issue anyway"
-        onConfirm={() => act(() => api.post<SalesDoc>(`/invoices/${id}/issue-over-limit`), "Invoice issued")}
+        confirmLabel="Post anyway"
+        onConfirm={() => act(() => api.post<SalesDoc>(`/invoices/${id}/issue-over-limit`), "Invoice posted")}
       />
       {paying && <PaymentDialog doc={doc} onClose={() => setPaying(false)} onSaved={(d) => { setPaying(false); setData(d) }} />}
       {usingAdvance && <UseAdvanceDialog doc={doc} list={advances.data!} onClose={() => setUsingAdvance(false)} onSaved={(d) => { setUsingAdvance(false); setData(d); void advances.reload() }} />}

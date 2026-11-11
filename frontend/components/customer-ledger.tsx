@@ -67,17 +67,17 @@ export function ledgerDocument(r: LedgerRow) {
 /** "₹5,000.00" when owed; "₹5,000.00 Cr" when the business holds the customer's money. */
 export const ledgerBalance = (paise: number) => (paise < 0 ? `${formatPaise(-paise)} Cr` : formatPaise(paise))
 
-const rowHref = (r: LedgerRow) =>
+export const ledgerHref = (r: LedgerRow) =>
   r.type === "invoice" ? `/app/m/billing/${r.id}` : r.type === "credit_note" ? `/app/m/billing/credit-notes/${r.id}` : r.type === "debit_note" ? `/app/m/billing/debit-notes/${r.id}` : r.type === "receipt" && r.documentId && r.against ? `/app/m/billing/${r.documentId}` : null
 
 /** Start of the financial year holding today, as YYYY-MM-DD. */
-function fyStart(today: string, startMonth: number) {
+export function fyStart(today: string, startMonth: number) {
   const y = Number(today.slice(0, 4))
   const m = Number(today.slice(5, 7))
   return `${m >= startMonth ? y : y - 1}-${String(startMonth).padStart(2, "0")}-01`
 }
 
-function OpeningDialog({ contactId, current, onClose, onSaved }: { contactId: string; current: Ledger["openingBalance"]; onClose: () => void; onSaved: () => void }) {
+export function OpeningDialog({ contactId, current, onClose, onSaved }: { contactId: string; current: Ledger["openingBalance"]; onClose: () => void; onSaved: () => void }) {
   const { me } = useAuth()
   const today = todayInIndia()
   const [amount, setAmount] = React.useState<number | null>(current?.totalPaise ?? null)
@@ -120,7 +120,7 @@ function OpeningDialog({ contactId, current, onClose, onSaved }: { contactId: st
   )
 }
 
-function OpeningPaymentDialog({ opening, onClose, onSaved }: { opening: NonNullable<Ledger["openingBalance"]>; onClose: () => void; onSaved: () => void }) {
+export function OpeningPaymentDialog({ opening, onClose, onSaved }: { opening: NonNullable<Ledger["openingBalance"]>; onClose: () => void; onSaved: () => void }) {
   const left = opening.totalPaise - opening.paidPaise
   const [amount, setAmount] = React.useState<number | null>(left)
   const [method, setMethod] = React.useState("cash")
@@ -264,7 +264,7 @@ export function CustomerLedger({ contactId }: { contactId: string }) {
                 )}
                 {data.rows.map((r) => {
                   const doc = ledgerDocument(r)
-                  const href = rowHref(r)
+                  const href = ledgerHref(r)
                   return (
                     <tr key={r.id} className="border-b border-border/60">
                       <td className="py-2 pr-3 whitespace-nowrap">{formatDate(r.date)}</td>

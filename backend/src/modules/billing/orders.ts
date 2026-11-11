@@ -50,7 +50,7 @@ export async function invoiceFromOrder(ctx: TenantCtx, orderId: string, input: z
   const invoice = await createDocument(
     ctx,
     target,
-    { contactId: order.contactId, buyer: order.contactId ? undefined : (order.buyer as unknown as DocInput['buyer']), branchId: order.branchId, notes: order.notes, terms: order.terms, shipTo: order.shipTo as DocInput['shipTo'], lines },
+    { contactId: order.contactId, buyer: order.contactId ? undefined : (order.buyer as unknown as DocInput['buyer']), branchId: order.branchId, notes: order.notes, terms: order.terms, shipTo: order.shipTo as DocInput['shipTo'], locationId: order.locationId, lines },
     { sourceType: 'sales_order', sourceId: order.id },
   );
   await refreshOrderStatus(order.id);
@@ -78,7 +78,7 @@ export async function invoiceFromChallan(ctx: TenantCtx, id: string) {
     'invoice',
     {
       contactId: challan.contactId, buyer: challan.contactId ? undefined : (challan.buyer as unknown as DocInput['buyer']), branchId: challan.branchId, notes: challan.notes, terms: challan.terms,
-      shipTo: challan.shipTo as DocInput['shipTo'], roundOff: challan.roundOffPaise !== 0n,
+      shipTo: challan.shipTo as DocInput['shipTo'], locationId: challan.locationId, roundOff: challan.roundOffPaise !== 0n,
       lines: challan.lines.map((l) => ({ sourceLineId: l.id, itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: Number(l.quantity), unitPricePaise: Number(l.unitPricePaise), discountPaise: Number(l.discountPaise), gstRateBp: l.gstRateBp, freeQuantity: Number(l.freeQuantity), batchId: l.batchId, serials: l.serials })),
     },
     { sourceType: 'delivery_challan', sourceId: challan.id },

@@ -1,5 +1,7 @@
 "use client"
 
+import { ContactDialog } from "@/components/contact-dialog"
+
 import * as React from "react"
 import { Check, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
@@ -17,6 +19,10 @@ export interface ContactOption {
   phone?: string | null
   gstin?: string | null
   stateCode?: string | null
+  /** Customers: invoices fall due this many days after their date */
+  paymentDays?: number | null
+  address?: Record<string, string> | null
+  shippingAddress?: { name?: string | null; line1?: string; city?: string; pincode?: string; stateCode?: string } | null
 }
 
 export interface ItemOption {
@@ -151,40 +157,39 @@ function Combobox<T extends { id: string }>({
   )
 }
 
+/** Choose a customer; "+ Add" opens the full customer form with the typed name, so nobody is added half-filled. */
 export function ContactPicker({ value, onChange, id, allowCreate = true }: { value: ContactOption | null; onChange: (c: ContactOption | null) => void; id?: string; allowCreate?: boolean }) {
+  const [adding, setAdding] = React.useState<string | null>(null)
   return (
-    <Combobox<ContactOption>
-      id={id}
-      path="/contacts"
-      label="Customer"
-      placeholder="Search customers by name, phone or email"
-      value={value}
-      onChange={onChange}
-      render={(c) => ({ title: c.companyName || c.name, subtitle: [c.companyName ? c.name : null, c.phone, c.gstin].filter(Boolean).join(" · ") || undefined })}
-      footer={
-        allowCreate
-          ? (query, close) =>
-              query.trim().length >= 2 && (
+    <>
+      <Combobox<ContactOption>
+        id={id}
+        path="/contacts"
+        label="Customer"
+        placeholder="Search customers by name, phone or GSTIN"
+        value={value}
+        onChange={onChange}
+        render={(c) => ({ title: c.companyName || c.name, subtitle: [c.companyName ? c.name : null, c.phone, c.gstin].filter(Boolean).join(" · ") || undefined })}
+        footer={
+          allowCreate
+            ? (query, close) => (
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
-                  className="mt-1 w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-primary hover:bg-muted"
-                  onClick={async () => {
-                    const c = await api.post<ContactOption>("/contacts", { name: query.trim(), allowDuplicate: true })
-                    onChange(c)
-                    close()
-                  }}
+                  className="mt-1 w-full rounded-xl border-t px-3 py-2 text-left text-sm font-medium text-primary hover:bg-muted"
+                  onClick={() => { setAdding(query.trim()); close() }}
                 >
-                  + Add “{query.trim()}” as a new customer
+                  {query.trim() ? `+ Add “${query.trim()}” as a new customer` : "+ Add a new customer"}
                 </button>
               )
-          : undefined
-      }
-    />
+            : undefined
+        }
+      />
+      {adding !== null && <ContactDialog kind="customer" initialName={adding} onClose={() => setAdding(null)} onSaved={(c) => { setAdding(null); onChange(c as ContactOption) }} />}
+    </>
   )
 }
 
-/** Suppliers (Purchase); a new one can be added by name from the search */
 export function SupplierPicker({ value, onChange, id, allowCreate = true }: { value: ContactOption | null; onChange: (c: ContactOption | null) => void; id?: string; allowCreate?: boolean }) {
   return (
     <Combobox<ContactOption>

@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { DASHBOARD_NAV, MODULE_NAV, MODULE_SUBS, NAV_SECTIONS, PURCHASE_NAV, USER_NAV, type NavEntry, type SubNav } from "@/lib/nav"
+import { DASHBOARD_NAV, MODULE_NAV, MODULE_SUBS, NAV_SECTIONS, PURCHASE_NAV, SALES_NAV, USER_NAV, type NavEntry, type SubNav } from "@/lib/nav"
 import { ReadOnlyBanner } from "@/components/page-states"
 import { CommandPalette } from "@/components/command-palette"
 import { SidePanel } from "@/components/side-panel"
@@ -82,10 +82,12 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const allowed = (subs: SubNav[]) => subs.filter((s) => !s.permission || can(s.permission))
   const purchase = me?.modules?.inventory?.status === "inactive" ? [] : allowed(PURCHASE_NAV.subs)
   const users = allowed(USER_NAV.subs)
+  // Each Sales page belongs to the module its permission names (crm, sales or billing)
+  const sales = allowed(SALES_NAV.subs).filter((s) => me?.modules?.[s.permission!.split(".")[0] as ModuleKey]?.status !== "inactive")
   const moduleSubs = (key: ModuleKey) => (me?.modules?.[key]?.status === "inactive" ? [] : allowed(MODULE_SUBS[key] ?? []))
 
   // The group holding this page is open until someone toggles another one
-  const groups: [string, SubNav[]][] = [["users", users], ["purchase", purchase], ...MODULE_NAV.map((m) => [m.key, moduleSubs(m.key)] as [string, SubNav[]])]
+  const groups: [string, SubNav[]][] = [["users", users], ["salesgroup", sales], ["purchase", purchase], ...MODULE_NAV.map((m) => [m.key, moduleSubs(m.key)] as [string, SubNav[]])]
   const matches = groups.flatMap(([id, subs]) => subs.filter((s) => pathname === s.href || pathname.startsWith(`${s.href}/`)).map((s) => ({ id, href: s.href })))
   const current = matches.sort((a, b) => b.href.length - a.href.length)[0] ?? null
   const [toggled, setToggled] = React.useState<{ page: string | null; id: string | null } | null>(null)
@@ -108,6 +110,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           <DASHBOARD_NAV.icon className="size-4" /> {DASHBOARD_NAV.label}
         </NavLink>
       ) : null
+    if (e === "salesgroup") return group("salesgroup", SALES_NAV.label, SALES_NAV.icon, sales)
     if (e === "purchase") return group("purchase", PURCHASE_NAV.label, PURCHASE_NAV.icon, purchase)
     if (e === "users") return group("users", USER_NAV.label, USER_NAV.icon, users)
     if (e === "plan")
