@@ -3,16 +3,16 @@
 import * as React from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { ArrowLeft } from "lucide-react"
+import { ArrowLeft, BookOpen } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
-import { Spinner } from "@/components/common"
+import { EmptyState, Spinner } from "@/components/common"
+import { DataList, periodFilter } from "@/components/data-list"
 import { SupplierDialog } from "@/components/supplier-dialog"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
-import { errorMessage } from "@/lib/api"
+import { api, errorMessage } from "@/lib/api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { stateName } from "@contracts/validation"
 import type { Supplier } from "@/lib/purchase"
@@ -26,12 +26,8 @@ const KIND: Record<string, string> = { purchase_bill: "Invoice", purchase_return
 export default function SupplierPage() {
   const { id } = useParams<{ id: string }>()
   const { can, me } = useAuth()
-  const [from, setFrom] = React.useState("")
-  const [to, setTo] = React.useState("")
   const [editing, setEditing] = React.useState(false)
   const sup = useApi<Supplier>(`/suppliers/${id}`)
-  const range = new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString()
-  const ledger = useApi<{ openingPaise: number; closingPaise: number; data: LedgerRow[] }>(can("inventory.supplier_bill.view") ? `/suppliers/${id}/ledger?${range}` : null)
   if (sup.error) return <PageHeader title="Not found" description={errorMessage(sup.error)} />
   const s = sup.data
   if (!s) return <div className="grid place-items-center py-24"><Spinner /></div>
@@ -50,41 +46,38 @@ export default function SupplierPage() {
           </div>
         }
       />
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+      <div className="mb-5 grid gap-3 sm:grid-cols-3">
         <Card><CardContent><p className="text-xs text-muted-foreground">You owe</p><p className="text-xl font-semibold tabular-nums">{fmt(s.balancePaise)}</p></CardContent></Card>
         <Card><CardContent><p className="text-xs text-muted-foreground">Payment days</p><p className="text-xl font-semibold">{s.paymentDays ?? "—"}</p></CardContent></Card>
         <Card><CardContent><p className="text-xs text-muted-foreground">GST</p><p className="text-sm font-medium">{s.gstin ? "Registered: charges GST" : "Not registered: no GST on their bills"}</p></CardContent></Card>
       </div>
-      {ledger.data && (
-        <Card>
-          <CardContent className="grid gap-3">
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <span className="font-medium">Ledger</span>
-              <label className="flex items-center gap-2 text-muted-foreground">From <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 w-40" /></label>
-              <label className="flex items-center gap-2 text-muted-foreground">To <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9 w-40" /></label>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs text-muted-foreground"><tr><th className="py-2 pr-3">Date</th><th className="py-2 pr-3">Entry</th><th className="py-2 pr-3">Details</th><th className="py-2 pr-3 text-right">Bill</th><th className="py-2 pr-3 text-right">Paid / returned</th><th className="py-2 text-right">Balance</th></tr></thead>
-                <tbody>
-                  {from && <tr className="border-t"><td className="py-2 pr-3" colSpan={5}>Opening balance</td><td className="py-2 text-right tabular-nums">{fmt(ledger.data.openingPaise)}</td></tr>}
-                  {ledger.data.data.map((r, i) => (
-                    <tr key={`${r.number}-${i}`} className="border-t">
-                      <td className="py-2 pr-3">{formatDate(r.date)}</td>
-                      <td className="py-2 pr-3"><Link href={`/app/m/purchase/${r.id}`} className="hover:underline">{KIND[r.kind] ?? r.kind} <span className="font-mono text-xs">{r.number}</span></Link></td>
-                      <td className="py-2 pr-3 text-muted-foreground">{r.details}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums">{r.billPaise ? formatPaise(r.billPaise) : ""}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums">{r.paidPaise ? formatPaise(r.paidPaise) : ""}</td>
-                      <td className="py-2 text-right tabular-nums">{fmt(r.balancePaise)}</td>
-                    </tr>
-                  ))}
-                  {!ledger.data.data.length && <tr><td colSpan={6} className="py-6 text-center text-muted-foreground">No bills or payments in this period</td></tr>}
-                </tbody>
-              </table>
-            </div>
-            <p className="text-right text-sm font-semibold">Closing: {fmt(ledger.data.closingPaise)}</p>
-          </CardContent>
-        </Card>
+      {can("inventory.supplier_bill.view") && (
+        <DataList<LedgerRow & { id: string }>
+          id="supplier-ledger"
+          load={async ({ params, limit, cursor }) => {
+            const range = new URLSearchParams({ ...(params.from ? { from: params.from } : {}), ...(params.to ? { to: params.to } : {}) }).toString()
+            const r = await api.get<{ openingPaise: number; closingPaise: number; data: LedgerRow[] }>(`/suppliers/${id}/ledger?${range}`)
+            const q = (params.q ?? "").toLowerCase()
+            const all = r.data.map((x, n) => ({ ...x, docId: x.id, id: `${x.id}-${n}` })).filter((x) => !q || `${x.number} ${x.details}`.toLowerCase().includes(q))
+            const start = Number(cursor ?? 0)
+            return { ...r, data: all.slice(start, start + limit), nextCursor: start + limit < all.length ? String(start + limit) : null, total: all.length }
+          }}
+          header={{ title: "Ledger", description: "Every invoice, payment and return with this supplier, and the running balance." }}
+          filters={[periodFilter(me?.tenant?.fyStartMonth ?? 4, "Period")]}
+          summary={(r) => <span className="flex flex-wrap gap-x-4 text-sm text-muted-foreground"><span>Opening <strong className="text-foreground tabular-nums">{fmt(Number(r.openingPaise ?? 0))}</strong></span><span>Closing <strong className="text-foreground tabular-nums">{fmt(Number(r.closingPaise ?? 0))}</strong></span></span>}
+          columns={[
+            { key: "date", header: "Date", hideable: false, csv: (r) => r.date.slice(0, 10), cell: (r) => formatDate(r.date) },
+            { key: "entry", header: "Entry", csv: (r) => `${KIND[r.kind] ?? r.kind} ${r.number}`, cell: (r) => <span>{KIND[r.kind] ?? r.kind} <span className="font-mono text-xs">{r.number}</span></span> },
+            { key: "details", header: "Details", csv: (r) => r.details, cell: (r) => <span className="text-muted-foreground">{r.details}</span> },
+            { key: "bill", header: "Invoice", align: "right", csv: (r) => r.billPaise / 100, cell: (r) => (r.billPaise ? formatPaise(r.billPaise) : "") },
+            { key: "paid", header: "Paid or returned", align: "right", csv: (r) => r.paidPaise / 100, cell: (r) => (r.paidPaise ? formatPaise(r.paidPaise) : "") },
+            { key: "balance", header: "Balance", align: "right", csv: (r) => r.balancePaise / 100, cell: (r) => <span className="font-medium">{fmt(r.balancePaise)}</span> },
+          ]}
+          searchPlaceholder="Search number or details"
+          rowHref={(r) => `/app/m/purchase/${(r as LedgerRow & { docId: string }).docId}`}
+          exportName="supplier-ledger"
+          emptyState={<EmptyState icon={BookOpen} title="No invoices or payments yet" />}
+        />
       )}
       <SupplierDialog open={editing} onOpenChange={setEditing} supplier={s} onSaved={(n) => sup.setData(n)} />
     </>

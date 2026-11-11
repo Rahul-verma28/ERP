@@ -32,12 +32,16 @@ export const LocationInput = z.object({
 });
 
 export async function listLocations(ctx: TenantCtx) {
-  await defaultLocation(ctx);
-  const [rows, sums, items] = await Promise.all([
+  let [rows, sums, items] = await Promise.all([
     db().stockLocation.findMany({ where: { tenantId: ctx.tenantId }, orderBy: [{ isActive: 'desc' }, { isDefault: 'desc' }, { name: 'asc' }] }),
     db().stockBalance.groupBy({ by: ['locationId'], where: { tenantId: ctx.tenantId }, _sum: { valuePaise: true } }),
     db().stockBalance.groupBy({ by: ['locationId'], where: { tenantId: ctx.tenantId, quantity: { not: 0 } }, _count: { _all: true } }),
   ]);
+  // A business with no default warehouse gets one; the usual case needs no extra trip
+  if (!rows.some((l) => l.isDefault && l.isActive)) {
+    await defaultLocation(ctx);
+    rows = await db().stockLocation.findMany({ where: { tenantId: ctx.tenantId }, orderBy: [{ isActive: 'desc' }, { isDefault: 'desc' }, { name: 'asc' }] });
+  }
   return {
     data: rows.map((l) => ({
       ...l,

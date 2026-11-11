@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { CalendarDays, Check, CheckCheck, Eye, Pencil, Plus, Send, ShoppingCart, Trash2 } from "lucide-react"
+import { CalendarDays, Check, CheckCheck, Eye, Pencil, Plus, Printer, Send, ShoppingCart, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ConfirmDialog, EmptyState, StatusBadge } from "@/components/common"
@@ -119,6 +119,7 @@ function List({ kind }: { kind: PurchaseKind }) {
           {isReturn && r.status === "draft" && can("inventory.supplier_bill.approve") && <Button variant="ghost" size="icon-sm" title="Approve" aria-label={`Approve ${r.number}`} onClick={() => act("approve", r, "Return approved")}><Check /></Button>}
           {isReturn && r.status === "approved" && canWrite && <Button variant="ghost" size="icon-sm" title="Complete" aria-label={`Complete ${r.number}`} onClick={() => act("complete", r, "Return completed. Stock has gone out.")}><CheckCheck /></Button>}
           <Link href={`/app/m/purchase/${r.id}`} className={iconLink} title="View" aria-label={`View ${r.number}`}><Eye /></Link>
+          <a href={`/print/purchase/${r.id}`} target="_blank" rel="noreferrer" className={iconLink} title="Print or PDF" aria-label={`Print ${r.number}`}><Printer /></a>
           {bill && r.status === "draft" && canWrite && <Button variant="ghost" size="icon-sm" title="Post" aria-label={`Post ${r.number}`} onClick={() => act("post", r, "Invoice posted. Stock is in.")}><Send /></Button>}
           {(bill || isReturn) && r.status === "draft" && canWrite && <Link href={`/app/m/purchase/new?kind=${kind}&edit=${r.id}`} className={iconLink} title="Edit" aria-label={`Edit ${r.number}`}><Pencil /></Link>}
           {(bill || isReturn) && r.status === "draft" && canWrite && <Button variant="ghost" size="icon-sm" className="text-destructive" title="Delete" aria-label={`Delete ${r.number}`} onClick={() => setDeleting(r)}><Trash2 /></Button>}

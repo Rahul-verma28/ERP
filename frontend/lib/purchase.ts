@@ -79,7 +79,7 @@ export interface PurchaseDoc {
   status: string
   number: string
   contactId: string
-  supplier: { name: string; gstin: string | null; phone: string | null; stateCode: string | null }
+  supplier: { name: string; gstin: string | null; phone: string | null; stateCode: string | null; address?: Record<string, string> | null }
   supplierRef: string | null
   supplierDate: string | null
   issueDate: string

@@ -55,8 +55,8 @@ export async function withTenant<T>(ctx: Ctx & { tenantId: string }, fn: () => P
 
   const after: (() => void)[] = [];
   const out = await prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true), set_config('app.user_id', ${ctx.userId ?? ''}, true)`;
-    await tx.$executeRawUnsafe('SET LOCAL ROLE app_user');
+    // One round trip: the tenant, the user, and the role that turns row-level security on (role = SET LOCAL ROLE)
+    await tx.$queryRaw`SELECT set_config('app.tenant_id', ${ctx.tenantId}, true), set_config('app.user_id', ${ctx.userId ?? ''}, true), set_config('role', 'app_user', true)`;
     return als.run({ tx, ctx, after }, fn);
   }, TX_OPTIONS);
   runAfter(after);
