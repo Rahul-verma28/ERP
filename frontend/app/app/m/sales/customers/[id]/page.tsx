@@ -124,6 +124,7 @@ export default function CustomerPage() {
             {!c.isActive && <Badge variant="outline">Inactive</Badge>}
             {c.isActive && can("billing.invoice.create") && <Link href={`/app/m/billing/new?contact=${c.id}`} className={buttonVariants()}><FilePlus2 /> New invoice</Link>}
             {c.isActive && can("sales.quotation.create") && <Link href={`/app/m/sales/new?contact=${c.id}`} className={buttonVariants({ variant: "outline" })}>New quotation</Link>}
+            {can("billing.payment.create") && <Link href={`/app/m/billing/payments?new=1&contact=${c.id}`} className={buttonVariants({ variant: "outline" })}>Receive payment</Link>}
             {can("crm.contact.edit") && <Button variant="outline" onClick={() => setDialog("edit")}><Pencil /> Edit</Button>}
             <DropdownMenu>
               <DropdownMenuTrigger render={<Button variant="outline" size="icon" aria-label="More actions" />}><MoreHorizontal /></DropdownMenuTrigger>

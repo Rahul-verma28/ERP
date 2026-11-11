@@ -11,6 +11,7 @@ import { publicLimiter } from '../../middleware/rateLimit';
 import { audit } from '../audit/service';
 import { dateOnly, todayIST } from '../../kernel/gst';
 import * as billing from './service';
+import * as receipts from './receipts';
 import * as creditNotes from './creditNotes';
 import * as ledger from './ledger';
 import * as orders from './orders';
@@ -293,20 +294,22 @@ router.post('/advance-adjustments/:id/reverse', requirePermission('billing.payme
   res.json(await billing.removeAdvanceUse(req.ctx!, String(req.params.id)));
 }));
 
-router.get(
-  '/payments',
-  requirePermission('billing.payment.view'),
-  validate(ListQuery.extend({ from: DateStr.optional(), to: DateStr.optional() }), 'query'),
-  tx(async (req, res) => {
-    const q = req.query as unknown as z.infer<typeof ListQuery> & { from?: string; to?: string };
-    const rows = await db().payment.findMany({
-      where: { AND: [scopeWhere(req.ctx!, { owner: ['createdBy'] }), q.from || q.to ? { paidOn: { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } } : {}] },
-      include: { document: { select: { id: true, number: true, buyer: true } } },
-      ...pageArgs(q),
-    });
-    res.json(page(rows, q.limit));
-  }),
-);
+// ── Payments received: one receipt split over a customer's open bills ──
+router.get('/payments', requirePermission('billing.payment.view'), validate(receipts.ReceiptList, 'query'), tx(async (req, res) => {
+  res.json(await receipts.listReceipts(req.ctx!, req.query as unknown as z.infer<typeof receipts.ReceiptList>));
+}));
+router.get('/payments/:id', requirePermission('billing.payment.view'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json(await receipts.getReceipt(req.ctx!, String(req.params.id)));
+}));
+router.post('/receipts', requirePermission('billing.payment.create'), validate(receipts.ReceiveInput), tx(async (req, res) => {
+  res.status(201).json(await receipts.receivePayment(req.ctx!, req.body));
+}));
+router.post('/receipts/:id/reverse', requirePermission('billing.payment.approve'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json(await receipts.reverseReceipt(req.ctx!, String(req.params.id)));
+}));
+router.get('/customers/:id/open-bills', requirePermission('billing.payment.create'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json({ data: await receipts.openBills(req.ctx!, String(req.params.id)) });
+}));
 
 // GST portal files, made here and uploaded by the business; the numbers they give back
 router.post('/gst/eway-bill-json', requirePermission('billing.invoice.view'), validate(gstFiles.EwayInput), tx(async (req, res) => {
