@@ -10,7 +10,7 @@ import { Field } from "@/components/form"
 import { SearchSelect, type SelectOption } from "@/components/search-select"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { useApi } from "@/lib/use-api"
+import { useSharedApi as useApi } from "@/lib/use-api"
 
 // Any dropdown whose records may not exist yet. "Manage or add" opens a modal to add, rename, remove
 // and pick, so nobody leaves the form. For a new kind of record, wrap ManagedSelect with its calls.

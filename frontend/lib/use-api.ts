@@ -47,3 +47,45 @@ export function useApi<T>(path: string | null) {
     setData,
   }
 }
+
+// Lists many parts of one screen need (warehouses, categories, units): fetched once and shared,
+// so a dialog with three warehouse boxes asks the server one time, not three.
+const shared = new Map<string, { data?: unknown; at?: number; promise?: Promise<unknown>; listeners: Set<() => void> }>()
+
+function entry(path: string) {
+  let e = shared.get(path)
+  if (!e) shared.set(path, (e = { listeners: new Set() }))
+  return e
+}
+
+function fetchShared(path: string, force = false) {
+  const e = entry(path)
+  if (e.promise && !force) return e.promise
+  e.promise = api.get(path).then((data) => {
+    e.data = data
+    e.at = Date.now()
+    e.listeners.forEach((l) => l())
+    return data
+  })
+  e.promise.catch(() => { e.promise = undefined })
+  return e.promise
+}
+
+/** Like useApi, for a list that many components on a page read at once */
+export function useSharedApi<T>(path: string | null) {
+  const [, rerender] = React.useReducer((n: number) => n + 1, 0)
+  React.useEffect(() => {
+    if (!path) return
+    const e = entry(path)
+    e.listeners.add(rerender)
+    // A screen opened later reads it fresh: someone may have added a warehouse since
+    if (e.data === undefined || Date.now() - (e.at ?? 0) > 15_000) void fetchShared(path).catch(() => undefined)
+    return () => {
+      e.listeners.delete(rerender)
+    }
+  }, [path])
+  const reload = React.useCallback(async () => {
+    if (path) await fetchShared(path, true)
+  }, [path])
+  return { data: (path ? (shared.get(path)?.data as T | undefined) : undefined) ?? null, reload }
+}

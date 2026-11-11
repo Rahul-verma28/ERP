@@ -124,7 +124,7 @@ function ImportStock() {
 
   return (
     <>
-      <Link href={kind === "count" ? "/app/m/inventory/count" : "/app/m/inventory"} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {kind === "count" ? "Stock count" : "Stock"}</Link>
+      <Link href="/app/m/inventory" className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {kind === "count" ? "Stock count" : "Stock"}</Link>
       <PageHeader title={kind === "count" ? "Import a stock count" : "Import opening stock"} description="Fill the template in Excel, save it as CSV, and upload it. Items match by SKU, barcode or exact name." />
       <Card>
         <CardContent className="grid gap-4">

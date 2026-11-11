@@ -21,11 +21,11 @@ import type { Supplier } from "@/lib/purchase"
 
 interface LedgerRow { id: string; kind: string; number: string; date: string; details: string; billPaise: number; paidPaise: number; balancePaise: number }
 
-const KIND: Record<string, string> = { purchase_bill: "Bill", purchase_return: "Return", payment: "Payment", payment_reversal: "Payment reversed" }
+const KIND: Record<string, string> = { purchase_bill: "Invoice", purchase_return: "Return", payment: "Payment", payment_reversal: "Payment reversed" }
 
 export default function SupplierPage() {
   const { id } = useParams<{ id: string }>()
-  const { can } = useAuth()
+  const { can, me } = useAuth()
   const [from, setFrom] = React.useState("")
   const [to, setTo] = React.useState("")
   const [editing, setEditing] = React.useState(false)
@@ -44,8 +44,8 @@ export default function SupplierPage() {
         description={[s.companyName ? s.name : null, s.gstin, s.stateCode ? stateName(s.stateCode) : null, s.phone].filter(Boolean).join(" · ")}
         actions={
           <div className="flex flex-wrap gap-2">
-            {can("inventory.supplier_bill.create") && <Link href="/app/m/purchase/new?kind=purchase_bill" className={buttonVariants()}>New bill</Link>}
-            {can("inventory.purchase_order.create") && <Link href="/app/m/purchase/new?kind=purchase_order" className={buttonVariants({ variant: "outline" })}>New order</Link>}
+            {can("inventory.supplier_bill.create") && <Link href={`/app/m/purchase/new?kind=purchase_bill&supplier=${s.id}`} className={buttonVariants()}>New invoice</Link>}
+            {me?.tenant?.purchaseOrders && can("inventory.purchase_order.create") && <Link href={`/app/m/purchase/new?kind=purchase_order&supplier=${s.id}`} className={buttonVariants({ variant: "outline" })}>New order</Link>}
             {can("inventory.supplier.edit") && <Button variant="outline" onClick={() => setEditing(true)}>Edit</Button>}
           </div>
         }

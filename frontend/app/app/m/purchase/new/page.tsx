@@ -65,7 +65,7 @@ const gross = (l: Line) => Math.round(lineQty(l) * (l.unitPricePaise ?? 0))
 const discount = (l: Line) => Math.min(gross(l), Math.round((gross(l) * (Number(l.discountPct) || 0)) / 100))
 const taxableOf = (l: Line) => gross(l) - discount(l)
 
-function PurchaseForm({ kind, editId, fromId }: { kind: FormKind; editId: string | null; fromId: string | null }) {
+function PurchaseForm({ kind, editId, fromId, supplierId }: { kind: FormKind; editId: string | null; fromId: string | null; supplierId: string | null }) {
   const router = useRouter()
   const { can } = useAuth()
   const locations = useApi<{ data: StockLocation[] }>("/stock-locations")
@@ -85,6 +85,12 @@ function PurchaseForm({ kind, editId, fromId }: { kind: FormKind; editId: string
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const loaded = React.useRef(false)
+
+  // Started from a supplier's page or row: that supplier is already chosen
+  React.useEffect(() => {
+    if (!supplierId || fromId || editId) return
+    api.get<{ id: string; name: string; companyName: string | null; gstin: string | null; phone: string | null }>(`/suppliers/${supplierId}`).then((s) => setSupplier({ id: s.id, name: s.companyName || s.name, gstin: s.gstin, phone: s.phone })).catch(() => undefined)
+  }, [supplierId, fromId, editId])
 
   // Lines and supplier from the source document (or the draft or order being edited)
   React.useEffect(() => {
@@ -317,7 +323,7 @@ function Keyed() {
   const kind = params.get("kind") ?? "purchase_bill"
   if (kind === "purchase_return") return <PurchaseReturnForm key={`${fromId}-${editId}`} fromId={fromId} editId={editId} />
   const formKind = (["purchase_order", "goods_receipt"].includes(kind) ? kind : "purchase_bill") as FormKind
-  return <PurchaseForm key={`${formKind}-${fromId}-${editId}`} kind={formKind} editId={editId} fromId={fromId} />
+  return <PurchaseForm key={`${formKind}-${fromId}-${editId}`} kind={formKind} editId={editId} fromId={fromId} supplierId={params.get("supplier")} />
 }
 
 export default function NewPurchasePage() {

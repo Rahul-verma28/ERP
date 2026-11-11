@@ -6,19 +6,15 @@ import { toast } from "sonner"
 import { Eye, Package, Pencil, Plus, ShoppingCart, Tag, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { ConfirmDialog, EmptyState, MoneyInput } from "@/components/common"
-import { WarehouseSelect } from "@/components/creatable-select"
+import { ConfirmDialog, EmptyState } from "@/components/common"
+import { StockDialog } from "@/components/stock-dialogs"
 import { DataList, HeaderLink, type Column, type ViewPreset } from "@/components/data-list"
-import { Field, FormError } from "@/components/form"
-import { api, ApiError, errorMessage } from "@/lib/api"
+import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { categoryColour, type Category, type Item } from "@/lib/catalog"
 import { formatPaise } from "@/lib/format"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
-import { todayInIndia } from "@contracts/validation"
 
 const PRESETS: ViewPreset[] = [
   { key: "all", label: "All", params: {} },
@@ -26,57 +22,6 @@ const PRESETS: ViewPreset[] = [
   { key: "service", label: "Services", params: { type: "service" } },
   { key: "archived", label: "Archived", params: { active: "false" } },
 ]
-
-function AddStockDialog({ item, onClose, onDone }: { item: Item; onClose: () => void; onDone: () => void }) {
-  const { me } = useAuth()
-  const showCost = !!me?.fieldAccess?.["item.cost_price"] && me.fieldAccess["item.cost_price"] !== "hidden"
-  const [picked, setLocationId] = React.useState("")
-  const defaults = useApi<{ data: { id: string; isDefault: boolean; isActive: boolean }[] }>("/stock-locations").data?.data
-  const locationId = picked || defaults?.find((w) => w.isDefault && w.isActive)?.id || ""
-  const [quantity, setQuantity] = React.useState("")
-  const [rate, setRate] = React.useState<number | null>(item.costPricePaise ?? null)
-  const [errors, setErrors] = React.useState<Record<string, string>>({})
-  const [error, setError] = React.useState<string | null>(null)
-  const [busy, setBusy] = React.useState(false)
-  async function save() {
-    const p: Record<string, string> = {}
-    if (!locationId) p.locationId = "Choose a warehouse"
-    if (!(Number(quantity) > 0)) p.quantity = "Enter more than 0"
-    setErrors(p)
-    if (Object.keys(p).length) return
-    setBusy(true)
-    setError(null)
-    try {
-      await api.post("/stock/entries", { kind: "stock_in", locationId, date: todayInIndia(), lines: [{ itemId: item.id, quantity: Number(quantity), ratePaise: rate ?? 0 }] })
-      toast.success(`${quantity} ${item.unit} added to ${item.name}`)
-      onDone()
-    } catch (e) {
-      if (e instanceof ApiError) setErrors(e.fields)
-      setError(errorMessage(e))
-      setBusy(false)
-    }
-  }
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add stock</DialogTitle>
-          <DialogDescription>{item.name}{item.sku ? ` · ${item.sku}` : ""} · {item.stockQty ?? 0} {item.unit} in stock</DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4">
-          <Field label="Warehouse" required error={errors.locationId}><WarehouseSelect value={locationId} onChange={setLocationId} aria-label="Warehouse" aria-invalid={!!errors.locationId} /></Field>
-          <Field label="Quantity" required error={errors.quantity ?? errors["lines.0.quantity"]}><Input inputMode="decimal" value={quantity} onChange={(e) => setQuantity(e.target.value.replace(/[^\d.]/g, ""))} placeholder={item.unit} autoFocus /></Field>
-          {showCost && <Field label={`Cost per ${item.unit}`}><MoneyInput value={rate} onChange={setRate} aria-label="Cost" /></Field>}
-          <FormError message={error} />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button disabled={busy} onClick={save}>{busy ? "Adding…" : "Add stock"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 const iconLink = buttonVariants({ variant: "ghost", size: "icon-sm" })
 
@@ -160,7 +105,7 @@ export default function ItemsPage() {
         exportName="items"
         emptyState={<EmptyState icon={Package} title="No items yet" description="Add what you buy and sell so you can bill it in seconds." action={create} />}
       />
-      {adding && <AddStockDialog item={adding} onClose={() => setAdding(null)} onDone={() => { setAdding(null); refresh() }} />}
+      {adding && <StockDialog kind="add" item={{ id: adding.id, name: adding.name, unit: adding.unit, sku: adding.sku, tracking: adding.tracking, costPaise: adding.costPricePaise ?? null, warehouses: adding.warehouses }} onClose={() => setAdding(null)} onDone={() => { setAdding(null); refresh() }} />}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

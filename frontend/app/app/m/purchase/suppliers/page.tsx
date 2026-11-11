@@ -2,8 +2,9 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Truck } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import Link from "next/link"
+import { Eye, FilePlus2, Pencil, Plus, Truck } from "lucide-react"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/common"
 import { DataList, type Column } from "@/components/data-list"
@@ -19,6 +20,9 @@ export default function SuppliersPage() {
   const { can } = useAuth()
   const router = useRouter()
   const [adding, setAdding] = React.useState(false)
+  const [editing, setEditing] = React.useState<Supplier | null>(null)
+  const [version, setVersion] = React.useState(0)
+  const icon = buttonVariants({ variant: "ghost", size: "icon-sm" })
   if (!can("inventory.supplier.view")) return <PageHeader title="Suppliers" description="You don't have access to suppliers. Ask your admin." />
   const columns: Column<Supplier>[] = [
     { key: "name", header: "Supplier", hideable: false, cell: (r) => <span className="font-semibold">{r.companyName || r.name}{r.companyName && <span className="block text-xs font-normal text-muted-foreground">{r.name}</span>}{!r.isActive && <Badge variant="outline" className="ml-2">Inactive</Badge>}</span>, csv: (r) => r.companyName || r.name, sort: (r) => r.companyName || r.name },
@@ -26,24 +30,37 @@ export default function SuppliersPage() {
     { key: "phone", header: "Phone", cell: (r) => r.phone ?? "—", csv: (r) => r.phone ?? "" },
     { key: "days", header: "Payment days", align: "right", defaultHidden: true, cell: (r) => (r.paymentDays == null ? "—" : r.paymentDays), csv: (r) => r.paymentDays ?? "" },
     { key: "balance", header: "You owe", align: "right", cell: (r) => <span className={r.balancePaise < 0 ? "tabular-nums text-emerald-700 dark:text-emerald-300" : "font-medium tabular-nums"}>{r.balancePaise ? formatPaise(Math.abs(r.balancePaise)) : "—"}{r.balancePaise < 0 && <span className="block text-xs">they owe you</span>}</span>, csv: (r) => r.balancePaise / 100, sort: (r) => r.balancePaise },
+    {
+      key: "actions", header: "Actions", hideable: false,
+      cell: (r) => (
+        <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+          <Link href={`/app/m/purchase/suppliers/${r.id}`} className={icon} title="View ledger" aria-label={`View ${r.name}`}><Eye /></Link>
+          {can("inventory.supplier_bill.create") && <Link href={`/app/m/purchase/new?kind=purchase_bill&supplier=${r.id}`} className={icon} title="New invoice" aria-label={`New invoice from ${r.name}`}><FilePlus2 /></Link>}
+          {can("inventory.supplier.edit") && <Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit ${r.name}`} onClick={() => setEditing(r)}><Pencil /></Button>}
+        </span>
+      ),
+    },
   ]
   return (
     <>
       <DataList<Supplier>
         id="suppliers"
         path="/suppliers"
+        params={{ v: String(version) }}
         header={{
-          breadcrumb: "Purchase › Suppliers",
-          title: "Suppliers",
-          primary: can("inventory.supplier.create") ? <Button onClick={() => setAdding(true)}>New supplier</Button> : undefined,
+          title: "Manage Suppliers",
+          description: "Everyone you buy from, and what you owe each of them.",
+          primary: can("inventory.supplier.create") ? <Button onClick={() => setAdding(true)}><Plus /> New supplier</Button> : undefined,
         }}
         columns={columns}
         searchPlaceholder="Search name, phone or GSTIN"
+        presetLabel="Show"
         presets={[{ key: "active", label: "Active", params: {} }, { key: "inactive", label: "Inactive", params: { active: "false" } }]}
         rowHref={(r) => `/app/m/purchase/suppliers/${r.id}`}
         exportName="suppliers"
         emptyState={<EmptyState icon={Truck} title="No suppliers yet" description="Add the people you buy from. Their bills, payments and what you owe show here." action={can("inventory.supplier.create") ? <Button onClick={() => setAdding(true)}>New supplier</Button> : undefined} />}
       />
+      <SupplierDialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)} supplier={editing ?? undefined} onSaved={() => { setEditing(null); setVersion((v) => v + 1) }} />
       <SupplierDialog open={adding} onOpenChange={setAdding} onSaved={(s) => router.push(`/app/m/purchase/suppliers/${s.id}`)} />
     </>
   )

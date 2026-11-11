@@ -2,139 +2,168 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
+import { FileBarChart } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { PageHeader } from "@/components/app-shell"
-import { Spinner } from "@/components/common"
+import { EmptyState } from "@/components/common"
+import { DataList, periodFilter, type ListLoader } from "@/components/data-list"
+import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { downloadCsv } from "@/lib/csv"
-import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
 import { cn } from "@/lib/utils"
 import { todayInIndia } from "@contracts/validation"
 
-// Purchase reports: what you owe by age, the purchase register, the input tax credit register,
-// and order lines still to come. Each table downloads as CSV.
+// Purchase reports, each on the shared table: what you owe by age, the purchase register, the input
+// tax credit register, and order lines still to come (only for businesses that use purchase orders).
 
-type Tab = "payables" | "register" | "itc" | "pending"
-const TABS: [Tab, string][] = [["payables", "Payables"], ["register", "Purchase register"], ["itc", "ITC register"], ["pending", "Pending orders"]]
-
-function csv(name: string, head: string[], rows: (string | number | null)[][]) {
-  downloadCsv(`${name}.csv`, [head, ...rows.map((r) => r.map((v) => v ?? ""))])
-}
-const rupees = (p: number) => (p / 100).toFixed(2)
-const monthStart = () => `${todayInIndia().slice(0, 8)}01`
-
-function Table({ head, rows, right = [] }: { head: string[]; rows: React.ReactNode[][]; right?: number[] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="text-left text-xs text-muted-foreground"><tr>{head.map((h, i) => <th key={h} className={cn("py-2 pr-3", right.includes(i) && "text-right")}>{h}</th>)}</tr></thead>
-        <tbody>
-          {rows.map((r, i) => <tr key={i} className="border-t">{r.map((c, j) => <td key={j} className={cn("py-2 pr-3", right.includes(j) && "text-right tabular-nums")}>{c}</td>)}</tr>)}
-          {!rows.length && <tr><td colSpan={head.length} className="py-6 text-center text-muted-foreground">Nothing here</td></tr>}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-interface Ageing { contactId: string; name: string; bills: number; notDuePaise: number; d1_30: number; d31_60: number; d61_90: number; d90plus: number; totalPaise: number }
+interface Ageing { id: string; contactId: string; name: string; bills: number; notDuePaise: number; d1_30: number; d31_60: number; d61_90: number; d90plus: number; totalPaise: number }
 interface RegRow { id: string; kind: string; number: string; date: string; supplierRef: string | null; supplierDate: string | null; supplier: string; gstin: string | null; reverseCharge: boolean; taxablePaise: number; cgstPaise: number; sgstPaise: number; igstPaise: number; totalPaise: number }
 interface ItcRow { id: string; kind: string; number: string; supplierRef: string | null; supplierDate: string; supplier: string; gstin: string | null; taxablePaise: number; cgstPaise: number; sgstPaise: number; igstPaise: number; reverseCharge: boolean; unpaid180: boolean; claimBy: string }
 interface PendingRow { id: string; orderId: string; number: string; date: string; expected: string | null; late: boolean; supplier: string; description: string; unit: string; ordered: number; received: number; pending: number; pendingPaise: number }
 
+const monthStart = () => `${todayInIndia().slice(0, 8)}01`
+const money = (p: number) => <span className="tabular-nums">{p ? formatPaise(p) : "—"}</span>
+const total = (label: string, p: unknown) => <span className="text-sm text-muted-foreground">{label} <strong className="text-foreground tabular-nums">{formatPaise(Number(p ?? 0))}</strong></span>
+
+/** A report the API returns whole: searched and paged here, its totals kept for the summary */
+function report<T>(url: (params: Record<string, string>) => string, match: (row: T, q: string) => boolean, shape: (row: T) => T = (r) => r): ListLoader<T> {
+  return async ({ params, limit, cursor }) => {
+    const r = await api.get<{ data: T[] } & Record<string, unknown>>(url(params))
+    const q = (params.q ?? "").toLowerCase()
+    const all = r.data.map(shape).filter((row) => !q || match(row, q))
+    const start = Number(cursor ?? 0)
+    return { ...r, data: all.slice(start, start + limit), nextCursor: start + limit < all.length ? String(start + limit) : null, total: all.length }
+  }
+}
+const range = (p: Record<string, string>) => `from=${p.from ?? monthStart()}&to=${p.to ?? todayInIndia()}`
+const doc = (id: string, number: string, extra = "") => <Link href={`/app/m/purchase/${id}`} className="inline-flex rounded-lg border px-2 py-0.5 font-mono text-xs font-medium text-primary hover:underline" onClick={(e) => e.stopPropagation()}>{number}{extra}</Link>
+
 function Payables() {
-  const r = useApi<{ data: Ageing[]; totals: Omit<Ageing, "contactId" | "name" | "bills"> }>("/purchases/payables").data
-  if (!r) return <Spinner />
-  const cols = ["notDuePaise", "d1_30", "d31_60", "d61_90", "d90plus", "totalPaise"] as const
-  const head = ["Supplier", "Bills", "Not due", "1–30 days", "31–60", "61–90", "Over 90", "Total"]
   return (
-    <>
-      <button className="justify-self-end text-sm text-primary hover:underline" onClick={() => csv("payables", head, r.data.map((a) => [a.name, a.bills, ...cols.map((c) => rupees(a[c]))]))}>Download CSV</button>
-      <Table head={head} right={[1, 2, 3, 4, 5, 6, 7]} rows={[
-        ...r.data.map((a) => [<Link key="n" href={`/app/m/purchase/suppliers/${a.contactId}`} className="font-medium hover:underline">{a.name}</Link>, a.bills, ...cols.map((c) => (a[c] ? formatPaise(a[c]) : "—"))]),
-        ...(r.data.length ? [[<b key="t">Total</b>, "", ...cols.map((c) => <b key={c}>{formatPaise(r.totals[c])}</b>)]] : []),
-      ]} />
-    </>
+    <DataList<Ageing>
+      id="report-payables"
+      load={report<Ageing>(() => "/purchases/payables", (r, q) => r.name.toLowerCase().includes(q), (r) => ({ ...r, id: r.contactId }))}
+      header={{ title: "Payables", description: "What you owe each supplier, by how late it is." }}
+      summary={(r) => total("Total owed", (r.totals as { totalPaise?: number } | undefined)?.totalPaise)}
+      columns={[
+        { key: "name", header: "Supplier", hideable: false, sort: (r) => r.name, csv: (r) => r.name, cell: (r) => <span className="font-medium">{r.name}</span> },
+        { key: "bills", header: "Invoices", align: "right", sort: (r) => r.bills, csv: (r) => r.bills, cell: (r) => r.bills },
+        { key: "notDue", header: "Not due", align: "right", csv: (r) => r.notDuePaise / 100, cell: (r) => money(r.notDuePaise) },
+        { key: "d1", header: "1–30 days", align: "right", csv: (r) => r.d1_30 / 100, cell: (r) => money(r.d1_30) },
+        { key: "d31", header: "31–60", align: "right", csv: (r) => r.d31_60 / 100, cell: (r) => money(r.d31_60) },
+        { key: "d61", header: "61–90", align: "right", csv: (r) => r.d61_90 / 100, cell: (r) => money(r.d61_90) },
+        { key: "d90", header: "Over 90", align: "right", csv: (r) => r.d90plus / 100, cell: (r) => <span className={r.d90plus ? "font-medium text-destructive" : ""}>{money(r.d90plus)}</span> },
+        { key: "total", header: "Total", align: "right", sort: (r) => r.totalPaise, csv: (r) => r.totalPaise / 100, cell: (r) => <span className="font-semibold">{money(r.totalPaise)}</span> },
+      ]}
+      searchPlaceholder="Search supplier"
+      rowHref={(r) => `/app/m/purchase/suppliers/${r.contactId}`}
+      exportName="payables"
+      emptyState={<EmptyState icon={FileBarChart} title="You owe nothing" description="Posted invoices that are not fully paid show here." />}
+    />
   )
 }
 
-function Register({ from, to }: { from: string; to: string }) {
-  const r = useApi<{ data: RegRow[]; totals: { taxablePaise: number; cgstPaise: number; sgstPaise: number; igstPaise: number; totalPaise: number } }>(`/purchases/register?from=${from}&to=${to}`).data
-  if (!r) return <Spinner />
-  const head = ["Date", "Number", "Supplier", "GSTIN", "Supplier bill", "Taxable", "CGST", "SGST", "IGST", "Total"]
+function Register() {
+  const { me } = useAuth()
   return (
-    <>
-      <button className="justify-self-end text-sm text-primary hover:underline" onClick={() => csv(`purchase-register-${from}-${to}`, [...head, "Reverse charge"], r.data.map((d) => [d.date.slice(0, 10), d.number, d.supplier, d.gstin, d.supplierRef, rupees(d.taxablePaise), rupees(d.cgstPaise), rupees(d.sgstPaise), rupees(d.igstPaise), rupees(d.totalPaise), d.reverseCharge ? "Y" : "N"]))}>Download CSV</button>
-      <Table head={head} right={[5, 6, 7, 8, 9]} rows={[
-        ...r.data.map((d) => [formatDate(d.date), <Link key="n" href={`/app/m/purchase/${d.id}`} className="font-mono hover:underline">{d.number}{d.kind === "purchase_return" ? " (return)" : ""}</Link>, d.supplier, <span key="g" className="font-mono text-xs">{d.gstin ?? "—"}</span>, d.supplierRef ?? "—", formatPaise(d.taxablePaise), formatPaise(d.cgstPaise), formatPaise(d.sgstPaise), formatPaise(d.igstPaise), formatPaise(d.totalPaise)]),
-        ...(r.data.length ? [[<b key="t">Total</b>, "", "", "", "", <b key="a">{formatPaise(r.totals.taxablePaise)}</b>, <b key="b">{formatPaise(r.totals.cgstPaise)}</b>, <b key="c">{formatPaise(r.totals.sgstPaise)}</b>, <b key="d">{formatPaise(r.totals.igstPaise)}</b>, <b key="e">{formatPaise(r.totals.totalPaise)}</b>]] : []),
-      ]} />
-    </>
+    <DataList<RegRow>
+      id="report-register"
+      load={report<RegRow>((p) => `/purchases/register?${range(p)}`, (r, q) => `${r.number} ${r.supplier} ${r.supplierRef ?? ""} ${r.gstin ?? ""}`.toLowerCase().includes(q))}
+      header={{ title: "Purchase Register", description: "Every posted invoice and completed return in the period." }}
+      filters={[periodFilter(me?.tenant?.fyStartMonth ?? 4, "Period")]}
+      defaultFilters={{ period: "this_month" }}
+      summary={(r) => total("Total", (r.totals as { totalPaise?: number } | undefined)?.totalPaise)}
+      columns={[
+        { key: "date", header: "Date", hideable: false, sort: (r) => r.date, csv: (r) => r.date.slice(0, 10), cell: (r) => formatDate(r.date) },
+        { key: "number", header: "Number", csv: (r) => r.number, cell: (r) => doc(r.id, r.number, r.kind === "purchase_return" ? " · return" : "") },
+        { key: "supplier", header: "Supplier", sort: (r) => r.supplier, csv: (r) => r.supplier, cell: (r) => <span><span className="font-medium">{r.supplier}</span>{r.gstin && <span className="block font-mono text-xs text-muted-foreground">{r.gstin}</span>}</span> },
+        { key: "ref", header: "Supplier invoice", csv: (r) => r.supplierRef ?? "", cell: (r) => r.supplierRef ?? "—" },
+        { key: "taxable", header: "Taxable", align: "right", csv: (r) => r.taxablePaise / 100, cell: (r) => money(r.taxablePaise) },
+        { key: "cgst", header: "CGST", align: "right", csv: (r) => r.cgstPaise / 100, cell: (r) => money(r.cgstPaise) },
+        { key: "sgst", header: "SGST", align: "right", csv: (r) => r.sgstPaise / 100, cell: (r) => money(r.sgstPaise) },
+        { key: "igst", header: "IGST", align: "right", csv: (r) => r.igstPaise / 100, cell: (r) => money(r.igstPaise) },
+        { key: "total", header: "Total", align: "right", sort: (r) => r.totalPaise, csv: (r) => r.totalPaise / 100, cell: (r) => <span className="font-semibold">{money(r.totalPaise)}</span> },
+      ]}
+      searchPlaceholder="Search number, supplier or GSTIN"
+      rowHref={(r) => `/app/m/purchase/${r.id}`}
+      exportName="purchase-register"
+      emptyState={<EmptyState icon={FileBarChart} title="Nothing in this period" />}
+    />
   )
 }
 
-function Itc({ from, to }: { from: string; to: string }) {
-  const r = useApi<{ eligible: boolean; reason: string | null; data: ItcRow[]; totals: { cgstPaise: number; sgstPaise: number; igstPaise: number; reverseChargePaise: number; at180Paise: number } }>(`/purchases/itc?from=${from}&to=${to}`).data
-  if (!r) return <Spinner />
-  const head = ["Supplier GSTIN", "Supplier", "Bill no.", "Bill date", "Taxable", "CGST", "SGST", "IGST", "Notes"]
-  const note = (d: ItcRow) => [d.reverseCharge && "Reverse charge: pay in cash first", d.unpaid180 && "Unpaid over 180 days: reverse credit", d.kind === "purchase_return" ? "Reduces credit" : `Claim by ${formatDate(d.claimBy)}`].filter(Boolean).join(" · ")
+function Itc() {
+  const { me } = useAuth()
   return (
-    <>
-      {!r.eligible && <p className="rounded-2xl bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-100">{r.reason}</p>}
-      <div className="grid gap-3 sm:grid-cols-4">
-        {[["CGST", r.totals.cgstPaise], ["SGST", r.totals.sgstPaise], ["IGST", r.totals.igstPaise], ["Reverse charge (Sec 9(3))", r.totals.reverseChargePaise]].map(([l, v]) => (
-          <Card key={l as string}><CardContent><p className="text-xs text-muted-foreground">{l}</p><p className="text-lg font-semibold tabular-nums">{formatPaise(v as number)}</p></CardContent></Card>
-        ))}
-      </div>
-      {r.totals.at180Paise > 0 && <p className="text-sm text-destructive">Credit of {formatPaise(r.totals.at180Paise)} is on bills unpaid for over 180 days. Rule 37: reverse it until you pay.</p>}
-      <p className="text-xs text-muted-foreground">Match these with GSTR-2B before you claim. Credit counts only on bills the supplier has filed (Section 16(2)(aa)).</p>
-      <button className="justify-self-end text-sm text-primary hover:underline" onClick={() => csv(`itc-${from}-${to}`, head, r.data.map((d) => [d.gstin, d.supplier, d.supplierRef, d.supplierDate.slice(0, 10), rupees(d.taxablePaise), rupees(d.cgstPaise), rupees(d.sgstPaise), rupees(d.igstPaise), note(d)]))}>Download CSV</button>
-      <Table head={head} right={[4, 5, 6, 7]} rows={r.data.map((d) => [<span key="g" className="font-mono text-xs">{d.gstin ?? "—"}</span>, d.supplier, <Link key="n" href={`/app/m/purchase/${d.id}`} className="hover:underline">{d.supplierRef ?? d.number}{d.kind === "purchase_return" ? " (return)" : ""}</Link>, formatDate(d.supplierDate), formatPaise(d.taxablePaise), formatPaise(d.cgstPaise), formatPaise(d.sgstPaise), formatPaise(d.igstPaise), <span key="x" className={cn("text-xs", d.unpaid180 ? "text-destructive" : "text-muted-foreground")}>{note(d)}</span>])} />
-    </>
+    <DataList<ItcRow>
+      id="report-itc"
+      load={report<ItcRow>((p) => `/purchases/itc?${range(p)}`, (r, q) => `${r.supplier} ${r.supplierRef ?? ""} ${r.gstin ?? ""}`.toLowerCase().includes(q))}
+      header={{ title: "ITC Register", description: "GST you can claim back. Match it with GSTR-2B before you claim: credit counts only on invoices the supplier has filed." }}
+      filters={[periodFilter(me?.tenant?.fyStartMonth ?? 4, "Period")]}
+      defaultFilters={{ period: "this_month" }}
+      summary={(r) => {
+        const t = (r.totals ?? {}) as { cgstPaise?: number; sgstPaise?: number; igstPaise?: number; at180Paise?: number }
+        return <span className="flex flex-wrap gap-x-4 text-sm text-muted-foreground">{r.eligible === false && <span className="text-amber-700 dark:text-amber-300">{String(r.reason ?? "")}</span>}<span>CGST <strong className="text-foreground">{formatPaise(t.cgstPaise ?? 0)}</strong></span><span>SGST <strong className="text-foreground">{formatPaise(t.sgstPaise ?? 0)}</strong></span><span>IGST <strong className="text-foreground">{formatPaise(t.igstPaise ?? 0)}</strong></span>{!!t.at180Paise && <span className="text-destructive">{formatPaise(t.at180Paise)} unpaid over 180 days</span>}</span>
+      }}
+      columns={[
+        { key: "gstin", header: "Supplier GSTIN", hideable: false, csv: (r) => r.gstin ?? "", cell: (r) => <span className="font-mono text-xs">{r.gstin ?? "—"}</span> },
+        { key: "supplier", header: "Supplier", sort: (r) => r.supplier, csv: (r) => r.supplier, cell: (r) => <span className="font-medium">{r.supplier}</span> },
+        { key: "ref", header: "Invoice no.", csv: (r) => r.supplierRef ?? "", cell: (r) => doc(r.id, r.supplierRef ?? r.number) },
+        { key: "date", header: "Invoice date", sort: (r) => r.supplierDate, csv: (r) => r.supplierDate.slice(0, 10), cell: (r) => formatDate(r.supplierDate) },
+        { key: "taxable", header: "Taxable", align: "right", csv: (r) => r.taxablePaise / 100, cell: (r) => money(r.taxablePaise) },
+        { key: "cgst", header: "CGST", align: "right", csv: (r) => r.cgstPaise / 100, cell: (r) => money(r.cgstPaise) },
+        { key: "sgst", header: "SGST", align: "right", csv: (r) => r.sgstPaise / 100, cell: (r) => money(r.sgstPaise) },
+        { key: "igst", header: "IGST", align: "right", csv: (r) => r.igstPaise / 100, cell: (r) => money(r.igstPaise) },
+        {
+          key: "note", header: "Note", csv: (r) => [r.reverseCharge && "Reverse charge", r.unpaid180 && "Unpaid over 180 days"].filter(Boolean).join("; "),
+          cell: (r) => <span className="flex flex-wrap gap-1">{r.reverseCharge && <Badge variant="outline">Reverse charge</Badge>}{r.unpaid180 && <Badge variant="outline" className="text-destructive">Unpaid 180+ days</Badge>}{r.kind === "purchase_return" ? <Badge variant="outline">Reduces credit</Badge> : <span className="text-xs text-muted-foreground">Claim by {formatDate(r.claimBy)}</span>}</span>,
+        },
+      ]}
+      searchPlaceholder="Search supplier, invoice or GSTIN"
+      rowHref={(r) => `/app/m/purchase/${r.id}`}
+      exportName="itc-register"
+      emptyState={<EmptyState icon={FileBarChart} title="No GST to claim in this period" />}
+    />
   )
 }
 
 function Pending() {
-  const r = useApi<{ data: PendingRow[] }>("/purchases/pending").data
-  if (!r) return <Spinner />
-  const head = ["Order", "Date", "Expected", "Supplier", "Item", "Ordered", "Received", "Pending", "Value"]
   return (
-    <>
-      <button className="justify-self-end text-sm text-primary hover:underline" onClick={() => csv("pending-orders", head, r.data.map((d) => [d.number, d.date.slice(0, 10), d.expected?.slice(0, 10) ?? "", d.supplier, d.description, d.ordered, d.received, d.pending, rupees(d.pendingPaise)]))}>Download CSV</button>
-      <Table head={head} right={[5, 6, 7, 8]} rows={r.data.map((d) => [<Link key="n" href={`/app/m/purchase/${d.orderId}`} className="font-mono hover:underline">{d.number}</Link>, formatDate(d.date), d.expected ? <span key="e" className={d.late ? "font-medium text-destructive" : ""}>{formatDate(d.expected)}</span> : "—", d.supplier, d.description, `${qty(d.ordered)} ${d.unit}`, qty(d.received), <b key="p">{qty(d.pending)}</b>, formatPaise(d.pendingPaise)])} />
-    </>
+    <DataList<PendingRow>
+      id="report-pending"
+      load={report<PendingRow>(() => "/purchases/pending", (r, q) => `${r.number} ${r.supplier} ${r.description}`.toLowerCase().includes(q))}
+      header={{ title: "Pending Orders", description: "Ordered but not yet received." }}
+      columns={[
+        { key: "order", header: "Order", hideable: false, csv: (r) => r.number, cell: (r) => doc(r.orderId, r.number) },
+        { key: "supplier", header: "Supplier", sort: (r) => r.supplier, csv: (r) => r.supplier, cell: (r) => <span className="font-medium">{r.supplier}</span> },
+        { key: "item", header: "Item", csv: (r) => r.description, cell: (r) => r.description },
+        { key: "expected", header: "Expected", csv: (r) => r.expected?.slice(0, 10) ?? "", cell: (r) => (r.expected ? <span className={cn(r.late && "font-medium text-destructive")}>{formatDate(r.expected)}{r.late && " · late"}</span> : "—") },
+        { key: "pending", header: "Pending", align: "right", sort: (r) => r.pending, csv: (r) => r.pending, cell: (r) => `${qty(r.pending)} ${r.unit}` },
+        { key: "value", header: "Value", align: "right", sort: (r) => r.pendingPaise, csv: (r) => r.pendingPaise / 100, cell: (r) => money(r.pendingPaise) },
+      ]}
+      searchPlaceholder="Search order, supplier or item"
+      rowHref={(r) => `/app/m/purchase/${r.orderId}`}
+      exportName="pending-orders"
+      emptyState={<EmptyState icon={FileBarChart} title="Nothing pending" />}
+    />
   )
 }
 
 export default function PurchaseReportsPage() {
-  const { can } = useAuth()
-  const [tab, setTab] = React.useState<Tab>("payables")
-  const [from, setFrom] = React.useState(monthStart())
-  const [to, setTo] = React.useState(todayInIndia())
+  const { can, me } = useAuth()
+  const tabs = [["payables", "Payables"], ["register", "Purchase Register"], ["itc", "ITC Register"], ...(me?.tenant?.purchaseOrders ? [["pending", "Pending Orders"]] : [])] as [string, string][]
+  const [tab, setTab] = React.useState("payables")
   if (!can("inventory.supplier_bill.view")) return <PageHeader title="Purchase reports" description="You don't have access to this. Ask your admin." />
   return (
-    <>
-      <PageHeader title="Purchase reports" />
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {TABS.map(([k, l]) => (
-          <button key={k} onClick={() => setTab(k)} className={cn("rounded-full border px-3 py-1.5 text-sm", tab === k ? "border-primary bg-primary text-primary-foreground" : "hover:bg-muted")}>{l}</button>
-        ))}
-        {(tab === "register" || tab === "itc") && (
-          <span className="ml-auto flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            From <Input type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} className="h-9 w-40" />
-            To <Input type="date" value={to} min={from} max={todayInIndia()} onChange={(e) => setTo(e.target.value)} className="h-9 w-40" />
-          </span>
-        )}
+    <div className="grid gap-4">
+      <div className="flex w-fit flex-wrap gap-1 rounded-xl border p-1 text-sm" role="tablist" aria-label="Reports">
+        {tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={cn("rounded-lg px-3 py-1.5 font-medium text-muted-foreground", tab === k && "bg-primary text-primary-foreground")}>{l}</button>)}
       </div>
-      <Card><CardContent className="grid gap-3">
-        {tab === "payables" && <Payables />}
-        {tab === "register" && <Register from={from} to={to} />}
-        {tab === "itc" && <Itc from={from} to={to} />}
-        {tab === "pending" && <Pending />}
-      </CardContent></Card>
-    </>
+      {tab === "payables" && <Payables />}
+      {tab === "register" && <Register />}
+      {tab === "itc" && <Itc />}
+      {tab === "pending" && <Pending />}
+    </div>
   )
 }

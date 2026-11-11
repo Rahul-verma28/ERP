@@ -1,8 +1,10 @@
 "use client"
 
-import { ClipboardList } from "lucide-react"
+import Link from "next/link"
+import { ClipboardList, Eye } from "lucide-react"
+import { buttonVariants } from "@/components/ui/button"
 import { EmptyState } from "@/components/common"
-import { DataList, HeaderLink, type Column } from "@/components/data-list"
+import { DataList, type Column } from "@/components/data-list"
 import { PageHeader } from "@/components/app-shell"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
@@ -21,13 +23,14 @@ export default function StockEntriesPage() {
     { key: "party", header: "Supplier / note", cell: (r) => <span className="text-muted-foreground">{[r.party, r.reference, r.note].filter(Boolean).join(" · ") || "—"}</span>, csv: (r) => [r.party, r.reference, r.note].filter(Boolean).join(" ") },
     { key: "lines", header: "Items", align: "right", cell: (r) => r.lineCount ?? r.lines.length, csv: (r) => r.lineCount ?? r.lines.length },
     ...(showValue ? [{ key: "value", header: "Value", align: "right" as const, cell: (r: StockEntry) => <span className="tabular-nums">{formatPaise(r.valuePaise)}</span>, csv: (r: StockEntry) => r.valuePaise / 100 }] : []),
+    { key: "actions", header: "Actions", hideable: false, cell: (r) => <Link href={`/app/m/inventory/entries/${r.id}`} className={buttonVariants({ variant: "ghost", size: "icon-sm" })} title="View" aria-label="View entry" onClick={(e) => e.stopPropagation()}><Eye /></Link> },
   ]
   return (
     <DataList<StockEntry>
       id="stock-entries"
       path="/stock/entries"
       params={{ notKind: "transfer" }}
-      header={{ title: "Stock Entries", description: "Stock added or corrected by hand.", primary: can("inventory.stock_adjustment.create") ? <HeaderLink href="/app/m/inventory/new?kind=adjustment" primary>Adjust stock</HeaderLink> : undefined }}
+      header={{ title: "Stock Entries", description: "Every time stock was added, corrected or counted by hand. Do these from the Stock page." }}
       columns={columns}
       searchPlaceholder="Search supplier, bill no. or note"
       presetLabel="Type"
