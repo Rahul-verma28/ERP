@@ -165,6 +165,12 @@ router.get('/reports/sales', requirePermission('reports.report.view'), validate(
   const { by, from, to } = req.query as unknown as z.infer<typeof sales.ReportPeriod> & { by: 'day' | 'month' | 'customer' | 'item' };
   res.json(by === 'item' ? await sales.itemReport(req.ctx!, { from, to }) : await sales.salesReport(req.ctx!, by, { from, to }));
 }));
+router.get('/reports/receivables', requirePermission('reports.report.view'), tx(async (req, res) => {
+  res.json(await sales.receivables(req.ctx!, dateOnly(todayIST())));
+}));
+router.get('/reports/sales-register', requirePermission('reports.report.view'), validate(sales.ReportPeriod, 'query'), tx(async (req, res) => {
+  res.json(await sales.salesRegister(req.ctx!, req.query as unknown as z.infer<typeof sales.ReportPeriod>));
+}));
 router.get('/reports/pending-orders', requirePermission('reports.report.view'), tx(async (req, res) => {
   res.json(await sales.pendingOrders(req.ctx!));
 }));

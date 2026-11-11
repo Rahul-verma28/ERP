@@ -85,6 +85,7 @@ export const SALES_NAV = {
     { label: "Sales Invoices", href: "/app/m/billing", permission: "billing.invoice.view" },
     { label: "Sales Returns", href: "/app/m/billing/credit-notes", permission: "billing.invoice.view" },
     { label: "Payments Received", href: "/app/m/billing/payments", permission: "billing.payment.view" },
+    { label: "Reports", href: "/app/m/sales/reports", permission: "reports.report.view" },
   ] as SubNav[],
 }
 
@@ -95,6 +96,7 @@ export const PURCHASE_NAV = {
   subs: [
     { label: "Purchase Invoices", href: "/app/m/purchase", permission: "inventory.supplier_bill.view" },
     { label: "Purchase Returns", href: "/app/m/purchase/returns", permission: "inventory.supplier_bill.view" },
+    { label: "Payments Made", href: "/app/m/purchase/payments", permission: "inventory.supplier_bill.view" },
     { label: "Suppliers", href: "/app/m/purchase/suppliers", permission: "inventory.supplier.view" },
     { label: "Reports", href: "/app/m/purchase/reports", permission: "inventory.supplier_bill.view" },
   ] as SubNav[],

@@ -223,3 +223,62 @@ export async function gstWorkbook(ctx: TenantCtx, p: Period) {
   ]);
   return { filename: `gst-report-${p.from}-to-${p.to}.xlsx`, type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', body };
 }
+
+const DAY = 86_400_000;
+
+/** What each customer owes, by how late it is (from each bill's due date, else its date). Advances are shown apart. */
+export async function receivables(ctx: TenantCtx, today: Date) {
+  const bills = await db().salesDocument.findMany({
+    where: { AND: [docScope(ctx), { kind: { in: ['invoice', 'debit_note', 'opening_balance'] }, status: { in: ['issued', 'partially_paid'] } }] },
+    select: { contactId: true, buyer: true, totalPaise: true, paidPaise: true, dueDate: true, issueDate: true },
+  });
+  const by = new Map<string, { id: string; contactId: string | null; name: string; bills: number; notDuePaise: bigint; d1_30: bigint; d31_60: bigint; d61_90: bigint; d90plus: bigint; totalPaise: bigint }>();
+  for (const b of bills) {
+    const due = b.totalPaise - b.paidPaise;
+    if (due <= 0n) continue;
+    const name = buyerOf(b).name ?? 'Customer';
+    const key = b.contactId ?? `name:${name}`;
+    const row = by.get(key) ?? { id: key, contactId: b.contactId, name, bills: 0, notDuePaise: 0n, d1_30: 0n, d31_60: 0n, d61_90: 0n, d90plus: 0n, totalPaise: 0n };
+    const late = Math.floor((today.getTime() - (b.dueDate ?? b.issueDate).getTime()) / DAY);
+    if (late <= 0) row.notDuePaise += due;
+    else if (late <= 30) row.d1_30 += due;
+    else if (late <= 60) row.d31_60 += due;
+    else if (late <= 90) row.d61_90 += due;
+    else row.d90plus += due;
+    row.bills += 1;
+    row.totalPaise += due;
+    by.set(key, row);
+  }
+  const data = [...by.values()].sort((a, b) => Number(b.totalPaise - a.totalPaise));
+  const totals = { notDuePaise: 0n, d1_30: 0n, d31_60: 0n, d61_90: 0n, d90plus: 0n, totalPaise: 0n };
+  for (const r of data) for (const k of Object.keys(totals) as (keyof typeof totals)[]) totals[k] += r[k];
+  return { data, nextCursor: null, total: data.length, totals };
+}
+
+/** Sales register: every posted invoice, credit note and debit note in the period with its GST. Returns count minus. */
+export async function salesRegister(ctx: TenantCtx, p: Period) {
+  const docs = await db().salesDocument.findMany({
+    where: { AND: [docScope(ctx), LIVE, { issueDate: inPeriod(p) }] },
+    select: { id: true, kind: true, number: true, issueDate: true, buyer: true, placeOfSupply: true, sourceNumber: true, taxablePaise: true, cgstPaise: true, sgstPaise: true, igstPaise: true, totalPaise: true, paidPaise: true },
+    orderBy: [{ issueDate: 'asc' }, { number: 'asc' }],
+  });
+  const totals = { taxablePaise: 0n, cgstPaise: 0n, sgstPaise: 0n, igstPaise: 0n, totalPaise: 0n, invoices: 0, creditNotes: 0, debitNotes: 0 };
+  const data = docs.map((d) => {
+    const sign = d.kind === 'credit_note' ? -1n : 1n;
+    const b = buyerOf(d);
+    const row = {
+      id: d.id, kind: d.kind, number: d.number ?? '', date: d.issueDate, customer: b.name ?? 'Customer', gstin: b.gstin ?? null, placeOfSupply: d.placeOfSupply, against: d.sourceNumber,
+      taxablePaise: sign * d.taxablePaise, cgstPaise: sign * d.cgstPaise, sgstPaise: sign * d.sgstPaise, igstPaise: sign * d.igstPaise, totalPaise: sign * d.totalPaise,
+    };
+    totals.taxablePaise += row.taxablePaise;
+    totals.cgstPaise += row.cgstPaise;
+    totals.sgstPaise += row.sgstPaise;
+    totals.igstPaise += row.igstPaise;
+    totals.totalPaise += row.totalPaise;
+    if (d.kind === 'credit_note') totals.creditNotes++;
+    else if (d.kind === 'debit_note') totals.debitNotes++;
+    else totals.invoices++;
+    return row;
+  });
+  return { data, nextCursor: null, total: data.length, totals };
+}

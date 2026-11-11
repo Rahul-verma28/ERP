@@ -12,11 +12,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
-import { ConfirmDialog, EmptyState, MoneyInput, Spinner } from "@/components/common"
+import { ConfirmDialog, EmptyState, Spinner } from "@/components/common"
 import { DataList, HeaderLink, periodFilter, type Column, type ViewPreset } from "@/components/data-list"
 import { todayInIndia } from "@contracts/validation"
-import { Field, FormError, NativeSelect } from "@/components/form"
+import { FormError } from "@/components/form"
 import { SalesDocEditor } from "@/components/sales-doc-editor"
+import { ReceiveDialog } from "@/components/receive-payment"
 import { SalesDocView } from "@/components/sales-doc-view"
 import { EInvoiceButton, EInvoiceDialog, EwayBillButton, EwayBillDialog, useEInvoicing } from "@/components/gst-files"
 import type { ContactOption } from "@/components/pickers"
@@ -355,57 +356,6 @@ export function SalesDocEdit({ kind, id }: { kind: Kind; id: string }) {
   )
 }
 
-function PaymentDialog({ doc, onClose, onSaved }: { doc: SalesDoc; onClose: () => void; onSaved: (d: SalesDoc) => void }) {
-  const balance = doc.totalPaise - doc.paidPaise
-  const [amount, setAmount] = React.useState<number | null>(balance)
-  const [method, setMethod] = React.useState("cash")
-  const [reference, setReference] = React.useState("")
-  const [paidOn, setPaidOn] = React.useState(() => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10))
-  const [error, setError] = React.useState<string | null>(null)
-  const [errors, setErrors] = React.useState<Record<string, string>>({})
-  const [busy, setBusy] = React.useState(false)
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
-    if (!amount) return setErrors({ amountPaise: "Enter an amount" })
-    setBusy(true)
-    setError(null)
-    try {
-      const d = await api.post<SalesDoc>(`/invoices/${doc.id}/payments`, { amountPaise: amount, method, reference: reference || null, paidOn })
-      toast.success("Payment recorded")
-      onSaved(d)
-    } catch (err) {
-      if (err instanceof ApiError) setErrors(err.fields)
-      setError(errorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Receive payment</DialogTitle>
-          <DialogDescription>Balance due on {doc.number}: {formatPaise(balance)}</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={save} className="grid gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Amount" error={errors.amountPaise}><MoneyInput value={amount} onChange={setAmount} autoFocus /></Field>
-            <Field label="Date"><Input type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} /></Field>
-            <Field label="Method">
-              <NativeSelect value={method} onChange={(e) => setMethod(e.target.value)}>
-                {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </NativeSelect>
-            </Field>
-            <Field label="Reference" hint="UPI ref, cheque no., etc."><Input value={reference} onChange={(e) => setReference(e.target.value)} /></Field>
-          </div>
-          <FormError message={error} />
-          <DialogFooter><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save payment"}</Button></DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 function OrderInvoiceDialog({ order, target, onClose, onSaved }: { order: SalesDoc; target: "invoice" | "challan"; onClose: () => void; onSaved: (d: SalesDoc) => void }) {
   const { data: lines, error: loadError } = useApi<{ id: string; description: string; unit: string; quantityLeft: number }[]>(`/sales-orders/${order.id}/open-lines`)
   const [typed, setTyped] = React.useState<Record<string, string>>({})
@@ -662,6 +612,7 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
                         </span>
                         <span className="flex items-start gap-1">
                           <span className="font-medium tabular-nums">{formatPaise(pm.amountPaise)}</span>
+                          {!pm.reversesId && <a href={`/print/receipt/${pm.id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "ghost", size: "icon-xs" })} title="Print receipt" aria-label={`Print receipt ${pm.number}`}><Printer /></a>}
                           {!pm.reversesId && !reversed && can("billing.payment.approve") && (
                             <Button variant="ghost" size="icon-xs" aria-label={`Reverse ${pm.number}`} onClick={() => setReversing(pm)}><Undo2 /></Button>
                           )}
@@ -795,7 +746,14 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
         confirmLabel="Post anyway"
         onConfirm={() => act(() => api.post<SalesDoc>(`/invoices/${id}/issue-over-limit`), "Invoice posted")}
       />
-      {paying && <PaymentDialog doc={doc} onClose={() => setPaying(false)} onSaved={(d) => { setPaying(false); setData(d) }} />}
+      {paying && (
+        <ReceiveDialog
+          initial={doc.contactId ? { id: doc.contactId, name: doc.buyer.name, phone: doc.buyer.phone ?? null, gstin: doc.buyer.gstin ?? null } : null}
+          bill={{ id: doc.id, number: doc.number, duePaise: doc.totalPaise - doc.paidPaise, contactId: doc.contactId ?? null }}
+          onClose={() => setPaying(false)}
+          onSaved={async () => { setPaying(false); setData(await api.get<SalesDoc>(`/invoices/${doc.id}`)) }}
+        />
+      )}
       {usingAdvance && <UseAdvanceDialog doc={doc} list={advances.data!} onClose={() => setUsingAdvance(false)} onSaved={(d) => { setUsingAdvance(false); setData(d); void advances.reload() }} />}
       <ConfirmDialog
         open={!!reversing}

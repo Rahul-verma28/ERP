@@ -93,7 +93,8 @@ const RECEIPT_INCLUDE = {
 type ReceiptRow = Prisma.PaymentGetPayload<{ include: typeof RECEIPT_INCLUDE }>;
 
 /** A receipt with where its money went: the bill it was on, or the invoices an advance was put on. */
-function shape(p: ReceiptRow, names: Map<string, string>) {
+function shape(p: ReceiptRow, names: Map<string, { name: string; phone: string | null }>) {
+  const buyer = p.document?.buyer as { name?: string; phone?: string } | null;
   const live = p.adjustments.filter((a) => !a.reversesId && !a.reversal);
   const usedPaise = live.reduce((s, a) => s + a.amountPaise, 0n);
   const appliedTo = p.document
@@ -102,7 +103,8 @@ function shape(p: ReceiptRow, names: Map<string, string>) {
   const { adjustments: _a, ...rest } = p;
   return {
     ...rest,
-    customer: p.contactId ? (names.get(p.contactId) ?? null) : ((p.document?.buyer as { name?: string } | null)?.name ?? null),
+    customer: p.contactId ? (names.get(p.contactId)?.name ?? null) : (buyer?.name ?? null),
+    customerPhone: p.contactId ? (names.get(p.contactId)?.phone ?? null) : (buyer?.phone ?? null),
     reversed: !!p.reversal,
     advance: !p.documentId,
     appliedTo,
@@ -113,7 +115,7 @@ function shape(p: ReceiptRow, names: Map<string, string>) {
 
 async function names(ids: (string | null)[]) {
   const list = [...new Set(ids.filter(Boolean))] as string[];
-  return new Map((list.length ? await db().contact.findMany({ where: { id: { in: list } }, select: { id: true, name: true, companyName: true } }) : []).map((c) => [c.id, c.companyName || c.name]));
+  return new Map((list.length ? await db().contact.findMany({ where: { id: { in: list } }, select: { id: true, name: true, companyName: true, phone: true } }) : []).map((c) => [c.id, { name: c.companyName || c.name, phone: c.phone }]));
 }
 
 export async function getReceipt(ctx: TenantCtx, id: string) {
