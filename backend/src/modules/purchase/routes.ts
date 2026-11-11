@@ -6,6 +6,7 @@ import { IdParam } from '../../kernel/query';
 import { validate } from '../../middleware/request';
 import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import * as purchase from './service';
+import * as payments from './payments';
 import * as reports from './reports';
 
 // Purchase lives under the Inventory module and its permissions:
@@ -19,7 +20,7 @@ router.use(tenantAuth);
 router.get('/suppliers', requirePermission('inventory.supplier.view'), validate(purchase.SupplierList, 'query'), tx(async (req, res) => {
   res.json(await purchase.listSuppliers(req.ctx!, req.query as unknown as z.infer<typeof purchase.SupplierList>));
 }));
-router.post('/suppliers', requirePermission('inventory.supplier.create'), validate(purchase.SupplierInput), tx(async (req, res) => {
+router.post('/suppliers', requirePermission('inventory.supplier.create'), validate(purchase.SupplierInput.required({ stateCode: true })), tx(async (req, res) => {
   res.status(201).json(await purchase.createSupplier(req.ctx!, req.body));
 }));
 router.get('/suppliers/:id', requirePermission('inventory.supplier.view'), validate(IdParam, 'params'), tx(async (req, res) => {
@@ -115,6 +116,22 @@ router.post('/purchases/:id/close', requirePermission('inventory.purchase_order.
 }));
 router.post('/purchases/:id/payments', requirePermission('inventory.supplier_bill.create'), validate(IdParam, 'params'), validate(purchase.SupplierPaymentInput), tx(async (req, res) => {
   res.status(201).json(await purchase.paySupplier(req.ctx!, String(req.params.id), req.body));
+}));
+// ── Payments made: one payment over a supplier's open invoices ──
+router.get('/payments-made', requirePermission('inventory.supplier_bill.view'), validate(payments.PaymentList, 'query'), tx(async (req, res) => {
+  res.json(await payments.listSupplierPayments(req.ctx!, req.query as unknown as z.infer<typeof payments.PaymentList>));
+}));
+router.get('/payments-made/:id', requirePermission('inventory.supplier_bill.view'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json(await payments.getSupplierPayment(req.ctx!, String(req.params.id)));
+}));
+router.post('/payments-made', requirePermission('inventory.supplier_bill.create'), validate(payments.PayInput), tx(async (req, res) => {
+  res.status(201).json(await payments.paySuppliers(req.ctx!, req.body));
+}));
+router.post('/payments-made/:id/reverse', requirePermission('inventory.supplier_bill.approve'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json(await payments.reverseSupplierPaymentGroup(req.ctx!, String(req.params.id)));
+}));
+router.get('/suppliers/:id/open-bills', requirePermission('inventory.supplier_bill.create'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json({ data: await payments.openSupplierBills(req.ctx!, String(req.params.id)) });
 }));
 router.post('/supplier-payments/:id/reverse', requirePermission('inventory.supplier_bill.approve'), validate(IdParam, 'params'), tx(async (req, res) => {
   res.json(await purchase.reverseSupplierPayment(req.ctx!, String(req.params.id)));

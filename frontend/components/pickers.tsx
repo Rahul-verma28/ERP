@@ -1,6 +1,7 @@
 "use client"
 
 import { ContactDialog } from "@/components/contact-dialog"
+import { SupplierDialog } from "@/components/supplier-dialog"
 
 import * as React from "react"
 import { createPortal } from "react-dom"
@@ -199,35 +200,36 @@ export function ContactPicker({ value, onChange, id, allowCreate = true }: { val
   )
 }
 
+/** Choose a supplier; "+ Add" opens the full supplier form with the typed name. */
 export function SupplierPicker({ value, onChange, id, allowCreate = true }: { value: ContactOption | null; onChange: (c: ContactOption | null) => void; id?: string; allowCreate?: boolean }) {
+  const [adding, setAdding] = React.useState<string | null>(null)
   return (
-    <Combobox<ContactOption>
-      id={id}
-      path="/suppliers"
-      label="Supplier"
-      placeholder="Search suppliers by name, phone or GSTIN"
-      value={value}
-      onChange={onChange}
-      render={(c) => ({ title: c.companyName || c.name, subtitle: [c.companyName ? c.name : null, c.phone, c.gstin].filter(Boolean).join(" · ") || undefined })}
-      footer={
-        allowCreate
-          ? (query, close) =>
-              query.trim().length >= 2 && (
+    <>
+      <Combobox<ContactOption>
+        id={id}
+        path="/suppliers"
+        label="Supplier"
+        placeholder="Search suppliers by name, phone or GSTIN"
+        value={value}
+        onChange={onChange}
+        render={(c) => ({ title: c.companyName || c.name, subtitle: [c.companyName ? c.name : null, c.phone, c.gstin].filter(Boolean).join(" · ") || undefined })}
+        footer={
+          allowCreate
+            ? (query, close) => (
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
-                  className="mt-1 w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-primary hover:bg-muted"
-                  onClick={async () => {
-                    onChange(await api.post<ContactOption>("/suppliers", { name: query.trim() }))
-                    close()
-                  }}
+                  className="mt-1 w-full rounded-xl border-t px-3 py-2 text-left text-sm font-medium text-primary hover:bg-muted"
+                  onClick={() => { setAdding(query.trim()); close() }}
                 >
-                  + Add &ldquo;{query.trim()}&rdquo; as a new supplier
+                  {query.trim() ? `+ Add “${query.trim()}” as a new supplier` : "+ Add a new supplier"}
                 </button>
               )
-          : undefined
-      }
-    />
+            : undefined
+        }
+      />
+      <SupplierDialog open={adding !== null} initialName={adding ?? ""} onOpenChange={(o) => !o && setAdding(null)} onSaved={(sup) => { setAdding(null); onChange(sup as unknown as ContactOption) }} />
+    </>
   )
 }
 

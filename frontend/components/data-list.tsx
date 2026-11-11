@@ -161,10 +161,10 @@ export interface ListQuery {
 export type ListLoader<T> = (query: ListQuery) => Promise<Page<T>>
 
 /** For short lists the API returns whole: search and pages happen in the browser. */
-export function localList<T>(get: () => Promise<T[]>, match: (row: T, q: string) => boolean): ListLoader<T> {
+export function localList<T>(get: (params: Record<string, string>) => Promise<T[]>, match: (row: T, q: string) => boolean): ListLoader<T> {
   return async ({ params, limit, cursor }) => {
     const q = (params.q ?? "").toLowerCase()
-    const all = (await get()).filter((r) => !q || match(r, q))
+    const all = (await get(params)).filter((r) => !q || match(r, q))
     const start = Number(cursor ?? 0)
     return { data: all.slice(start, start + limit), nextCursor: start + limit < all.length ? String(start + limit) : null, total: all.length }
   }

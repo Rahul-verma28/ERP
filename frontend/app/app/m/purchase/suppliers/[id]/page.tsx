@@ -42,6 +42,7 @@ export default function SupplierPage() {
           <div className="flex flex-wrap gap-2">
             {can("inventory.supplier_bill.create") && <Link href={`/app/m/purchase/new?kind=purchase_bill&supplier=${s.id}`} className={buttonVariants()}>New invoice</Link>}
             {me?.tenant?.purchaseOrders && can("inventory.purchase_order.create") && <Link href={`/app/m/purchase/new?kind=purchase_order&supplier=${s.id}`} className={buttonVariants({ variant: "outline" })}>New order</Link>}
+            {can("inventory.supplier_bill.create") && <Link href={`/app/m/purchase/payments?new=1&supplier=${s.id}`} className={buttonVariants({ variant: "outline" })}>Pay supplier</Link>}
             {can("inventory.supplier.edit") && <Button variant="outline" onClick={() => setEditing(true)}>Edit</Button>}
           </div>
         }

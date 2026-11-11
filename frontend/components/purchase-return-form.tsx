@@ -11,13 +11,15 @@ import { Textarea } from "@/components/ui/textarea"
 import { PageHeader } from "@/components/app-shell"
 import { Spinner } from "@/components/common"
 import { Field, FormError } from "@/components/form"
+import { NumberStepper } from "@/components/number-stepper"
 import { SearchSelect } from "@/components/search-select"
 import { parseSerials } from "@/components/stock-line"
 import { api, ApiError, errorMessage } from "@/lib/api"
-import { formatPaise } from "@/lib/format"
+import { formatDate, formatPaise } from "@/lib/format"
 import { qty as showQty } from "@/lib/inventory"
 import { KIND_PATH, RETURN_REASONS, type PurchaseDoc, type PurchaseLine } from "@/lib/purchase"
 import { useApi } from "@/lib/use-api"
+import { cn } from "@/lib/utils"
 import { todayInIndia } from "@contracts/validation"
 
 // A return is one screen: pick the invoice, type how much of each item goes back.
@@ -59,13 +61,30 @@ export function PurchaseReturnForm({ fromId, editId }: { fromId: string | null; 
   const taxable = chosen.reduce((s, l) => s + lineValue(l, count(l)).taxable, 0)
   const tax = chosen.reduce((s, l) => s + lineValue(l, count(l)).tax, 0)
 
+  const billDate = (doc?.supplierDate ?? doc?.issueDate ?? "").slice(0, 10)
+  const clear = (key: string) => { setErrors((e) => (e[key] ? { ...e, [key]: "" } : e)); setError(null) }
+  function returnAll() {
+    setTyped(Object.fromEntries(lines.map((l) => [l.id, isSerial(l) ? l.serials.slice(0, left(l)).join(", ") : String(left(l))])))
+    setErrors({})
+  }
+  function toggleSerial(l: PurchaseLine, sn: string) {
+    const cur = parseSerials(text(l))
+    setTyped({ ...typed, [l.id]: (cur.includes(sn) ? cur.filter((x) => x !== sn) : [...cur, sn]).join(", ") })
+    clear(l.id)
+    clear("lines")
+  }
+
   async function save() {
     const p: Record<string, string> = {}
     if (!doc) p.sourceId = "Choose the invoice"
-    if (doc && !chosen.length) p.lines = "Enter how much goes back"
-    lines.forEach((l) => { if (count(l) > left(l)) p[l.id] = `At most ${showQty(left(l))}` })
+    if (!issueDate) p.issueDate = "Choose the date"
+    else if (issueDate > todayInIndia()) p.issueDate = "Can't be in the future"
+    else if (billDate && issueDate < billDate) p.issueDate = `Can't be before the invoice date (${formatDate(billDate)})`
+    if (returnReason === "Other" && !note.trim()) p.notes = "Write why the goods are going back"
+    if (doc && !chosen.length) p.lines = "Enter how much goes back on at least one item"
+    lines.forEach((l) => { if (count(l) > left(l)) p[l.id] = `Only ${showQty(left(l))} ${l.unit} can go back` })
     setErrors(p)
-    if (Object.keys(p).length) return
+    if (Object.keys(p).length) return setError("Fix the marked fields first.")
     setBusy(true)
     setError(null)
     const body = {
@@ -83,7 +102,7 @@ export function PurchaseReturnForm({ fromId, editId }: { fromId: string | null; 
     }
   }
 
-  const options = (invoices.data?.data ?? []).filter((d) => ["unpaid", "part_paid", "paid"].includes(d.status)).map((d) => ({ value: d.id, label: `${d.number} - ${d.supplier.name}`, keywords: d.supplierRef ?? undefined }))
+  const options = (invoices.data?.data ?? []).filter((d) => ["unpaid", "part_paid", "paid"].includes(d.status)).map((d) => ({ value: d.id, label: `${d.supplierRef ? `${d.supplierRef} · ` : ""}${d.number} - ${d.supplier.name}`, keywords: d.supplierRef ?? undefined }))
   const cardTitle = "flex items-center gap-2.5 border-b px-5 py-4 font-semibold"
 
   return (
@@ -98,18 +117,21 @@ export function PurchaseReturnForm({ fromId, editId }: { fromId: string | null; 
           <section className="ui-surface overflow-hidden">
             <h2 className={cardTitle}><CalendarDays className="size-4 text-primary" aria-hidden /> Purchase Return Details</h2>
             <div className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
-              <Field label="Return date" required error={errors.issueDate}><Input type="date" value={issueDate} max={todayInIndia()} onChange={(e) => setDate(e.target.value)} /></Field>
+              <Field label="Return date" required error={errors.issueDate}><Input type="date" value={issueDate} max={todayInIndia()} min={billDate || undefined} onChange={(e) => { setDate(e.target.value); clear("issueDate") }} /></Field>
               <Field label="Original invoice" required error={errors.sourceId}>
-                {draft || fromId ? <Input value={doc ? `${doc.number} - ${doc.supplier.name}` : "Loading…"} readOnly aria-label="Original invoice" /> : <SearchSelect value={picked} onChange={(v) => { setPicked(v); setTyped({}) }} options={options} placeholder="Select invoice" searchable aria-label="Original invoice" />}
+                {draft || fromId ? <Input value={doc ? `${doc.number} - ${doc.supplier.name}` : "Loading…"} readOnly aria-label="Original invoice" /> : <SearchSelect value={picked} onChange={(v) => { setPicked(v); setTyped({}) }} options={options} placeholder="Search invoice no., supplier or their bill no." searchable aria-label="Original invoice" />}
               </Field>
               <Field label="Warehouse"><Input value={doc?.location?.name ?? "Comes from the invoice"} readOnly aria-label="Warehouse" /></Field>
-              <Field label="Return reason" required><SearchSelect value={returnReason} onChange={setReason} options={RETURN_REASONS.map((r) => ({ value: r, label: r }))} aria-label="Return reason" /></Field>
+              <Field label="Return reason" required><SearchSelect value={returnReason} onChange={(v) => { setReason(v); clear("notes") }} options={RETURN_REASONS.map((r) => ({ value: r, label: r }))} aria-label="Return reason" /></Field>
             </div>
           </section>
 
           {invoiceId && (
             <section className="ui-surface overflow-hidden">
-              <h2 className={cardTitle}><ReceiptText className="size-4 text-primary" aria-hidden /> Items on this invoice</h2>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3">
+                <h2 className="flex items-center gap-2.5 font-semibold"><ReceiptText className="size-4 text-primary" aria-hidden /> Items on this invoice</h2>
+                {lines.length > 0 && <Button variant="outline" size="sm" onClick={returnAll}>Return everything</Button>}
+              </div>
               {!doc ? <div className="grid place-items-center py-10"><Spinner /></div> : !lines.length ? (
                 <p className="p-8 text-center text-sm text-muted-foreground">No items available for return. Everything on this invoice has already been returned.</p>
               ) : (
@@ -128,7 +150,17 @@ export function PurchaseReturnForm({ fromId, editId }: { fromId: string | null; 
                             <td className="px-3 py-3 tabular-nums">{formatPaise(l.unitPricePaise)}</td>
                             <td className="px-3 py-3 tabular-nums">{l.gstRateBp / 100}%</td>
                             <td className="px-3 py-2">
-                              <Input value={text(l)} inputMode={isSerial(l) ? undefined : "decimal"} onChange={(e) => setTyped({ ...typed, [l.id]: isSerial(l) ? e.target.value : e.target.value.replace(/[^\d.]/g, "") })} placeholder={isSerial(l) ? "Serial numbers" : "0"} aria-label={`Return quantity of ${l.description}`} aria-invalid={!!errors[l.id]} />
+                              {isSerial(l) ? (
+                                <div className="flex flex-wrap gap-1" role="group" aria-label={`Serial numbers going back for ${l.description}`}>
+                                  {l.serials.map((sn) => {
+                                    const on = parseSerials(text(l)).includes(sn)
+                                    return <button key={sn} type="button" aria-pressed={on} onClick={() => toggleSerial(l, sn)} className={cn("rounded-lg border px-1.5 py-0.5 font-mono text-[11px]", on ? "border-primary bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted")}>{sn}</button>
+                                  })}
+                                  <span className="w-full text-xs text-muted-foreground">{count(l)} ticked</span>
+                                </div>
+                              ) : (
+                                <NumberStepper decimals size="sm" max={left(l)} suffix={l.unit} value={text(l)} onChange={(v) => { setTyped({ ...typed, [l.id]: v }); clear(l.id); clear("lines") }} placeholder="0" aria-label={`Return quantity of ${l.description}`} aria-invalid={!!errors[l.id]} />
+                              )}
                               {errors[l.id] && <p className="mt-1 text-xs text-destructive">{errors[l.id]}</p>}
                             </td>
                             <td className="py-3 pr-5 text-right tabular-nums">{formatPaise(v.taxable + v.tax)}</td>
@@ -137,7 +169,7 @@ export function PurchaseReturnForm({ fromId, editId }: { fromId: string | null; 
                       })}
                     </tbody>
                   </table>
-                  {errors.lines && <p className="px-5 pb-3 text-xs text-destructive">{errors.lines}</p>}
+                  {errors.lines && <p className="border-t px-5 py-3 text-sm text-destructive">{errors.lines}</p>}
                 </div>
               )}
             </section>
@@ -150,8 +182,9 @@ export function PurchaseReturnForm({ fromId, editId }: { fromId: string | null; 
             <p className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="tabular-nums">{formatPaise(taxable)}</span></p>
             <p className="flex justify-between"><span className="text-muted-foreground">Tax</span><span className="tabular-nums">{formatPaise(tax)}</span></p>
             <p className="flex justify-between border-t pt-2 font-semibold"><span>Total Amount</span><span className="text-lg text-primary tabular-nums">{formatPaise(taxable + tax)}</span></p>
+            <p className="rounded-xl bg-muted px-3 py-2 text-xs text-muted-foreground">Saved as a draft. When it is completed, the stock goes out of {doc?.location?.name ?? "the warehouse"} and what you owe this supplier goes down by this amount.</p>
           </section>
-          <section className="ui-surface p-5"><Field label="Notes"><Textarea value={note} onChange={(e) => setNotes(e.target.value)} rows={3} maxLength={1000} placeholder="Additional notes" /></Field></section>
+          <section className="ui-surface p-5"><Field label={returnReason === "Other" ? "Why it is going back" : "Notes"} required={returnReason === "Other"} error={errors.notes}><Textarea value={note} onChange={(e) => { setNotes(e.target.value); clear("notes") }} rows={3} maxLength={1000} placeholder="e.g. 2 cartons wet on arrival" /></Field></section>
           <section className="ui-surface grid gap-2 p-5">
             <p className="flex items-center gap-2 text-sm text-muted-foreground"><ShoppingCart className="size-4 text-primary" aria-hidden /> {chosen.length} item{chosen.length === 1 ? "" : "s"} selected for return</p>
             <FormError message={error} />

@@ -198,7 +198,7 @@ async function usedQty(sourceLineIds: string[], kinds: string[], exceptDocId?: s
   return m;
 }
 
-function checkDate(date: string, field: string, maxBack?: number) {
+export function checkDate(date: string, field: string, maxBack?: number) {
   const today = dateOnly(todayIST());
   const d = dateOnly(date);
   if (d > today) throw new AppError('VALIDATION_FAILED', "The date can't be in the future.", { fields: { [field]: 'In the future' } });
@@ -580,7 +580,7 @@ async function refreshSource(id: string) {
   }
 }
 
-async function setBillStatus(bill: PurchaseDocument, paid: bigint, returned: bigint) {
+export async function setBillStatus(bill: PurchaseDocument, paid: bigint, returned: bigint) {
   const settled = paid + returned;
   const status = settled >= bill.totalPaise ? 'paid' : settled > 0n ? 'part_paid' : 'unpaid';
   await db().purchaseDocument.update({ where: { id: bill.id }, data: { paidPaise: paid, returnedPaise: returned, status } });

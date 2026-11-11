@@ -6,70 +6,20 @@ import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArrowLeft, MapPin, Package, Printer } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { PageHeader } from "@/components/app-shell"
-import { ConfirmDialog, MoneyInput, Spinner, StatusBadge } from "@/components/common"
-import { Field, FormError, NativeSelect } from "@/components/form"
+import { ConfirmDialog, Spinner, StatusBadge } from "@/components/common"
+import { PaySupplierDialog } from "@/components/pay-supplier"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
 import { INVOICE_STEPS, KIND_LABEL, KIND_PATH, KIND_PLURAL, RETURN_STEPS, invoiceStatus, returnStatus, type PurchaseDoc } from "@/lib/purchase"
-import { todayInIndia } from "@contracts/validation"
 
 // A purchase document with what happened since: received or billed quantities, documents made
 // from it, payments. The next step is one button away: receive, bill, return, pay.
 
 const where = (a?: Record<string, string> | null) => (a ? [a.line1, a.line2, a.city, a.pincode ?? a.pin].filter(Boolean).join(", ") : "")
-
-const METHODS = [["bank", "Bank transfer"], ["upi", "UPI"], ["cheque", "Cheque"], ["cash", "Cash"], ["card", "Card"], ["other", "Other"]] as const
-
-function PayDialog({ doc, open, onOpenChange, onDone }: { doc: PurchaseDoc; open: boolean; onOpenChange: (o: boolean) => void; onDone: (d: PurchaseDoc) => void }) {
-  const [amount, setAmount] = React.useState<number | null>(doc.balancePaise)
-  const [method, setMethod] = React.useState("bank")
-  const [reference, setReference] = React.useState("")
-  const [paidOn, setPaidOn] = React.useState(todayInIndia())
-  const [error, setError] = React.useState<string | null>(null)
-  const [busy, setBusy] = React.useState(false)
-  async function pay() {
-    setBusy(true)
-    setError(null)
-    try {
-      const d = await api.post<PurchaseDoc>(`/purchases/${doc.id}/payments`, { amountPaise: amount ?? 0, method, reference: reference.trim() || null, paidOn })
-      toast.success("Payment recorded")
-      onDone(d)
-      onOpenChange(false)
-    } catch (e) {
-      setError(errorMessage(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Pay {doc.supplier.name}</DialogTitle></DialogHeader>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Amount" hint={`Balance ${formatPaise(doc.balancePaise)}`}><MoneyInput value={amount} onChange={setAmount} aria-label="Amount" /></Field>
-          <Field label="Paid on"><Input type="date" value={paidOn} max={todayInIndia()} onChange={(e) => setPaidOn(e.target.value)} /></Field>
-          <Field label="Paid by">
-            <NativeSelect value={method} onChange={(e) => setMethod(e.target.value)} aria-label="Paid by">
-              {METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </NativeSelect>
-          </Field>
-          <Field label="UTR / cheque no."><Input value={reference} onChange={(e) => setReference(e.target.value)} maxLength={100} /></Field>
-        </div>
-        <FormError message={error} />
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={busy || !amount} onClick={pay}>{busy ? "Saving…" : "Record payment"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 export default function PurchaseDocPage() {
   const { id } = useParams<{ id: string }>()
@@ -277,7 +227,7 @@ export default function PurchaseDocPage() {
           try { await api.delete(`/purchases/${doc.id}`); toast.success("Draft deleted"); router.push(KIND_PATH[doc.kind]) } catch (e) { toast.error(errorMessage(e)); throw e }
         }}
       />
-      {isBill && <PayDialog key={doc.balancePaise} doc={doc} open={paying} onOpenChange={setPaying} onDone={setDoc} />}
+      {isBill && paying && <PaySupplierDialog initial={{ id: doc.contactId, name: doc.supplier.name, phone: doc.supplier.phone, gstin: doc.supplier.gstin }} bill={{ id: doc.id, duePaise: doc.balancePaise }} onClose={() => setPaying(false)} onSaved={async () => { setPaying(false); setDoc(await api.get<PurchaseDoc>(`/purchases/${doc.id}`)) }} />}
       <ConfirmDialog
         open={cancelling}
         onOpenChange={setCancelling}
