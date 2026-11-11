@@ -80,6 +80,26 @@ describe('sales and warehouses', () => {
   });
 });
 
+describe('sales return reason', () => {
+  it('keeps the reason, wants a note for "other", and refuses a wrong reason or a future date', async () => {
+    await rolledBack(async () => {
+      const { ctx, contact, fan, shop } = await setup();
+      const draft = await billing.createDocument(ctx, 'invoice', { contactId: contact.id, issueDate: today, locationId: shop.id, lines: [line(fan.id, 3)] });
+      await db().salesDocument.update({ where: { id: draft.id }, data: { status: 'issued', number: `INV-${randomUUID().slice(0, 6)}` } });
+      await postDocumentStock(ctx, draft.id);
+      const invoice = await billing.getDocument(ctx, draft.id, 'invoice');
+      const one = [{ sourceLineId: invoice.lines[0].id, quantity: 1 }];
+      await expect(createCreditNote(ctx, invoice.id, { type: 'return', reason: 'other', lines: one })).rejects.toThrow('Write what happened');
+      await expect(createCreditNote(ctx, invoice.id, { type: 'return', reason: 'discount', lines: one })).rejects.toThrow('does not fit');
+      const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+      await expect(createCreditNote(ctx, invoice.id, { type: 'return', reason: 'damaged', issueDate: tomorrow, lines: one })).rejects.toThrow('future');
+      const note = await createCreditNote(ctx, invoice.id, { type: 'return', reason: 'damaged', lines: one });
+      expect(note.noteReason).toBe('damaged');
+      expect(note.locationId).toBe(shop.id);
+    });
+  });
+});
+
 describe('ship-to address', () => {
   it('must be complete when given', () => {
     const base = { contactId: randomUUID(), lines: [line(randomUUID(), 1)] };

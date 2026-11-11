@@ -231,6 +231,7 @@ export function SalesDocList({ kind }: { kind: Kind }) {
           {r.status !== "draft" && <a href={`/print/${kind}/${r.id}`} target="_blank" rel="noreferrer" className={icon} title="Print or PDF" aria-label={`Print ${r.number}`}><Printer /></a>}
           {kind === "invoice" && r.status === "draft" && canCreate && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Post" aria-label={`Post draft for ${r.buyer?.name}`} onClick={() => act(r, `/invoices/${r.id}/issue`, "Invoice posted")}><Send /></Button>}
           {open(r) && can("billing.payment.create") && <Link href={`/app/m/billing/${r.id}?pay=1`} className={icon} title="Receive payment" aria-label={`Receive payment on ${r.number}`}><IndianRupee /></Link>}
+          {kind === "invoice" && ["issued", "partially_paid", "paid"].includes(r.status) && can("billing.credit_note.create") && <Link href={`/app/m/billing/${r.id}/credit-note`} className={icon} title="Sales return or credit note" aria-label={`Sales return on ${r.number}`}><Undo2 /></Link>}
           {kind === "quotation" && ["draft", "sent", "accepted"].includes(r.status) && can("billing.invoice.create") && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Convert to invoice" aria-label={`Convert ${r.number} to invoice`} onClick={() => act(r, `/quotations/${r.id}/convert`, "Draft invoice made from the quotation", (d) => router.push(`/app/m/billing/${d.id}`))}><FileOutput /></Button>}
           {kind === "delivery_challan" && r.status === "issued" && can("billing.invoice.create") && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Make invoice" aria-label={`Make invoice from ${r.number}`} onClick={() => act(r, `/delivery-challans/${r.id}/invoice`, "Draft invoice made from the challan", (d) => router.push(`/app/m/billing/${d.id}`))}><FileOutput /></Button>}
           {kind === "sales_order" && ["open", "part_invoiced"].includes(r.status) && can("billing.invoice.create") && <Link href={`/app/m/sales/orders/${r.id}`} className={icon} title="Make invoice" aria-label={`Make invoice from ${r.number}`}><FileOutput /></Link>}
@@ -539,7 +540,7 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
             <Button variant="outline" onClick={() => setUsingAdvance(true)}>Use advance or credit ({formatPaise(spendable)})</Button>
           )}
           {kind === "invoice" && ["issued", "partially_paid", "paid"].includes(doc.status) && can("billing.credit_note.create") && (
-            <Link href={`/app/m/billing/${id}/credit-note`} className={buttonVariants({ variant: "outline" })}><FileMinus /> Credit or debit note</Link>
+            <Link href={`/app/m/billing/${id}/credit-note`} className={buttonVariants({ variant: "outline" })}><FileMinus /> Return or credit note</Link>
           )}
           {kind === "quotation" && doc.status === "draft" && can("sales.quotation.edit") && (
             <Button variant="outline" disabled={busy} onClick={() => act(() => api.post<SalesDoc>(`/quotations/${id}/status`, { status: "sent" }), "Marked as sent")}><Send /> Mark sent</Button>

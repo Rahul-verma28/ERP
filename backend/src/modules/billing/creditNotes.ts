@@ -23,10 +23,19 @@ export function creditNoteDeadline(invoiceDate: Date) {
   return new Date(Date.UTC(fyEndYear, 10, 30));
 }
 
+/** Why a note was made. Each kind of note has its own list; 'other' needs a written note. */
+export const NOTE_REASONS = {
+  return: ['damaged', 'wrong_item', 'quality', 'excess', 'not_needed', 'other'],
+  amount: ['rate_difference', 'discount', 'deficiency', 'other'],
+  debit: ['rate_difference', 'short_billed', 'other'],
+} as const;
+const ALL_REASONS = [...new Set(Object.values(NOTE_REASONS).flat())] as [string, ...string[]];
+
 export const CreditNoteInput = z.object({
   type: z.enum(['return', 'amount']),
   issueDate: DateStr.optional(),
   notes: z.string().trim().max(2000).optional().nullable(),
+  reason: z.enum(ALL_REASONS).optional(),
   /** Goods returned: the warehouse they come back to; empty = where the sale left from */
   locationId: z.string().uuid().optional().nullable(),
   lines: z.array(z.object({
@@ -64,6 +73,13 @@ export async function creditableLines(ctx: TenantCtx, invoiceId: string) {
 
 const min = (a: bigint, b: bigint) => (a < b ? a : b);
 
+function checkReason(kind: keyof typeof NOTE_REASONS, reason: string | undefined, notes: string | null | undefined) {
+  // The screens always send one (the routes require it); older callers inside the server may not
+  if (!reason) return;
+  if (!(NOTE_REASONS[kind] as readonly string[]).includes(reason)) throw new AppError('VALIDATION_FAILED', 'This reason does not fit this kind of note.', { fields: { reason: 'Choose a reason from the list' } });
+  if (reason === 'other' && !notes?.trim()) throw new AppError('VALIDATION_FAILED', 'Write what happened.', { fields: { notes: 'Write what happened' } });
+}
+
 export async function createCreditNote(ctx: TenantCtx, invoiceId: string, input: CreditNoteInput) {
   const doc = await getDocument(ctx, invoiceId, 'invoice');
   if (!CreditableStatus.includes(doc.status)) throw new AppError('CONFLICT', 'A credit note can only be made on an issued invoice.');
@@ -75,6 +91,8 @@ export async function createCreditNote(ctx: TenantCtx, invoiceId: string, input:
   if (dateOnly(issueDate) > lastDay) {
     throw new AppError('CONFLICT', `GST allows a credit note for this invoice only until ${lastDay.toISOString().slice(0, 10)} (Section 34(2)). Settle the difference without GST; ask your CA how to record it.`, { deadline: lastDay.toISOString().slice(0, 10) });
   }
+  checkReason(input.type, input.reason, input.notes);
+  if (dateOnly(issueDate) > dateOnly(todayIST())) throw new AppError('VALIDATION_FAILED', 'The credit note date cannot be in the future.', { fields: { issueDate: 'In the future' } });
   if (dateOnly(issueDate) < doc.issueDate) throw new AppError('VALIDATION_FAILED', 'The credit note date cannot be before the invoice date.', { fields: { issueDate: 'Before the invoice date' } });
   const open = new Map((await creditableLines(ctx, invoiceId)).map((o) => [o.line.id, o]));
   const seen = new Set<string>();
@@ -144,7 +162,7 @@ export async function createCreditNote(ctx: TenantCtx, invoiceId: string, input:
   const applied = min(totals.totalPaise, due > 0n ? due : 0n);
   const note = await db().salesDocument.create({
     data: {
-      tenantId: ctx.tenantId, kind: 'credit_note', status: 'issued', number, fy, noteType: input.type, sourceType: 'invoice', sourceId: doc.id, sourceNumber: doc.number, sourceDate: doc.issueDate,
+      tenantId: ctx.tenantId, kind: 'credit_note', status: 'issued', number, fy, noteType: input.type, noteReason: input.reason ?? null, sourceType: 'invoice', sourceId: doc.id, sourceNumber: doc.number, sourceDate: doc.issueDate,
       branchId: doc.branchId, contactId: doc.contactId, buyer: doc.buyer as object, seller: doc.seller as object, placeOfSupply: doc.placeOfSupply,
       locationId: input.type === 'return' ? await resolveLocation(ctx, input.locationId ?? doc.locationId ?? null) : null,
       issueDate: dateOnly(issueDate), ...totals, roundOffPaise, paidPaise: applied, notes: input.notes ?? null, shareToken: randomToken(18), createdBy: ctx.userId, issuedAt: new Date(),
@@ -205,6 +223,7 @@ export async function refundCreditNote(ctx: TenantCtx, id: string, input: z.infe
 export const DebitNoteInput = z.object({
   issueDate: DateStr.optional(),
   notes: z.string().trim().max(2000).optional().nullable(),
+  reason: z.enum(ALL_REASONS).optional(),
   lines: z.array(z.object({ sourceLineId: z.string().uuid(), taxablePaise: Paise.refine((v) => v > 0, 'Enter the amount to add') })).min(1, 'Choose at least one line').max(200),
 });
 
@@ -212,6 +231,8 @@ export async function createDebitNote(ctx: TenantCtx, invoiceId: string, input: 
   const doc = await getDocument(ctx, invoiceId, 'invoice');
   if (!CreditableStatus.includes(doc.status)) throw new AppError('CONFLICT', 'A debit note can only be made on an issued invoice.');
   const issueDate = input.issueDate ?? todayIST();
+  checkReason('debit', input.reason, input.notes);
+  if (dateOnly(issueDate) > dateOnly(todayIST())) throw new AppError('VALIDATION_FAILED', 'The debit note date cannot be in the future.', { fields: { issueDate: 'In the future' } });
   if (dateOnly(issueDate) < doc.issueDate) throw new AppError('VALIDATION_FAILED', 'The debit note date cannot be before the invoice date.', { fields: { issueDate: 'Before the invoice date' } });
   const byId = new Map(doc.lines.map((l) => [l.id, l]));
   const intra = doc.igstPaise === 0n;
@@ -232,7 +253,7 @@ export async function createDebitNote(ctx: TenantCtx, invoiceId: string, input: 
   const { number, fy } = await allocateNumber(ctx.tenantId, 'debit_note', tenant.fyStartMonth, dateOnly(issueDate));
   const note = await db().salesDocument.create({
     data: {
-      tenantId: ctx.tenantId, kind: 'debit_note', status: 'issued', number, fy, sourceType: 'invoice', sourceId: doc.id, sourceNumber: doc.number, sourceDate: doc.issueDate, branchId: doc.branchId, contactId: doc.contactId,
+      tenantId: ctx.tenantId, kind: 'debit_note', status: 'issued', number, fy, noteReason: input.reason ?? null, sourceType: 'invoice', sourceId: doc.id, sourceNumber: doc.number, sourceDate: doc.issueDate, branchId: doc.branchId, contactId: doc.contactId,
       buyer: doc.buyer as object, seller: doc.seller as object, placeOfSupply: doc.placeOfSupply, issueDate: dateOnly(issueDate), subtotalPaise: sum((l) => l.taxablePaise), taxablePaise: sum((l) => l.taxablePaise),
       cgstPaise: sum((l) => l.cgstPaise), sgstPaise: sum((l) => l.sgstPaise), igstPaise: sum((l) => l.igstPaise), totalPaise: sum((l) => l.totalPaise), notes: input.notes ?? null, shareToken: randomToken(18), createdBy: ctx.userId, issuedAt: new Date(),
       lines: { create: lines.map(({ tenantId: _t, ...l }) => ({ ...l, tenantId: ctx.tenantId })) },

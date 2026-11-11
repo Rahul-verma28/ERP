@@ -1403,6 +1403,8 @@ model SalesDocument {
   creditedPaise BigInt         @default(0) @map("credited_paise")
   /// Credit note: return (goods came back) or amount (value reduced only). Opening balance: opening
   noteType      String?        @map("note_type")
+  /// Credit or debit note: why it was made (damaged, wrong_item, quality, excess, rate_difference, short_billed, other)
+  noteReason    String?        @map("note_reason")
   /// Credit note: the invoice number, frozen for printing
   sourceNumber  String?        @map("source_number")
   /// Credit or debit note: the invoice date, frozen for printing (Rule 53(1A))

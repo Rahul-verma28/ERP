@@ -93,6 +93,8 @@ export interface SalesDoc {
   paidPaise: number
   creditedPaise?: number
   noteType?: string | null
+  /** Credit or debit note: why it was made */
+  noteReason?: string | null
   sourceNumber?: string | null
   sourceDate?: string | null
   shipTo?: ShipTo | null

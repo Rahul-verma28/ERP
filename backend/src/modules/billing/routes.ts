@@ -38,6 +38,8 @@ const DocList = ListQuery.extend({
   sourceId: z.string().uuid().optional(),
   /** Documents of one warehouse */
   locationId: z.string().uuid().optional(),
+  /** Credit notes: goods returned, or value reduced */
+  noteType: z.enum(['return', 'amount']).optional(),
   /** Include the number of matching rows ("Showing 1–25 of 64") */
   withTotal: z.enum(['1']).optional(),
 });
@@ -48,7 +50,7 @@ const overdueWhere = (): Prisma.SalesDocumentWhereInput => ({ ...OPEN, dueDate: 
 const SUMMARY_SELECT = {
   id: true, kind: true, status: true, number: true, contactId: true, buyer: true, issueDate: true, dueDate: true,
   totalPaise: true, paidPaise: true, createdAt: true, createdBy: true, branchId: true, noteType: true, sourceId: true, sourceNumber: true,
-  taxablePaise: true, cgstPaise: true, sgstPaise: true, igstPaise: true, locationId: true, sourceType: true,
+  taxablePaise: true, cgstPaise: true, sgstPaise: true, igstPaise: true, locationId: true, sourceType: true, noteReason: true,
 } satisfies Prisma.SalesDocumentSelect;
 
 function registerReadRoutes(kind: SalesDocKind, base: string, module: 'sales.quotation' | 'billing.invoice' | 'billing.credit_note' | 'sales.order' | 'sales.delivery') {
@@ -64,6 +66,7 @@ function registerReadRoutes(kind: SalesDocKind, base: string, module: 'sales.quo
         q.contactId ? { contactId: q.contactId } : {},
         q.sourceId ? { sourceId: q.sourceId } : {},
         q.locationId ? { locationId: q.locationId } : {},
+        q.noteType ? { noteType: q.noteType } : {},
         q.from || q.to ? { issueDate: { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } } : {},
         q.q
           ? {
@@ -248,7 +251,7 @@ router.post('/opening-balances/:id/payments', requirePermission('billing.payment
 }));
 
 // ── Debit notes ──
-router.post('/invoices/:id/debit-notes', requirePermission('billing.credit_note.create'), validate(IdParam, 'params'), validate(creditNotes.DebitNoteInput), tx(async (req, res) => {
+router.post('/invoices/:id/debit-notes', requirePermission('billing.credit_note.create'), validate(IdParam, 'params'), validate(creditNotes.DebitNoteInput.required({ reason: true })), tx(async (req, res) => {
   res.status(201).json(await creditNotes.createDebitNote(req.ctx!, String(req.params.id), req.body));
 }));
 router.post('/debit-notes/:id/cancel', requirePermission('billing.credit_note.approve'), validate(IdParam, 'params'), validate(z.object({ reason: z.string().trim().min(3).max(300) })), tx(async (req, res) => {
@@ -262,7 +265,7 @@ router.post('/debit-notes/:id/payments', requirePermission('billing.payment.crea
 router.get('/invoices/:id/credit-note-lines', requirePermission('billing.credit_note.create'), validate(IdParam, 'params'), tx(async (req, res) => {
   res.json((await creditNotes.creditableLines(req.ctx!, String(req.params.id))).map(({ line, quantityLeft, taxableLeftPaise }) => ({ ...line, quantityLeft, taxableLeftPaise })));
 }));
-router.post('/invoices/:id/credit-notes', requirePermission('billing.credit_note.create'), validate(IdParam, 'params'), validate(creditNotes.CreditNoteInput), tx(async (req, res) => {
+router.post('/invoices/:id/credit-notes', requirePermission('billing.credit_note.create'), validate(IdParam, 'params'), validate(creditNotes.CreditNoteInput.required({ reason: true })), tx(async (req, res) => {
   res.status(201).json(await creditNotes.createCreditNote(req.ctx!, String(req.params.id), req.body));
 }));
 router.post('/credit-notes/:id/cancel', requirePermission('billing.credit_note.approve'), validate(IdParam, 'params'), validate(z.object({ reason: z.string().trim().min(3).max(300) })), tx(async (req, res) => {
