@@ -2,274 +2,241 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeft, CalendarClock, CheckCircle2, FileText, Mail, MessageSquare, Pencil, Phone, Trash2, Users } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { ArrowLeft, Check, CheckSquare, Handshake, Mail, MessageCircle, Pencil, Phone, Plus } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { AdvancesCard } from "@/components/advances"
-import { ConfirmDialog, Spinner, StatusBadge } from "@/components/common"
-import { NativeSelect } from "@/components/form"
+import { ConfirmDialog, EmptyState, Spinner } from "@/components/common"
+import { ACTIVITY_META, ActivityDialog, DealDialog, LabelChips, ProductsEditor, StagePill } from "@/components/crm/dialogs"
+import { LeadMenu, useLeadActions } from "@/components/crm/lead-actions"
+import { TaskList, Timeline } from "@/components/crm/timeline"
+import { todayInIndia } from "@contracts/validation"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
-import { useCustomFields } from "@/components/custom-fields"
-import { GST_STATES, formatDate, formatDateTime, formatPaise } from "@/lib/format"
+import { dueLabel, LEAD_STATUS, tone, useCrmSetup, waLink, type Activity, type CrmProduct, type Deal, type Lead } from "@/lib/crm"
+import { formatDate, formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { ContactDialog, type Contact } from "@/components/contact-dialog"
 
-interface Detail extends Contact {
-  owner: { id: string; name: string } | null
-  activities: { id: string; type: "note" | "call" | "meeting" | "follow_up"; title: string | null; body: string | null; dueAt: string | null; completedAt: string | null; createdAt: string; createdByName: string | null; assigneeName: string | null }[]
-  documents: { id: string; kind: "invoice" | "quotation" | "credit_note" | "debit_note" | "sales_order" | "delivery_challan"; number: string | null; status: string; issueDate: string; totalPaise: number; paidPaise: number }[]
-  appointments: { id: string; title: string; startAt: string; status: string }[]
+// One lead (or a customer's CRM side): where it stands, what was said, what is to be done,
+// what they want, and the deals made from it.
+
+interface Detail extends Lead {
+  activities: Activity[]
+  products: CrmProduct[]
+  deals: Deal[]
+  documents: { id: string; kind: string; number: string | null; status: string; issueDate: string; totalPaise: number }[]
 }
 
-const ACTIVITY_ICON = { note: MessageSquare, call: Phone, meeting: Users, follow_up: CalendarClock }
-const ACTIVITY_LABEL = { note: "Note", call: "Call", meeting: "Meeting", follow_up: "Follow-up" }
+type Tab = "overview" | "activity" | "tasks" | "products" | "deals"
 
-function Composer({ contactId, onAdded }: { contactId: string; onAdded: () => void }) {
-  const [type, setType] = React.useState<keyof typeof ACTIVITY_LABEL>("note")
-  const [body, setBody] = React.useState("")
-  const [due, setDue] = React.useState("")
-  const [busy, setBusy] = React.useState(false)
-  async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setBusy(true)
-    try {
-      await api.post(`/contacts/${contactId}/activities`, {
-        type,
-        body: body || undefined,
-        title: type === "follow_up" ? body.slice(0, 120) || "Follow up" : undefined,
-        dueAt: type === "follow_up" && due ? new Date(due).toISOString() : undefined,
-      })
-      setBody("")
-      setDue("")
-      onAdded()
-    } catch (err) {
-      toast.error(errorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+function StageStepper({ lead, onMove }: { lead: Detail; onMove: (stageId: string) => void }) {
+  const setup = useCrmSetup().data
+  const stages = setup?.pipelines.find((p) => p.id === lead.pipelineId)?.leadStages ?? []
+  const at = stages.findIndex((s) => s.id === lead.stageId)
+  const closed = lead.leadStatus === "lost" || lead.leadStatus === "converted"
+  if (!stages.length) return null
   return (
-    <form onSubmit={submit} className="grid gap-2">
-      <div className="flex flex-wrap gap-1">
-        {(Object.keys(ACTIVITY_LABEL) as (keyof typeof ACTIVITY_LABEL)[]).map((t) => {
-          const Icon = ACTIVITY_ICON[t]
-          return (
-            <button key={t} type="button" onClick={() => setType(t)} aria-pressed={type === t} className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm", type === t ? "bg-primary text-primary-foreground" : "bg-muted")}>
-              <Icon className="size-3.5" /> {ACTIVITY_LABEL[t]}
+    <ol className="flex w-full overflow-x-auto rounded-2xl border bg-card p-1 text-sm" aria-label="Stages">
+      {stages.map((s, i) => {
+        const done = i < at
+        const current = i === at
+        return (
+          <li key={s.id} className="min-w-28 flex-1">
+            <button
+              type="button"
+              disabled={closed || current}
+              onClick={() => onMove(s.id)}
+              title={closed ? "Reopen the lead to move it" : current ? "Current stage" : `Move to ${s.name}`}
+              className={cn("flex h-10 w-full items-center justify-center gap-1.5 rounded-xl px-3 font-medium whitespace-nowrap transition-colors disabled:cursor-default",
+                current ? cn(tone(s.color).pill, "font-semibold") : done ? "text-foreground hover:bg-muted" : "text-muted-foreground hover:bg-muted")}
+            >
+              {done ? <Check className="size-3.5 text-emerald-600" aria-hidden /> : <span className={cn("size-2 rounded-full", current ? tone(s.color).dot : "bg-muted-foreground/30")} />}
+              {s.name}
             </button>
-          )
-        })}
-      </div>
-      <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={2} placeholder={type === "call" ? "What was discussed?" : type === "follow_up" ? "What to follow up on?" : "Add a note…"} aria-label="Activity details" />
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        {type === "follow_up" && <Input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} required className="w-56" aria-label="Follow-up date" />}
-        <Button type="submit" size="sm" disabled={busy || (!body && type !== "follow_up")}>{busy ? "Saving…" : "Add"}</Button>
-      </div>
-    </form>
+          </li>
+        )
+      })}
+      {closed && (
+        <li className="min-w-28 flex-1">
+          <span className={cn("flex h-10 items-center justify-center rounded-xl px-3 font-semibold", tone(LEAD_STATUS[lead.leadStatus!].tone).pill)}>{LEAD_STATUS[lead.leadStatus!].label}</span>
+        </li>
+      )}
+    </ol>
   )
 }
 
-export default function ContactDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = React.use(params)
+export default function LeadPage() {
+  const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const { can, term } = useAuth()
-  const { data: c, reload, error } = useApi<Detail>(`/contacts/${id}`)
-  const fields = useCustomFields(c?.type === "lead" ? "lead" : "contact")
-  const [editing, setEditing] = React.useState(false)
-  const [deleting, setDeleting] = React.useState(false)
+  const { can } = useAuth()
+  const { data, setData, error, reload } = useApi<Detail>(`/contacts/${id}`)
+  const [tab, setTab] = React.useState<Tab>("overview")
+  const [logging, setLogging] = React.useState<"note" | "call" | "task" | "email" | "meeting" | "follow_up" | null>(null)
+  const [newDeal, setNewDeal] = React.useState(false)
+  const [removing, setRemoving] = React.useState<Activity | null>(null)
+  const today = todayInIndia()
+  const actions = useLeadActions((l) => { if (l === null) router.push("/app/m/crm"); else void reload() })
 
   if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
-  if (!c) return <div className="grid place-items-center py-24"><Spinner /></div>
-  const isLead = c.type === "lead"
-  const permBase = isLead ? "crm.lead" : "crm.contact"
+  if (!data) return <div className="grid place-items-center py-24"><Spinner /></div>
 
-  async function convert() {
+  const lead = data
+  const isLead = lead.type === "lead"
+  const closed = lead.leadStatus === "lost" || lead.leadStatus === "converted"
+  const openTasks = lead.activities.filter((a) => (a.type === "task" || a.type === "follow_up") && !a.completedAt).length
+  const due = dueLabel(lead.followUpOn, today)
+  const days = Math.max(0, Math.floor((Date.parse(`${today}T23:59:59+05:30`) - Date.parse(lead.createdAt)) / 86_400_000))
+  const timeline = lead.activities.filter((a) => a.type !== "task" && a.type !== "follow_up" || a.completedAt)
+
+  async function toggle(a: Activity) {
     try {
-      await api.post(`/leads/${id}/convert`)
-      toast.success(`Converted to ${term("entity.contact.singular", "customer").toLowerCase()}`)
-      router.push(`/app/m/sales/customers/${id}`)
+      await api.patch(`/activities/${a.id}`, { completed: !a.completedAt })
+      toast.success(a.completedAt ? "Marked not done" : "Done")
+      void reload()
     } catch (e) {
       toast.error(errorMessage(e))
     }
   }
 
-  async function setLeadStatus(status: string) {
-    try {
-      await api.patch(`/contacts/${id}`, { leadStatus: status, version: c!.version })
-      await reload()
-    } catch (e) {
-      toast.error(errorMessage(e))
-    }
-  }
+  const tabs: [Tab, string, number | null][] = [
+    ["overview", "Overview", null],
+    ["activity", "Activity", timeline.length],
+    ["tasks", "Tasks", openTasks],
+    ...(isLead || lead.products.length ? [["products", "Products", lead.products.length] as [Tab, string, number]] : []),
+    ["deals", "Deals", lead.deals.length],
+  ]
+  const back = isLead ? { href: "/app/m/crm", label: "Leads" } : { href: `/app/m/sales/customers/${lead.id}`, label: lead.name }
+  const card = (label: string, value: React.ReactNode, hint?: React.ReactNode, accent?: string) => (
+    <div className="ui-surface grid gap-1 p-4"><p className="text-xs text-muted-foreground">{label}</p><p className={cn("text-lg font-semibold tabular-nums", accent)}>{value}</p>{hint && <p className="text-xs text-muted-foreground">{hint}</p>}</div>
+  )
 
   return (
-    <>
-      <Link href={isLead ? "/app/m/crm" : `/app/m/sales/customers/${c.id}`} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {isLead ? "Leads" : "Customer page"}</Link>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
-            {c.name}
-            {isLead && c.leadStatus && <StatusBadge status={c.leadStatus} />}
-            {!c.isActive && <Badge variant="outline">Inactive</Badge>}
-          </h1>
-          <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-            {c.companyName && <span>{c.companyName}</span>}
-            {c.phone && <a href={`tel:${c.phone}`} className="inline-flex items-center gap-1 hover:text-foreground"><Phone className="size-3.5" />{c.phone}</a>}
-            {c.email && <a href={`mailto:${c.email}`} className="inline-flex items-center gap-1 hover:text-foreground"><Mail className="size-3.5" />{c.email}</a>}
-          </p>
+    <div className="grid gap-5">
+      <Link href={back.href} className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {back.label}</Link>
+
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-primary/10 text-lg font-bold text-primary">{lead.name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}</span>
+          <div className="min-w-0">
+            <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold tracking-tight">{lead.name} {isLead && !closed && <StagePill stage={lead.stage} />}{lead.leadStatus && LEAD_STATUS[lead.leadStatus] && <span className={cn("inline-flex h-[22px] items-center rounded-full px-2 text-xs font-semibold", tone(LEAD_STATUS[lead.leadStatus].tone).pill)}>{LEAD_STATUS[lead.leadStatus].label}</span>}</h1>
+            <p className="text-sm text-muted-foreground">{[lead.companyName, lead.subject].filter(Boolean).join(" · ") || (isLead ? "Lead" : "Customer")}</p>
+            <div className="mt-1"><LabelChips labels={lead.labels} max={6} /></div>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {isLead && c.leadStatus !== "converted" && can("crm.contact.create") && <Button onClick={convert}><CheckCircle2 /> Convert to {term("entity.contact.singular", "customer").toLowerCase()}</Button>}
-          {!isLead && can("billing.invoice.create") && <Link href={`/app/m/billing/new?contact=${c.id}`} className={buttonVariants()}><FileText /> New invoice</Link>}
-          {!isLead && can("sales.quotation.create") && <Link href={`/app/m/sales/new?contact=${c.id}`} className={buttonVariants({ variant: "outline" })}>New quotation</Link>}
-          {can(`${permBase}.edit`) && <Button variant="outline" onClick={() => setEditing(true)}><Pencil /> Edit</Button>}
-          {can(`${permBase}.delete`) && <Button variant="ghost" size="icon" onClick={() => setDeleting(true)} aria-label="Delete"><Trash2 /></Button>}
+        <div className="flex flex-wrap items-center gap-2">
+          {lead.phone && <a href={`tel:${lead.phone}`} className={buttonVariants({ variant: "outline" })} onClick={() => setTimeout(() => setLogging("call"), 600)}><Phone /> Call</a>}
+          {lead.phone && <a href={waLink(lead.phone, `Hello ${lead.name},`)} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline" }), "text-emerald-700 dark:text-emerald-300")}><MessageCircle /> WhatsApp</a>}
+          {lead.email && <a href={`mailto:${lead.email}`} className={buttonVariants({ variant: "outline" })} onClick={() => setTimeout(() => setLogging("email"), 600)}><Mail /> Email</a>}
+          {can("crm.activity.create") && <Button variant="outline" onClick={() => setLogging("note")}><Pencil /> Log activity</Button>}
+          {isLead && !closed && can("crm.deal.create") && <Button onClick={() => actions.act("deal", lead)}><Handshake /> Convert to deal</Button>}
+          {!isLead && can("crm.deal.create") && <Button onClick={() => setNewDeal(true)}><Plus /> New deal</Button>}
+          {isLead && <LeadMenu lead={lead} actions={actions} view={false} />}
         </div>
+      </header>
+
+      {isLead && <StageStepper lead={lead} onMove={(stageId) => void actions.moveTo(lead, stageId).then(() => toast.success("Stage changed")).catch(() => undefined)} />}
+      {lead.leadStatus === "lost" && <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:bg-rose-500/10 dark:text-rose-200">Lost{lead.lostReason ? `: ${lead.lostReason}` : ""}. {can("crm.lead.edit") && <button type="button" className="font-semibold underline" onClick={() => void actions.reopen(lead)}>Reopen</button>}</p>}
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {card("Expected value", lead.valuePaise ? formatPaise(lead.valuePaise) : "—", lead.products.length ? `${lead.products.length} product${lead.products.length === 1 ? "" : "s"}` : "Add products to work it out")}
+        {card("Follow up", lead.followUpOn ? formatDate(lead.followUpOn) : "Not set", due?.text, due?.late ? "text-destructive" : undefined)}
+        {card("Open tasks", openTasks, `${lead.activities.filter((a) => a.type === "task" || a.type === "follow_up").length} in all`)}
+        {card(isLead ? "Days open" : "With you for", `${days} day${days === 1 ? "" : "s"}`, `Added ${formatDate(lead.createdAt)}`)}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="grid content-start gap-6 lg:col-span-2">
-          <Card>
-            <CardHeader><CardTitle>Timeline</CardTitle></CardHeader>
-            <CardContent className="grid gap-5">
-              {can("crm.activity.create") && <Composer contactId={c.id} onAdded={() => void reload()} />}
-              {c.activities.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No activity yet. Log a call or add a note.</p>
-              ) : (
-                <ol className="grid gap-4">
-                  {c.activities.map((a) => {
-                    const Icon = ACTIVITY_ICON[a.type]
-                    const overdue = a.type === "follow_up" && !a.completedAt && a.dueAt && new Date(a.dueAt) < new Date()
-                    return (
-                      <li key={a.id} className="flex gap-3">
-                        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-muted"><Icon className="size-4" /></span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm">
-                            <span className="font-medium">{a.title || ACTIVITY_LABEL[a.type]}</span>
-                            <span className="text-muted-foreground"> · {a.createdByName ?? "System"} · {formatDateTime(a.createdAt)}</span>
-                          </p>
-                          {a.body && a.body !== a.title && <p className="mt-0.5 text-sm whitespace-pre-wrap text-muted-foreground">{a.body}</p>}
-                          {a.type === "follow_up" && a.dueAt && (
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                              <span className={cn(overdue ? "font-medium text-destructive" : "text-muted-foreground")}>Due {formatDateTime(a.dueAt)}{a.assigneeName ? ` · ${a.assigneeName}` : ""}</span>
-                              {a.completedAt ? <Badge variant="secondary">Done</Badge> : can("crm.activity.edit") && (
-                                <button className="font-medium underline-offset-2 hover:underline" onClick={() => api.patch(`/activities/${a.id}`, { completed: true }).then(reload)}>Mark done</button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </li>
-                    )
-                  })}
-                </ol>
-              )}
-            </CardContent>
-          </Card>
-
-          {!isLead && (
-            <Card>
-              <CardHeader><CardTitle>Invoices & quotations</CardTitle></CardHeader>
-              <CardContent>
-                {c.documents.length === 0 ? <p className="text-sm text-muted-foreground">Nothing billed yet.</p> : (
-                  <ul className="divide-y">
-                    {c.documents.map((d) => (
-                      <li key={d.id}>
-                        <Link href={d.kind === "credit_note" ? `/app/m/billing/credit-notes/${d.id}` : d.kind === "debit_note" ? `/app/m/billing/debit-notes/${d.id}` : d.kind === "sales_order" ? `/app/m/sales/orders/${d.id}` : d.kind === "delivery_challan" ? `/app/m/sales/challans/${d.id}` : `/app/m/${d.kind === "invoice" ? "billing" : "sales"}/${d.id}`} className="flex items-center gap-3 py-2 text-sm hover:underline">
-                          <span className="w-28 font-mono text-xs">{d.number ?? "Draft"}</span>
-                          <span className="text-muted-foreground">{formatDate(d.issueDate)}</span>
-                          <StatusBadge status={d.status} />
-                          <span className="ml-auto font-medium tabular-nums">{formatPaise(d.totalPaise)}</span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardContent>
-            </Card>
-          )}
-        </div>
-
-        <div className="grid content-start gap-6">
-          <Card>
-            <CardHeader><CardTitle>Details</CardTitle></CardHeader>
-            <CardContent>
-              <dl className="grid gap-3 text-sm">
-                {isLead && (
-                  <div>
-                    <dt className="text-muted-foreground">Status</dt>
-                    <dd className="mt-1">
-                      {c.leadStatus === "converted" ? "Converted" : (
-                        <NativeSelect value={c.leadStatus ?? "new"} onChange={(e) => setLeadStatus(e.target.value)} disabled={!can("crm.lead.edit")} aria-label="Lead status">
-                          {["new", "contacted", "qualified", "lost"].map((s) => <option key={s} value={s} className="capitalize">{s}</option>)}
-                        </NativeSelect>
-                      )}
-                    </dd>
-                  </div>
-                )}
-                {[
-                  ["Owner", c.owner?.name],
-                  ["Source", isLead ? c.leadSource : null],
-                  ["GSTIN", c.gstin],
-                  ["State", GST_STATES.find(([code]) => code === c.stateCode)?.[1]],
-                  ["Address", [c.address?.line1, c.address?.city, c.address?.pincode].filter(Boolean).join(", ")],
-                  ...fields.map((f) => [f.label, Array.isArray(c.custom[f.key]) ? (c.custom[f.key] as string[]).join(", ") : typeof c.custom[f.key] === "boolean" ? (c.custom[f.key] ? "Yes" : "No") : (c.custom[f.key] as string | undefined)]),
-                  ["Added", formatDate(c.createdAt)],
-                ]
-                  .filter(([, v]) => v)
-                  .map(([k, v]) => (
-                    <div key={k as string} className="flex justify-between gap-3">
-                      <dt className="text-muted-foreground">{k}</dt>
-                      <dd className="text-right">{v as string}</dd>
-                    </div>
-                  ))}
-              </dl>
-              {c.notes && <p className="mt-4 rounded-2xl bg-muted p-3 text-sm whitespace-pre-wrap">{c.notes}</p>}
-            </CardContent>
-          </Card>
-          {!isLead && can("billing.payment.view") && <AdvancesCard contactId={c.id} />}
-          {c.appointments.length > 0 && (
-            <Card>
-              <CardHeader><CardTitle>{term("entity.appointment.plural", "Appointments")}</CardTitle></CardHeader>
-              <CardContent>
-                <ul className="grid gap-2 text-sm">
-                  {c.appointments.map((a) => (
-                    <li key={a.id} className="flex items-center justify-between gap-2">
-                      <span className="truncate">{a.title}<span className="block text-xs text-muted-foreground">{formatDateTime(a.startAt)}</span></span>
-                      <StatusBadge status={a.status} />
-                    </li>
-                  ))}
-                </ul>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+      <div className="flex flex-wrap gap-1 border-b" role="tablist">
+        {tabs.map(([k, label, n]) => (
+          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={cn("-mb-px flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium", tab === k ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>
+            {label}{n ? <span className="rounded-full bg-muted px-1.5 text-xs tabular-nums">{n}</span> : null}
+          </button>
+        ))}
       </div>
 
-      {editing && <ContactDialog kind={c.type} contact={c} onClose={() => setEditing(false)} onSaved={() => { setEditing(false); void reload() }} />}
+      {tab === "overview" && (
+        <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
+          <section className="ui-surface p-5">
+            <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Details</h2>{isLead && !closed && can("crm.lead.edit") && <Button size="sm" variant="ghost" onClick={() => actions.act("edit", lead)}><Pencil /> Edit</Button>}</div>
+            <dl className="grid gap-3 text-sm sm:grid-cols-2">
+              {[
+                ["Mobile", lead.phone], ["Email", lead.email], ["Company", lead.companyName], ["Looking for", lead.subject],
+                ["Source", lead.leadSource], ["Assigned to", lead.owner?.name ?? "Unassigned"], ["Stage", lead.stage?.name], ["Added", formatDate(lead.createdAt)],
+              ].map(([k, v]) => <div key={k}><dt className="text-xs text-muted-foreground">{k}</dt><dd className="font-medium break-words">{v || "—"}</dd></div>)}
+            </dl>
+            {lead.notes && <div className="mt-4 rounded-2xl bg-muted/60 p-3 text-sm whitespace-pre-wrap">{lead.notes}</div>}
+          </section>
+          <section className="ui-surface p-5">
+            <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Latest activity</h2><Button size="sm" variant="ghost" onClick={() => setTab("activity")}>See all</Button></div>
+            <Timeline items={timeline.slice(0, 4)} />
+          </section>
+        </div>
+      )}
+
+      {tab === "activity" && (
+        <section className="grid gap-4">
+          {can("crm.activity.create") && (
+            <div className="flex flex-wrap gap-2">
+              {(["note", "call", "meeting", "email"] as const).map((k) => { const Icon = ACTIVITY_META[k].icon; return <Button key={k} variant="outline" size="sm" onClick={() => setLogging(k)}><Icon /> {ACTIVITY_META[k].label}</Button> })}
+            </div>
+          )}
+          <Timeline items={timeline} onDelete={can("crm.activity.delete") ? setRemoving : undefined} />
+        </section>
+      )}
+
+      {tab === "tasks" && (
+        <section className="grid gap-3">
+          {can("crm.activity.create") && <div className="flex gap-2"><Button size="sm" onClick={() => setLogging("task")}><CheckSquare /> Add task</Button><Button size="sm" variant="outline" onClick={() => setLogging("follow_up")}>Schedule follow-up</Button></div>}
+          <TaskList items={lead.activities} onToggle={toggle} emptyHint="No tasks. Add the next thing to do, with a date, so it is not forgotten." />
+        </section>
+      )}
+
+      {tab === "products" && (
+        <section className="ui-surface p-5">
+          <h2 className="mb-1 font-semibold">Products they want</h2>
+          <p className="mb-4 text-sm text-muted-foreground">The expected value follows these. They carry over when the lead becomes a deal.</p>
+          {isLead && !closed && can("crm.lead.edit") ? <ProductsEditor path={`/leads/${lead.id}/products`} initial={lead.products} onSaved={(p) => setData({ ...lead, products: p, valuePaise: p.reduce((s, x) => s + Math.round(x.quantity * x.pricePaise), 0) || lead.valuePaise })} /> : (
+            <ul className="divide-y text-sm">{lead.products.map((p) => <li key={p.id} className="flex justify-between py-2"><span>{p.name} × {p.quantity} {p.unit}</span><span className="tabular-nums">{formatPaise(Math.round(p.quantity * p.pricePaise))}</span></li>)}</ul>
+          )}
+        </section>
+      )}
+
+      {tab === "deals" && (
+        <section className="grid gap-3">
+          {lead.deals.length === 0 ? (
+            <EmptyState icon={Handshake} title="No deals yet" description={isLead ? "When they are ready to buy, convert the lead to a deal." : "Start a deal to track a sale with this customer."} action={isLead && !closed && can("crm.deal.create") ? <Button onClick={() => actions.act("deal", lead)}><Handshake /> Convert to deal</Button> : !isLead && can("crm.deal.create") ? <Button onClick={() => setNewDeal(true)}><Plus /> New deal</Button> : undefined} />
+          ) : (
+            <ul className="divide-y rounded-2xl border bg-card">
+              {lead.deals.map((d) => (
+                <li key={d.id}>
+                  <Link href={`/app/m/crm/deals/${d.id}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-muted/40">
+                    <span className="min-w-0"><span className="block font-medium">{d.title}</span><span className="text-xs text-muted-foreground">Added {formatDate(d.createdAt)}{d.expectedCloseOn ? ` · closes ${formatDate(d.expectedCloseOn)}` : ""}</span></span>
+                    <span className="flex items-center gap-3">{d.status === "open" ? <StagePill stage={d.stage} /> : <span className={cn("inline-flex h-[22px] items-center rounded-full px-2 text-xs font-semibold", d.status === "won" ? tone("emerald").pill : tone("rose").pill)}>{d.status === "won" ? "Won" : "Lost"}</span>}<span className="font-semibold tabular-nums">{formatPaise(d.valuePaise)}</span></span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      {logging && <ActivityDialog contactId={lead.id} who={lead.name} initialType={logging} onClose={() => setLogging(null)} onSaved={() => { setLogging(null); void reload() }} />}
+      {newDeal && <DealDialog initialContact={{ id: lead.id, name: lead.name, companyName: lead.companyName, phone: lead.phone }} onClose={() => setNewDeal(false)} onSaved={(d) => router.push(`/app/m/crm/deals/${d.id}`)} />}
       <ConfirmDialog
-        open={deleting}
-        onOpenChange={setDeleting}
+        open={!!removing}
+        onOpenChange={(o) => !o && setRemoving(null)}
         destructive
-        title={`Delete ${c.name}?`}
-        description="If invoices exist for this customer they are kept and the customer is marked inactive instead."
+        title="Delete this entry?"
         confirmLabel="Delete"
         onConfirm={async () => {
           try {
-            await api.delete(`/contacts/${id}`)
-            toast.success("Deleted")
-            router.replace(isLead ? "/app/m/crm" : "/app/m/sales/customers")
+            await api.delete(`/activities/${removing!.id}`)
+            void reload()
           } catch (e) {
             toast.error(errorMessage(e))
           }
         }}
       />
-    </>
+      {actions.dialogs}
+    </div>
   )
 }

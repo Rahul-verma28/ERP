@@ -1126,6 +1126,8 @@ enum ActivityType {
   call
   meeting
   follow_up
+  task
+  email
 
   @@map("activity_type")
 }
@@ -1294,6 +1296,15 @@ model Contact {
   paymentDays      Int?        @map("payment_days")
   createdBy        String?     @map("created_by") @db.Uuid
   convertedAt      DateTime?   @map("converted_at") @db.Timestamptz
+  /// Leads: what they want
+  subject          String?
+  pipelineId       String?     @map("pipeline_id") @db.Uuid
+  stageId          String?     @map("stage_id") @db.Uuid
+  followUpOn       DateTime?   @map("follow_up_on") @db.Date
+  /// Leads: expected value of the sale
+  valuePaise       BigInt?     @map("value_paise")
+  labels           String[]    @default([])
+  lostReason       String?     @map("lost_reason")
   createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz
   updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz
   version          Int         @default(1)
@@ -1343,9 +1354,11 @@ model Activity {
   dueAt       DateTime?    @map("due_at") @db.Timestamptz
   completedAt DateTime?    @map("completed_at") @db.Timestamptz
   assigneeId  String?      @map("assignee_id") @db.Uuid
+  dealId      String?      @map("deal_id") @db.Uuid
   createdBy   String?      @map("created_by") @db.Uuid
   createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
+  @@index([tenantId, dealId])
   @@index([tenantId, contactId, createdAt(sort: Desc)])
   @@index([tenantId, assigneeId, dueAt])
   @@map("activities")
@@ -1986,4 +1999,91 @@ model SupplierPayment {
   @@index([tenantId, contactId])
   @@index([tenantId, documentId])
   @@map("supplier_payments")
+}
+
+// ── CRM pipelines and deals ──
+
+/// A sales pipeline: its own lead stages and deal stages (e.g. "Retail", "Projects")
+model CrmPipeline {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  isDefault Boolean  @default(false) @map("is_default")
+  position  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId])
+  @@map("crm_pipelines")
+}
+
+/// A step a lead or deal moves through; kind = lead | deal
+model CrmStage {
+  id          String @id @default(uuid(7)) @db.Uuid
+  tenantId    String @map("tenant_id") @db.Uuid
+  pipelineId  String @map("pipeline_id") @db.Uuid
+  kind        String @db.VarChar(10)
+  name        String
+  color       String @default("blue") @db.VarChar(10)
+  position    Int    @default(0)
+  /// Deals: chance of winning at this stage, in percent
+  probability Int?
+
+  @@index([tenantId, pipelineId, kind])
+  @@map("crm_stages")
+}
+
+/// Lists the business keeps: kind = source | label | lost_reason
+model CrmOption {
+  id       String  @id @default(uuid(7)) @db.Uuid
+  tenantId String  @map("tenant_id") @db.Uuid
+  kind     String  @db.VarChar(12)
+  name     String
+  color    String? @db.VarChar(10)
+  position Int     @default(0)
+
+  @@unique([tenantId, kind, name])
+  @@map("crm_options")
+}
+
+/// A sale being worked on with a customer or lead; status = open | won | lost
+model Deal {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  title           String
+  contactId       String    @map("contact_id") @db.Uuid
+  leadId          String?   @map("lead_id") @db.Uuid
+  pipelineId      String    @map("pipeline_id") @db.Uuid
+  stageId         String    @map("stage_id") @db.Uuid
+  valuePaise      BigInt    @default(0) @map("value_paise")
+  status          String    @default("open") @db.VarChar(6)
+  lostReason      String?   @map("lost_reason")
+  expectedCloseOn DateTime? @map("expected_close_on") @db.Date
+  source          String?
+  labels          String[]  @default([])
+  notes           String?
+  ownerId         String?   @map("owner_id") @db.Uuid
+  createdBy       String?   @map("created_by") @db.Uuid
+  closedAt        DateTime? @map("closed_at") @db.Timestamptz
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  version         Int       @default(1)
+
+  @@index([tenantId, pipelineId, status])
+  @@index([tenantId, contactId])
+  @@map("deals")
+}
+
+/// Items a lead or deal is interested in
+model CrmProduct {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  contactId  String? @map("contact_id") @db.Uuid
+  dealId     String? @map("deal_id") @db.Uuid
+  itemId     String  @map("item_id") @db.Uuid
+  quantity   Decimal @default(1) @db.Decimal(14, 3)
+  pricePaise BigInt  @default(0) @map("price_paise")
+
+  @@index([tenantId, contactId])
+  @@index([tenantId, dealId])
+  @@map("crm_products")
 }

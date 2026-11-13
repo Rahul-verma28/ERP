@@ -60,6 +60,7 @@ export const ROLES: RoleDef[] = [
       ['crm.contact.view', 'all'], ['crm.contact.create', 'all'], ['crm.contact.edit', 'own'],
       ['crm.lead.view', 'own'], ['crm.lead.create', 'own'], ['crm.lead.edit', 'own'],
       ['crm.activity.view', 'own'], ['crm.activity.create', 'own'], ['crm.activity.edit', 'own'],
+      ['crm.deal.view', 'own'], ['crm.deal.create', 'own'], ['crm.deal.edit', 'own'], ['crm.pipeline.view', 'all'],
       ['catalog.item.view', 'all'], ['catalog.category.view', 'all'],
       ['sales.quotation.view', 'own'], ['sales.quotation.create', 'own'], ['sales.quotation.edit', 'own'],
       ['billing.invoice.view', 'own'], ['billing.invoice.create', 'own'], ['billing.payment.view', 'own'], ['billing.payment.create', 'own'],
@@ -87,7 +88,7 @@ export const ROLES: RoleDef[] = [
   {
     key: 'sales_person', name: 'Sales Person', layer: 'tenant', roleType: 'salesperson', requiredModules: ['crm'],
     description: 'Own leads, customers, quotations and orders only',
-    grants: [['crm.contact.view', 'own'], ['crm.contact.create', 'own'], ['crm.contact.edit', 'own'], ['crm.lead.*', 'own'], ['crm.activity.*', 'own'], ['crm.pipeline.view', 'own'], ['sales.quotation.*', 'own'], ['sales.order.view', 'own'], ['sales.order.create', 'own'], ['catalog.item.view', 'all'], ['tasks.task.*', 'own'], ['bookings.event.*', 'own']],
+    grants: [['crm.contact.view', 'own'], ['crm.contact.create', 'own'], ['crm.contact.edit', 'own'], ['crm.lead.*', 'own'], ['crm.activity.*', 'own'], ['crm.deal.*', 'own'], ['crm.pipeline.view', 'all'], ['sales.quotation.*', 'own'], ['sales.order.view', 'own'], ['sales.order.create', 'own'], ['catalog.item.view', 'all'], ['tasks.task.*', 'own'], ['bookings.event.*', 'own']],
   },
   {
     key: 'cashier', name: 'Billing Staff / Cashier', layer: 'tenant', roleType: 'counter', requiredModules: ['billing'],

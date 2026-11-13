@@ -30,7 +30,7 @@ export interface ModuleNav {
 }
 
 export const MODULE_NAV: ModuleNav[] = [
-  { key: "crm", label: "CRM", icon: Users, description: "Leads, notes, calls and follow-ups", phase: 1 },
+  { key: "crm", label: "CRM", icon: Users, description: "Leads, deals, pipelines, tasks and follow-ups", phase: 1 },
   { key: "catalog", label: "Products & Services", termKey: "entity.item.plural", icon: Package, description: "Your shared catalogue with GST rates and HSN/SAC", phase: 1 },
   { key: "sales", label: "Sales & Orders", icon: FileText, description: "Quotations, sales orders, deliveries and returns", phase: 1 },
   { key: "billing", label: "Billing", icon: Receipt, description: "GST invoices, receipts, dues and POS", phase: 1 },
@@ -60,7 +60,10 @@ export const MODULE_SUBS: Partial<Record<ModuleKey, SubNav[]>> = {
   ],
   crm: [
     { label: "Leads", href: "/app/m/crm", permission: "crm.lead.view" },
-    { label: "Follow-ups", href: "/app/m/crm/follow-ups", permission: "crm.activity.view" },
+    { label: "Deals", href: "/app/m/crm/deals", permission: "crm.deal.view" },
+    { label: "Tasks", href: "/app/m/crm/follow-ups", permission: "crm.activity.view" },
+    { label: "Reports", href: "/app/m/crm/reports", permission: "crm.lead.view" },
+    { label: "Setup", href: "/app/m/crm/setup", permission: "crm.pipeline.edit" },
   ],
   inventory: [
     { label: "Stock", href: "/app/m/inventory", permission: "inventory.stock.view" },
