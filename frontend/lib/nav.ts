@@ -36,7 +36,7 @@ export const MODULE_NAV: ModuleNav[] = [
   { key: "billing", label: "Billing", icon: Receipt, description: "GST invoices, receipts, dues and POS", phase: 1 },
   { key: "bookings", label: "Calendar & Bookings", termKey: "entity.appointment.plural", icon: CalendarDays, description: "Team calendar, appointments and resources", phase: 1 },
   { key: "tasks", label: "Tasks", icon: CheckSquare, description: "Tasks, checklists and approvals", phase: 1 },
-  { key: "finance", label: "Expenses & Finance", icon: Wallet, description: "Expenses, ledgers and financial statements", phase: 2 },
+  { key: "finance", label: "Accounting & Finance", icon: Wallet, description: "Cash and bank, expenses, other income and profit & loss", phase: 2 },
   { key: "inventory", label: "Inventory", icon: Warehouse, description: "Stock, warehouses, purchasing and assets", phase: 2 },
   { key: "hr", label: "HR & Payroll", icon: UserCog, description: "Employees, attendance, leave and payroll", phase: 2 },
   { key: "support", label: "Customer Service", icon: LifeBuoy, description: "Tickets, SLAs and complaints", phase: 3 },
@@ -50,6 +50,8 @@ export interface SubNav {
   href: string
   /** Hidden without this permission */
   permission?: string
+  /** Other paths that belong to this link (its pages' sub-tabs) */
+  also?: string[]
 }
 
 /** Sub-modules shown under a module in the menu. The longest matching link is the active one. */
@@ -64,6 +66,14 @@ export const MODULE_SUBS: Partial<Record<ModuleKey, SubNav[]>> = {
     { label: "Tasks", href: "/app/m/crm/follow-ups", permission: "crm.activity.view" },
     { label: "Reports", href: "/app/m/crm/reports", permission: "crm.lead.view" },
     { label: "Setup", href: "/app/m/crm/setup", permission: "crm.pipeline.edit" },
+  ],
+  finance: [
+    { label: "Overview", href: "/app/m/finance", permission: "finance.expense.view" },
+    { label: "Expenses", href: "/app/m/finance/expenses", permission: "finance.expense.view", also: ["/app/m/finance/income", "/app/m/finance/recurring"] },
+    { label: "Cash & Bank", href: "/app/m/finance/accounts", permission: "finance.expense.view", also: ["/app/m/finance/transfers"] },
+    { label: "Reports", href: "/app/m/finance/reports", permission: "finance.expense.view" },
+    { label: "Accountant", href: "/app/m/finance/accountant", permission: "finance.expense.view", also: ["/app/m/finance/journals", "/app/m/finance/ledgers"] },
+    { label: "Setup", href: "/app/m/finance/settings", permission: "finance.expense.view" },
   ],
   inventory: [
     { label: "Stock", href: "/app/m/inventory", permission: "inventory.stock.view" },

@@ -88,8 +88,9 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
   // The group holding this page is open until someone toggles another one
   const groups: [string, SubNav[]][] = [["users", users], ["salesgroup", sales], ["purchase", purchase], ...MODULE_NAV.map((m) => [m.key, moduleSubs(m.key)] as [string, SubNav[]])]
-  const matches = groups.flatMap(([id, subs]) => subs.filter((s) => pathname === s.href || pathname.startsWith(`${s.href}/`)).map((s) => ({ id, href: s.href })))
-  const current = matches.sort((a, b) => b.href.length - a.href.length)[0] ?? null
+  // A link owns its own path and any listed in `also`; the longest matching path wins
+  const matches = groups.flatMap(([id, subs]) => subs.flatMap((s) => [s.href.split("?")[0], ...(s.also ?? [])].filter((p) => pathname === p || pathname.startsWith(`${p}/`)).map((p) => ({ id, href: s.href, len: p.length }))))
+  const current = matches.sort((a, b) => b.len - a.len)[0] ?? null
   const [toggled, setToggled] = React.useState<{ page: string | null; id: string | null } | null>(null)
   const page = current?.id ?? null
   const openId = toggled && toggled.page === page ? toggled.id : page

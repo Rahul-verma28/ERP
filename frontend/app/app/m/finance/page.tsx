@@ -1,151 +1,125 @@
 "use client"
 
 import * as React from "react"
-import { toast } from "sonner"
-import { Plus, Trash2, Wallet } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { ConfirmDialog, EmptyState, MoneyInput } from "@/components/common"
-import { DataList, periodFilter, type Column } from "@/components/data-list"
-import { Field, FormError, NativeSelect } from "@/components/form"
-import { api, ApiError, errorMessage } from "@/lib/api"
+import Link from "next/link"
+import { ArrowRightLeft, Plus, Receipt, TrendingUp } from "lucide-react"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { PageHeader } from "@/components/app-shell"
+import { PageError, PageLoading } from "@/components/page-states"
+import { Pill, Section, StatGrid } from "@/components/page-parts"
+import { AccountDialog, ExpenseDialog, IncomeDialog, TransferDialog } from "@/components/finance/forms"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
-import { PAYMENT_METHODS } from "@/lib/money"
+import { KIND_ICON, KIND_LABEL, KIND_TONE, masked, useFinAccounts, type FinAccount } from "@/lib/finance"
+import { tone } from "@/lib/tones"
+import { cn } from "@/lib/utils"
 
-interface Expense {
-  id: string
-  category: string
-  amountPaise: number
-  paidOn: string
-  method: string
-  payee: string | null
-  notes: string | null
-  receiptUrl: string | null
-  version: number
+// Finance home: what is in cash and bank, money in and out this month, profit, and who owes whom.
+
+interface Overview {
+  accounts: FinAccount[]
+  cashPaise: number
+  bankPaise: number
+  month: { inPaise: number; outPaise: number; profitPaise: number; expensesPaise: number }
+  receivablePaise: number
+  payablePaise: number
+  byMonth: { month: string; inPaise: number; outPaise: number }[]
+  recentExpenses: { id: string; number: string | null; paidOn: string; category: string; payee: string | null; amountPaise: number }[]
 }
 
-const todayIST = () => new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10)
-
-function ExpenseDialog({ expense, categories, onClose, onSaved }: { expense?: Expense; categories: string[]; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = React.useState({
-    category: expense?.category ?? "",
-    amountPaise: expense?.amountPaise ?? (null as number | null),
-    paidOn: expense?.paidOn.slice(0, 10) ?? todayIST(),
-    method: expense?.method ?? "cash",
-    payee: expense?.payee ?? "",
-    notes: expense?.notes ?? "",
-    receiptUrl: expense?.receiptUrl ?? "",
-  })
-  const [errors, setErrors] = React.useState<Record<string, string>>({})
-  const [error, setError] = React.useState<string | null>(null)
-  const [busy, setBusy] = React.useState(false)
-  const set = (k: keyof typeof form, v: unknown) => setForm((f) => ({ ...f, [k]: v }))
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
-    if (!form.amountPaise) return setErrors({ amountPaise: "Enter an amount" })
-    setBusy(true)
-    setError(null)
-    const body = { ...form, payee: form.payee || null, notes: form.notes || null, receiptUrl: form.receiptUrl || null }
-    try {
-      if (expense) await api.patch(`/expenses/${expense.id}`, { ...body, version: expense.version })
-      else await api.post("/expenses", body)
-      toast.success(expense ? "Saved" : "Expense added")
-      onSaved()
-    } catch (err) {
-      if (err instanceof ApiError) setErrors(err.fields)
-      setError(errorMessage(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+export default function FinanceOverviewPage() {
+  const { can } = useAuth()
+  const { data, error, reload } = useApi<Overview>("/finance/overview")
+  const accounts = useFinAccounts()
+  const [open, setOpen] = React.useState<"expense" | "income" | "transfer" | "account" | null>(null)
+  if (!can("finance.expense.view")) return <PageHeader title="Finance" description="You don't have access to finance. Ask your admin." />
+  if (error) return <PageError error={error} onRetry={() => void reload()} />
+  if (!data) return <PageLoading />
+  const done = () => { setOpen(null); void reload(); void accounts.reload() }
+  const write = can("finance.expense.create")
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{expense ? "Edit expense" : "Add expense"}</DialogTitle>
-          <DialogDescription>Expenses feed your dashboard and, with the paid Finance module, your ledgers.</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={save} className="grid gap-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Amount" error={errors.amountPaise}><MoneyInput value={form.amountPaise} onChange={(v) => set("amountPaise", v)} autoFocus /></Field>
-            <Field label="Date" error={errors.paidOn}><Input type="date" value={form.paidOn} max={todayIST()} onChange={(e) => set("paidOn", e.target.value)} /></Field>
-            <Field label="Category" error={errors.category}>
-              <Input value={form.category} onChange={(e) => set("category", e.target.value)} list="expense-categories" required />
-            </Field>
-            <Field label="Paid by">
-              <NativeSelect value={form.method} onChange={(e) => set("method", e.target.value)}>
-                {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-              </NativeSelect>
-            </Field>
-            <Field label="Paid to"><Input value={form.payee} onChange={(e) => set("payee", e.target.value)} /></Field>
-            <Field label="Receipt link" error={errors.receiptUrl} hint="Photo upload arrives with file storage"><Input type="url" value={form.receiptUrl} onChange={(e) => set("receiptUrl", e.target.value)} placeholder="https://" /></Field>
-          </div>
-          <datalist id="expense-categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
-          <Field label="Notes"><Input value={form.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
-          <FormError message={error} />
-          <DialogFooter><Button type="submit" disabled={busy}>{busy ? "Saving…" : expense ? "Save" : "Add expense"}</Button></DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-export default function ExpensesPage() {
-  const { can, me } = useAuth()
-  const categories = useApi<{ data: string[] }>("/expense-categories").data?.data ?? []
-  const [editing, setEditing] = React.useState<Expense | "new" | null>(null)
-  const [deleting, setDeleting] = React.useState<Expense | null>(null)
-  const [version, setVersion] = React.useState(0)
-  const refresh = () => setVersion((v) => v + 1)
-  const add = can("finance.expense.create") ? <Button onClick={() => setEditing("new")}><Plus /> Add expense</Button> : undefined
-  const columns: Column<Expense>[] = [
-    { key: "date", header: "Date", hideable: false, sort: (e) => e.paidOn, csv: (e) => e.paidOn.slice(0, 10), cell: (e) => <span className="text-muted-foreground">{formatDate(e.paidOn)}</span> },
-    { key: "category", header: "Category", sort: (e) => e.category, csv: (e) => e.category, cell: (e) => <span className="font-medium">{e.category}{e.notes && <span className="block text-xs font-normal text-muted-foreground">{e.notes}</span>}</span> },
-    { key: "payee", header: "Paid to", csv: (e) => e.payee ?? "", cell: (e) => e.payee ?? "—" },
-    { key: "method", header: "Method", csv: (e) => e.method, cell: (e) => PAYMENT_METHODS.find((m) => m.value === e.method)?.label },
-    { key: "amount", header: "Amount", align: "right", sort: (e) => e.amountPaise, csv: (e) => e.amountPaise / 100, cell: (e) => <span className="font-medium">{formatPaise(e.amountPaise)}</span> },
-    ...(can("finance.expense.delete") ? [{ key: "actions", header: "Actions", hideable: false, cell: (e: Expense) => <Button variant="ghost" size="icon-sm" className="text-destructive" aria-label="Delete expense" onClick={(ev) => { ev.stopPropagation(); setDeleting(e) }}><Trash2 /></Button> }] : []),
-  ]
-
-  return (
-    <>
-      <DataList<Expense>
-        id="expenses"
-        path="/expenses"
-        params={{ v: String(version) }}
-        header={{ title: "Expenses", description: "Record what you spend. Ledgers, P&L and GST reports come with the Finance module.", primary: add }}
-        columns={columns}
-        searchPlaceholder="Search payee or notes"
-        filters={[periodFilter(me?.tenant?.fyStartMonth ?? 4), { key: "category", label: "Category", options: categories.map((c) => ({ value: c, label: c })) }]}
-        defaultFilters={{ period: "this_month" }}
-        rowClick={can("finance.expense.edit") ? setEditing : undefined}
-        exportName="expenses"
-        summary={(r) => <span className="text-sm text-muted-foreground">Total <strong className="text-foreground tabular-nums">{formatPaise(Number(r.totalPaise ?? 0))}</strong></span>}
-        emptyState={<EmptyState icon={Wallet} title="No expenses yet" description="Add rent, supplies, salaries and other spending to see your real profit." action={add} />}
+    <div className="grid gap-5">
+      <PageHeader
+        title="Finance"
+        description="Your cash and bank balances, money in and out, and profit — all from the bills, payments and expenses you record."
+        actions={<div className="flex flex-wrap gap-2">
+          {write && <>
+          <Button variant="outline" onClick={() => setOpen("transfer")}><ArrowRightLeft /> Move money</Button>
+          <Button variant="outline" onClick={() => setOpen("income")}><TrendingUp /> Other income</Button>
+          <Button onClick={() => setOpen("expense")}><Plus /> Add expense</Button>
+          </>}
+        </div>}
       />
-      {editing && <ExpenseDialog expense={editing === "new" ? undefined : editing} categories={categories} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); refresh() }} />}
-      <ConfirmDialog
-        open={!!deleting}
-        onOpenChange={(o) => !o && setDeleting(null)}
-        destructive
-        title="Delete this expense?"
-        description={deleting ? `${deleting.category} · ${formatPaise(deleting.amountPaise)}` : undefined}
-        confirmLabel="Delete"
-        onConfirm={async () => {
-          try {
-            await api.delete(`/expenses/${deleting!.id}`)
-            toast.success("Deleted")
-            refresh()
-          } catch (e) {
-            toast.error(errorMessage(e))
-          }
-        }}
-      />
-    </>
+      <StatGrid items={[
+        { label: "Cash in hand", value: formatPaise(data.cashPaise), accent: data.cashPaise < 0 ? "text-destructive" : undefined },
+        { label: "In bank and UPI", value: formatPaise(data.bankPaise), accent: data.bankPaise < 0 ? "text-destructive" : undefined },
+        { label: "Money in this month", value: formatPaise(data.month.inPaise), accent: "text-emerald-700 dark:text-emerald-300", href: "/app/m/finance/reports?tab=cash" },
+        { label: "Money out this month", value: formatPaise(data.month.outPaise), accent: "text-rose-700 dark:text-rose-300", href: "/app/m/finance/reports?tab=cash" },
+      ]} />
+      <StatGrid items={[
+        { label: data.month.profitPaise < 0 ? "Loss this month" : "Profit this month", value: formatPaise(Math.abs(data.month.profitPaise)), hint: "Sales − purchases − expenses", accent: data.month.profitPaise < 0 ? "text-destructive" : "text-emerald-700 dark:text-emerald-300", href: "/app/m/finance/reports" },
+        { label: "Expenses this month", value: formatPaise(data.month.expensesPaise), hint: "Before GST you claim back", href: "/app/m/finance/expenses" },
+        { label: "Customers owe you", value: formatPaise(data.receivablePaise), href: "/app/m/sales/reports" },
+        { label: "You owe suppliers", value: formatPaise(data.payablePaise), href: "/app/m/purchase/reports" },
+      ]} />
+
+      <Section title="Cash and bank" description="Open one for its passbook" action={write && <Button size="sm" variant="outline" onClick={() => setOpen("account")}><Plus /> Add account</Button>} flush>
+        <div className="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3">
+          {data.accounts.filter((a) => a.isActive).map((a) => {
+            const Icon = KIND_ICON[a.kind]
+            return (
+              <Link key={a.id} href={`/app/m/finance/accounts/${a.id}`} className="grid gap-3 rounded-2xl border bg-card p-4 transition-shadow hover:shadow-md">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="flex items-center gap-2.5"><span className={cn("grid size-9 place-items-center rounded-xl", tone(KIND_TONE[a.kind]).pill)}><Icon className="size-4" /></span><span><span className="block font-semibold">{a.name}</span><span className="text-xs text-muted-foreground">{[a.bankName, masked(a.accountNo)].filter(Boolean).join(" ") || KIND_LABEL[a.kind]}</span></span></span>
+                  {a.isDefault && <Pill color="blue">Default</Pill>}
+                </div>
+                <p className={cn("text-2xl font-bold tabular-nums", a.balancePaise < 0 && "text-destructive")}>{formatPaise(a.balancePaise)}</p>
+                <p className="flex justify-between text-xs text-muted-foreground"><span className="text-emerald-700 dark:text-emerald-300">+{formatPaise(a.inThisMonthPaise)}</span><span className="text-rose-700 dark:text-rose-300">−{formatPaise(a.outThisMonthPaise)}</span><span>this month</span></p>
+              </Link>
+            )
+          })}
+        </div>
+      </Section>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Section title="Money in and out" description="By month, this financial period">
+          {data.byMonth.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">Nothing yet this month.</p> : (
+            <ul className="grid gap-3">
+              {data.byMonth.map((m) => {
+                const max = Math.max(1, ...data.byMonth.flatMap((x) => [x.inPaise, x.outPaise]))
+                return (
+                  <li key={m.month} className="grid gap-1 text-sm">
+                    <span className="text-xs text-muted-foreground">{new Date(`${m.month}-01T00:00:00Z`).toLocaleDateString("en-IN", { month: "long", year: "numeric", timeZone: "UTC" })}</span>
+                    <span className="flex items-center gap-2"><span className="h-2.5 rounded-full bg-emerald-500" style={{ width: `${(m.inPaise / max) * 70 + 1}%` }} /><span className="tabular-nums">{formatPaise(m.inPaise)} in</span></span>
+                    <span className="flex items-center gap-2"><span className="h-2.5 rounded-full bg-rose-500" style={{ width: `${(m.outPaise / max) * 70 + 1}%` }} /><span className="tabular-nums">{formatPaise(m.outPaise)} out</span></span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </Section>
+        <Section title="Recent expenses" action={<Link href="/app/m/finance/expenses" className={buttonVariants({ variant: "ghost", size: "sm" })}>See all</Link>} flush>
+          {data.recentExpenses.length === 0 ? <p className="p-8 text-center text-sm text-muted-foreground">No expenses yet. Add rent, salary and bills so profit is right.</p> : (
+            <ul className="divide-y">
+              {data.recentExpenses.map((e) => (
+                <li key={e.id}>
+                  <Link href={`/app/m/finance/expenses/${e.id}`} className="flex items-center justify-between gap-3 px-5 py-3 text-sm hover:bg-muted/40">
+                    <span className="flex min-w-0 items-center gap-2.5"><span className="grid size-8 place-items-center rounded-lg bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"><Receipt className="size-4" /></span><span className="min-w-0"><span className="block font-medium">{e.category}</span><span className="block truncate text-xs text-muted-foreground">{formatDate(e.paidOn)}{e.payee ? ` · ${e.payee}` : ""}</span></span></span>
+                    <span className="font-semibold tabular-nums">{formatPaise(e.amountPaise)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Section>
+      </div>
+
+      {open === "expense" && <ExpenseDialog onClose={() => setOpen(null)} onSaved={done} />}
+      {open === "income" && <IncomeDialog onClose={() => setOpen(null)} onSaved={done} />}
+      {open === "transfer" && <TransferDialog onClose={() => setOpen(null)} onSaved={done} />}
+      {open === "account" && <AccountDialog account={null} onClose={() => setOpen(null)} onSaved={done} />}
+    </div>
   )
 }

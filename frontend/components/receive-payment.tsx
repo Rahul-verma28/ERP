@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { PAYMENT_METHODS } from "@/lib/money"
+import { PaymentAccountField } from "@/components/finance/forms"
 import type { SalesDoc } from "@/lib/sales"
 import { cn } from "@/lib/utils"
 
@@ -123,6 +124,7 @@ export function ReceiveDialog({ initial, bill, onClose, onSaved }: {
   const [paidOn, setPaidOn] = React.useState(today)
   const [method, setMethod] = React.useState(walkIn ? "cash" : "upi")
   const [reference, setReference] = React.useState("")
+  const [accountId, setAccountId] = React.useState("")
   const [notes, setNotes] = React.useState("")
   // Opened from a bill: the payment goes on that bill until changed by hand
   const [put, setPut] = React.useState<Record<string, number | null>>(bill ? { [bill.id]: bill.duePaise } : {})
@@ -181,7 +183,7 @@ export function ReceiveDialog({ initial, bill, onClose, onSaved }: {
     setError(null)
     if (!check()) return setError("Fix the marked fields first.")
     setBusy(true)
-    const pay = { amountPaise: amount, paidOn, method, reference: reference.trim() || null, notes: notes.trim() || null }
+    const pay = { amountPaise: amount, paidOn, method, accountId: accountId || undefined, reference: reference.trim() || null, notes: notes.trim() || null }
     const allocations = open.filter((b) => (shares[b.id] ?? 0) > 0).map((b) => ({ documentId: b.id, amountPaise: shares[b.id]! }))
     try {
       if (walkIn) {
@@ -249,13 +251,14 @@ export function ReceiveDialog({ initial, bill, onClose, onSaved }: {
             </Field>
             <Field label="Date" required error={errors.paidOn}><Input type="date" value={paidOn} max={today} onChange={(e) => { setPaidOn(e.target.value); clear("paidOn") }} /></Field>
             <Field label="Paid by" required>
-              <NativeSelect value={method} onChange={(e) => { setMethod(e.target.value); clear("reference") }} aria-label="Paid by">
+              <NativeSelect value={method} onChange={(e) => { setMethod(e.target.value); setAccountId(""); clear("reference") }} aria-label="Paid by">
                 {PAYMENT_METHODS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
               </NativeSelect>
             </Field>
             <Field label={ref.label} required={ref.required} error={errors.reference}>
               <Input value={reference} maxLength={100} placeholder={ref.placeholder} onChange={(e) => { setReference(e.target.value); clear("reference") }} />
             </Field>
+            <PaymentAccountField label="Received in" method={method} value={accountId} onChange={setAccountId} />
           </div>
 
           {!walkIn && contact && (

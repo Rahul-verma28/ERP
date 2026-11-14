@@ -15,6 +15,7 @@ import { optionalText, zEmail, zGstin, zHsnOrSac, zPhone, zPincode, zStateCode }
 import { gstinStateMismatch } from '../../contracts/validation';
 import { withDefaults, type WorkspaceProfile } from '../../contracts/workspace';
 import { defaultLocation, postDocumentStock, reverseSource } from '../inventory/engine';
+import { resolveAccount } from '../finance/service';
 
 // Sales documents: quotations (SAL-01) and GST tax invoices (BIL-01..04) share one engine.
 
@@ -360,6 +361,8 @@ export const PaymentInput = z.object({
   reference: z.string().trim().max(100).optional().nullable(),
   paidOn: DateStr.optional(),
   notes: z.string().trim().max(500).optional().nullable(),
+  /** The cash or bank account it went into; empty = by method */
+  accountId: z.string().uuid().optional().nullable(),
 });
 
 /** BIL-03: record a receipt against an issued invoice; status moves to partially paid / paid. */
@@ -373,7 +376,7 @@ export async function recordPayment(ctx: TenantCtx, id: string, input: z.infer<t
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
   const { number } = await allocateNumber(ctx.tenantId, 'receipt', tenant.fyStartMonth);
   const payment = await db().payment.create({
-    data: { ...input, paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: BigInt(input.amountPaise), tenantId: ctx.tenantId, documentId: id, contactId: doc.contactId, number, createdBy: ctx.userId },
+    data: { ...input, accountId: await resolveAccount(ctx, input.accountId, input.method), paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: BigInt(input.amountPaise), tenantId: ctx.tenantId, documentId: id, contactId: doc.contactId, number, createdBy: ctx.userId },
   });
   await setPaid(doc, doc.paidPaise + BigInt(input.amountPaise));
   await audit({ action: 'billing.payment.record', entity: 'payment', entityId: payment.id, after: { invoice: doc.number, amountPaise: input.amountPaise, method: input.method } });
@@ -441,7 +444,7 @@ export async function reversePayment(ctx: TenantCtx, id: string) {
   const reversal = await db().payment.create({
     data: {
       tenantId: ctx.tenantId, documentId: payment.documentId, contactId: payment.contactId, number: `${payment.number}-R`, amountPaise: -payment.amountPaise,
-      method: payment.method, reference: payment.reference, paidOn: dateOnly(todayIST()), notes: `Reversal of ${payment.number}`, reversesId: payment.id, createdBy: payment.createdBy,
+      method: payment.method, accountId: payment.accountId, reference: payment.reference, paidOn: dateOnly(todayIST()), notes: `Reversal of ${payment.number}`, reversesId: payment.id, createdBy: payment.createdBy,
     },
   });
   if (doc) await setPaid(doc, doc.paidPaise - payment.amountPaise);
@@ -462,7 +465,7 @@ export async function recordAdvance(ctx: TenantCtx, input: z.infer<typeof Advanc
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
   const { number } = await allocateNumber(ctx.tenantId, 'receipt', tenant.fyStartMonth);
   const payment = await db().payment.create({
-    data: { ...input, paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: BigInt(input.amountPaise), tenantId: ctx.tenantId, number, createdBy: ctx.userId },
+    data: { ...input, accountId: await resolveAccount(ctx, input.accountId, input.method), paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: BigInt(input.amountPaise), tenantId: ctx.tenantId, number, createdBy: ctx.userId },
   });
   await audit({ action: 'billing.advance.record', entity: 'payment', entityId: payment.id, after: { contactId: input.contactId, amountPaise: input.amountPaise, method: input.method } });
   return payment;

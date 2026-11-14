@@ -10,6 +10,7 @@ import { optionalText, zEmail, zGstin, zHsnOrSac, zPhone, zStateCode } from '../
 import { gstinStateMismatch } from '../../contracts/validation';
 import { withDefaults } from '../../contracts/workspace';
 import { audit } from '../audit/service';
+import { resolveAccount } from '../finance/service';
 import { applyMove, fromMilli, loadRules, milli, reverseSource, unitFactor } from '../inventory/engine';
 import { ensureBatch } from '../inventory/service';
 
@@ -656,6 +657,8 @@ export const SupplierPaymentInput = z.object({
   method: z.enum(['cash', 'upi', 'card', 'bank', 'cheque', 'other']),
   reference: z.string().trim().max(100).optional().nullable(),
   paidOn: DateStr.optional(),
+  /** The cash or bank account it was paid from; empty = by method */
+  accountId: z.string().uuid().optional().nullable(),
 });
 
 export async function paySupplier(ctx: TenantCtx, billId: string, input: z.infer<typeof SupplierPaymentInput>) {
@@ -678,7 +681,7 @@ export async function paySupplier(ctx: TenantCtx, billId: string, input: z.infer
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
   const { number } = await allocateNumber(ctx.tenantId, 'supplier_payment', tenant.fyStartMonth, paidOn);
   const pay = await db().supplierPayment.create({
-    data: { tenantId: ctx.tenantId, contactId: bill.contactId, documentId: bill.id, number, amountPaise: BigInt(input.amountPaise), method: input.method, reference: input.reference || null, paidOn, createdBy: ctx.userId },
+    data: { tenantId: ctx.tenantId, contactId: bill.contactId, documentId: bill.id, number, amountPaise: BigInt(input.amountPaise), method: input.method, accountId: await resolveAccount(ctx, input.accountId, input.method), reference: input.reference || null, paidOn, createdBy: ctx.userId },
   });
   await setBillStatus(bill, bill.paidPaise + BigInt(input.amountPaise), bill.returnedPaise);
   await audit({ action: 'inventory.supplier_payment.create', entity: 'supplier_payment', entityId: pay.id, after: { bill: bill.number, amountPaise: input.amountPaise, method: input.method } });
@@ -692,7 +695,7 @@ export async function reverseSupplierPayment(ctx: TenantCtx, paymentId: string) 
   if (await db().supplierPayment.findUnique({ where: { reversesId: p.id } })) throw new AppError('CONFLICT', 'This payment is already reversed.');
   const bill = await getPurchase(ctx, p.documentId, 'purchase_bill');
   await db().supplierPayment.create({
-    data: { tenantId: ctx.tenantId, contactId: p.contactId, documentId: p.documentId, number: `${p.number}-R`, amountPaise: -p.amountPaise, method: p.method, reference: p.reference, paidOn: dateOnly(todayIST()), reversesId: p.id, createdBy: ctx.userId },
+    data: { tenantId: ctx.tenantId, contactId: p.contactId, documentId: p.documentId, number: `${p.number}-R`, amountPaise: -p.amountPaise, method: p.method, accountId: p.accountId, reference: p.reference, paidOn: dateOnly(todayIST()), reversesId: p.id, createdBy: ctx.userId },
   });
   await setBillStatus(bill, bill.paidPaise - p.amountPaise, bill.returnedPaise);
   await audit({ action: 'inventory.supplier_payment.reverse', entity: 'supplier_payment', entityId: p.id, after: { bill: bill.number, amountPaise: p.amountPaise } });

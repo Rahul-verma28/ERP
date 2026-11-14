@@ -130,6 +130,10 @@ export const PREFERENCE_SCHEMAS = {
     purchaseBillPrefix: Prefix,
     purchaseReturnPrefix: Prefix,
     supplierPaymentPrefix: Prefix,
+    expensePrefix: Prefix,
+    incomePrefix: Prefix,
+    transferPrefix: Prefix,
+    journalPrefix: Prefix,
     template: z.enum(['classic', 'modern', 'compact']),
     paper: z.enum(['a4', '80mm', '58mm']),
     terms: z.string().trim().max(2000, 'Keep terms under 2,000 characters'),
@@ -270,6 +274,10 @@ const SERIES = [
   { docType: 'purchase_bill', label: 'Purchase bill', prefixKey: 'purchaseBillPrefix' },
   { docType: 'purchase_return', label: 'Purchase return', prefixKey: 'purchaseReturnPrefix' },
   { docType: 'supplier_payment', label: 'Payment to supplier', prefixKey: 'supplierPaymentPrefix' },
+  { docType: 'expense', label: 'Expense', prefixKey: 'expensePrefix' },
+  { docType: 'income', label: 'Other income', prefixKey: 'incomePrefix' },
+  { docType: 'fin_transfer', label: 'Transfer between accounts', prefixKey: 'transferPrefix' },
+  { docType: 'journal', label: 'Journal entry', prefixKey: 'journalPrefix' },
 ] as const;
 export type SeriesType = (typeof SERIES)[number]['docType'];
 
@@ -281,6 +289,22 @@ async function lastIssued(docType: SeriesType, fy: string, usedPrefix: string) {
   }
   if (docType === 'supplier_payment') {
     const p = await db().supplierPayment.findFirst({ where: { number: { startsWith: usedPrefix }, reversesId: null }, orderBy: { createdAt: 'desc' }, select: { number: true } });
+    return p?.number ?? null;
+  }
+  if (docType === 'expense') {
+    const p = await db().expense.findFirst({ where: { number: { startsWith: usedPrefix } }, orderBy: { createdAt: 'desc' }, select: { number: true } });
+    return p?.number ?? null;
+  }
+  if (docType === 'income') {
+    const p = await db().income.findFirst({ where: { number: { startsWith: usedPrefix } }, orderBy: { createdAt: 'desc' }, select: { number: true } });
+    return p?.number ?? null;
+  }
+  if (docType === 'journal') {
+    const p = await db().journal.findFirst({ where: { number: { startsWith: usedPrefix } }, orderBy: { createdAt: 'desc' }, select: { number: true } });
+    return p?.number ?? null;
+  }
+  if (docType === 'fin_transfer') {
+    const p = await db().finTransfer.findFirst({ where: { number: { startsWith: usedPrefix } }, orderBy: { createdAt: 'desc' }, select: { number: true } });
     return p?.number ?? null;
   }
   if (docType === 'purchase_order' || docType === 'goods_receipt' || docType === 'purchase_bill' || docType === 'purchase_return') {

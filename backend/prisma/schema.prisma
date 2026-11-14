@@ -1495,6 +1495,8 @@ model Payment {
   paidOn      DateTime      @map("paid_on") @db.Date
   notes       String?
   reversesId  String?       @unique @map("reverses_id") @db.Uuid
+  /// The cash or bank account it went into; empty = by method
+  accountId   String?       @map("account_id") @db.Uuid
   createdBy   String?       @map("created_by") @db.Uuid
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
 
@@ -1546,6 +1548,17 @@ model Expense {
   payee       String?
   notes       String?
   receiptUrl  String?       @map("receipt_url")
+  number      String?
+  /// Paid from this cash or bank account; empty = by method (cash goes to cash, the rest to the default bank)
+  accountId   String?       @map("account_id") @db.Uuid
+  contactId   String?       @map("contact_id") @db.Uuid
+  reference   String?
+  /// GST bill: the supplier's bill number and GSTIN, and the split of the amount
+  billNo      String?       @map("bill_no")
+  vendorGstin String?       @map("vendor_gstin") @db.VarChar(15)
+  taxablePaise BigInt?      @map("taxable_paise")
+  gstRateBp   Int?          @map("gst_rate_bp")
+  gstPaise    BigInt?       @map("gst_paise")
   createdBy   String?       @map("created_by") @db.Uuid
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
@@ -1993,6 +2006,8 @@ model SupplierPayment {
   reference   String?
   paidOn      DateTime @map("paid_on") @db.Date
   reversesId  String?  @unique @map("reverses_id") @db.Uuid
+  /// The cash or bank account it was paid from; empty = by method
+  accountId   String?  @map("account_id") @db.Uuid
   createdBy   String?  @map("created_by") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
 
@@ -2086,4 +2101,172 @@ model CrmProduct {
   @@index([tenantId, contactId])
   @@index([tenantId, dealId])
   @@map("crm_products")
+}
+
+// ── Finance: cash and bank accounts, other income, transfers ──
+
+/// Where money sits: kind = cash | bank | wallet | card
+model FinAccount {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  name         String
+  kind         String    @db.VarChar(10)
+  bankName     String?   @map("bank_name")
+  accountNo    String?   @map("account_no") @db.VarChar(30)
+  ifsc         String?   @db.VarChar(11)
+  upiId        String?   @map("upi_id")
+  openingPaise BigInt    @default(0) @map("opening_paise")
+  openingDate  DateTime? @map("opening_date") @db.Date
+  /// The account non-cash money goes through when none is chosen
+  isDefault    Boolean   @default(false) @map("is_default")
+  isActive     Boolean   @default(true) @map("is_active")
+  notes        String?
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  version      Int       @default(1)
+
+  @@index([tenantId])
+  @@map("fin_accounts")
+}
+
+/// Expense and income heads the business keeps; kind = expense | income
+model FinCategory {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  kind     String @db.VarChar(8)
+  name     String
+  position Int    @default(0)
+  /// Expense heads only: the most to spend in a month
+  budgetPaise BigInt? @map("budget_paise")
+
+  @@unique([tenantId, kind, name])
+  @@map("fin_categories")
+}
+
+/// Money in that is not a customer payment: interest, commission, rent received, scrap sale
+model Income {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  number      String
+  receivedOn  DateTime @map("received_on") @db.Date
+  category    String
+  accountId   String   @map("account_id") @db.Uuid
+  amountPaise BigInt   @map("amount_paise")
+  payer       String?
+  contactId   String?  @map("contact_id") @db.Uuid
+  reference   String?
+  notes       String?
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  version     Int      @default(1)
+
+  @@index([tenantId, receivedOn])
+  @@map("incomes")
+}
+
+/// Money moved between two of the business's own accounts (cash deposited, cash withdrawn)
+model FinTransfer {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  number        String
+  transferOn    DateTime @map("transfer_on") @db.Date
+  fromAccountId String   @map("from_account_id") @db.Uuid
+  toAccountId   String   @map("to_account_id") @db.Uuid
+  amountPaise   BigInt   @map("amount_paise")
+  chargesPaise  BigInt   @default(0) @map("charges_paise")
+  reference     String?
+  notes         String?
+  createdBy     String?  @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, transferOn])
+  @@map("fin_transfers")
+}
+
+/// A ledger the business adds itself: a loan, capital, a fixed asset, a deposit
+model FinLedger {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  /// asset | liability | equity | income | expense
+  group       String   @db.VarChar(10)
+  code        String?  @db.VarChar(10)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  version     Int      @default(1)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, name])
+  @@map("fin_ledgers")
+}
+
+/// A journal entry: debits equal credits, for what no bill or payment records
+model Journal {
+  id         String        @id @default(uuid(7)) @db.Uuid
+  tenantId   String        @map("tenant_id") @db.Uuid
+  number     String
+  journalOn  DateTime      @map("journal_on") @db.Date
+  narration  String
+  reference  String?
+  totalPaise BigInt        @map("total_paise")
+  version    Int           @default(1)
+  createdBy  String?       @map("created_by") @db.Uuid
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  lines      JournalLine[]
+
+  @@index([tenantId, journalOn])
+  @@map("journals")
+}
+
+model JournalLine {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  tenantId    String  @map("tenant_id") @db.Uuid
+  journalId   String  @map("journal_id") @db.Uuid
+  position    Int     @default(0)
+  /// cash:<account id> | input_gst | output_gst | capital | opening | exp:<category> | inc:<category> | led:<ledger id>
+  ledgerKey   String  @map("ledger_key") @db.VarChar(80)
+  debitPaise  BigInt  @default(0) @map("debit_paise")
+  creditPaise BigInt  @default(0) @map("credit_paise")
+  description String?
+  journal     Journal @relation(fields: [journalId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, ledgerKey])
+  @@index([journalId])
+  @@map("journal_lines")
+}
+
+/// An expense that repeats (rent, salary): recorded with one click when due
+model RecurringExpense {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  name          String
+  /// month | quarter | year | week
+  every         String    @db.VarChar(10)
+  nextOn        DateTime  @map("next_on") @db.Date
+  endsOn        DateTime? @map("ends_on") @db.Date
+  /// The expense form without its date
+  template      Json
+  isActive      Boolean   @default(true) @map("is_active")
+  lastExpenseId String?   @map("last_expense_id") @db.Uuid
+  version       Int       @default(1)
+  createdBy     String?   @map("created_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, nextOn])
+  @@map("recurring_expenses")
+}
+
+/// A passbook entry ticked off against the bank statement
+model FinCleared {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  accountId String   @map("account_id") @db.Uuid
+  entryId   String   @map("entry_id") @db.VarChar(80)
+  clearedOn DateTime @map("cleared_on") @db.Date
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, entryId])
+  @@map("fin_cleared")
 }

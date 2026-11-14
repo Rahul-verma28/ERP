@@ -6,6 +6,7 @@ import { dateOnly, todayIST } from '../../kernel/gst';
 import { allocateNumber } from '../../kernel/sequences';
 import { DateStr } from '../../kernel/query';
 import { audit } from '../audit/service';
+import { resolveAccount } from '../finance/service';
 import { checkDate, getPurchase, setBillStatus } from './service';
 
 // Payments made: one payment to a supplier, split over their unpaid invoices. Each bill gets its own
@@ -20,6 +21,8 @@ export const PayInput = z.object({
   method: z.enum(['cash', 'upi', 'card', 'bank', 'cheque', 'other']),
   reference: z.string().trim().max(100).optional().nullable(),
   paidOn: DateStr.optional(),
+  /** The cash or bank account it was paid from; empty = by method */
+  accountId: z.string().uuid().optional().nullable(),
   allocations: z.array(z.object({ documentId: z.string().uuid(), amountPaise: z.number().int().positive() })).min(1, 'Put the payment on at least one invoice').max(200),
 }).superRefine((v, ctx) => {
   if (['cheque', 'bank'].includes(v.method) && !v.reference?.trim()) {
@@ -66,11 +69,12 @@ export async function paySuppliers(ctx: TenantCtx, input: PayInput) {
   }
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
   const { number } = await allocateNumber(ctx.tenantId, 'supplier_payment', tenant.fyStartMonth, paidOn);
+  const accountId = await resolveAccount(ctx, input.accountId, input.method);
   let first = '';
   for (const a of input.allocations) {
     const bill = await getPurchase(ctx, a.documentId, 'purchase_bill');
     const row = await db().supplierPayment.create({
-      data: { tenantId: ctx.tenantId, contactId: input.contactId, documentId: bill.id, number, amountPaise: BigInt(a.amountPaise), method: input.method, reference: input.reference?.trim() || null, paidOn, createdBy: ctx.userId },
+      data: { tenantId: ctx.tenantId, contactId: input.contactId, documentId: bill.id, number, amountPaise: BigInt(a.amountPaise), method: input.method, accountId, reference: input.reference?.trim() || null, paidOn, createdBy: ctx.userId },
     });
     first ||= row.id;
     await setBillStatus(bill, bill.paidPaise + BigInt(a.amountPaise), bill.returnedPaise);
@@ -143,7 +147,7 @@ export async function reverseSupplierPaymentGroup(ctx: TenantCtx, id: string) {
     const p = await db().supplierPayment.findUniqueOrThrow({ where: { id: a.paymentId } });
     const bill = await getPurchase(ctx, p.documentId, 'purchase_bill');
     await db().supplierPayment.create({
-      data: { tenantId: ctx.tenantId, contactId: p.contactId, documentId: p.documentId, number: `${p.number}-R`, amountPaise: -p.amountPaise, method: p.method, reference: p.reference, paidOn: dateOnly(todayIST()), reversesId: p.id, createdBy: ctx.userId },
+      data: { tenantId: ctx.tenantId, contactId: p.contactId, documentId: p.documentId, number: `${p.number}-R`, amountPaise: -p.amountPaise, method: p.method, accountId: p.accountId, reference: p.reference, paidOn: dateOnly(todayIST()), reversesId: p.id, createdBy: ctx.userId },
     });
     await setBillStatus(bill, bill.paidPaise - p.amountPaise, bill.returnedPaise);
   }

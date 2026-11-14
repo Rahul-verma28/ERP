@@ -8,6 +8,7 @@ import { dateOnly, divRound, todayIST } from '../../kernel/gst';
 import { allocateNumber } from '../../kernel/sequences';
 import { DateStr, Paise } from '../../kernel/query';
 import { audit } from '../audit/service';
+import { resolveAccount } from '../finance/service';
 import { publish } from '../events/outbox';
 import { getDocument, PaymentInput, resolveLocation, setCreditUsed, setPaid } from './service';
 
@@ -211,7 +212,7 @@ export async function refundCreditNote(ctx: TenantCtx, id: string, input: z.infe
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
   const { number } = await allocateNumber(ctx.tenantId, 'receipt', tenant.fyStartMonth);
   const payment = await db().payment.create({
-    data: { ...input, paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: -amount, tenantId: ctx.tenantId, documentId: id, contactId: note.contactId, number, createdBy: ctx.userId },
+    data: { ...input, accountId: await resolveAccount(ctx, input.accountId, input.method), paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: -amount, tenantId: ctx.tenantId, documentId: id, contactId: note.contactId, number, createdBy: ctx.userId },
   });
   await setCreditUsed(note, note.paidPaise + amount);
   await audit({ action: 'billing.refund.create', entity: 'payment', entityId: payment.id, after: { creditNote: note.number, amountPaise: input.amountPaise, method: input.method } });
