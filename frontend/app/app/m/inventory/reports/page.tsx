@@ -54,7 +54,7 @@ function FindSerial() {
         <Input value={serial} onChange={(e) => setSerial(e.target.value)} placeholder="Serial or IMEI number" aria-label="Serial number" />
         <Button type="submit"><Search /> Find</Button>
       </form>
-      {asked && found.data && (found.data.data.length ? found.data.data.map((r) => <Link key={r.itemId} href={`/app/m/inventory/items/${r.itemId}`} className="text-sm hover:underline"><strong>{r.item}</strong>: {SERIAL_STATUS[r.status] ?? r.status}</Link>) : <p className="text-sm text-muted-foreground">Not found.</p>)}
+      {asked && found.data && (found.data.data.length ? found.data.data.map((r) => <Link key={r.itemId} href={`/app/m/catalog/${r.itemId}?tab=stock`} className="text-sm hover:underline"><strong>{r.item}</strong>: {SERIAL_STATUS[r.status] ?? r.status}</Link>) : <p className="text-sm text-muted-foreground">Not found.</p>)}
     </section>
   )
 }

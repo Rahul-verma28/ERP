@@ -7,6 +7,7 @@ import { ledgerBalance, ledgerDocument, type Ledger } from "@/components/custome
 import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
+import { PageError } from "@/components/page-states"
 
 // Customer statement for printing or saving as PDF.
 export default function StatementPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ from?: string; to?: string }> }) {
@@ -23,7 +24,7 @@ export default function StatementPage({ params, searchParams }: { params: Promis
   }, [status, id, from, to])
 
   if (status === "anonymous") return <p className="p-8 text-sm">Please sign in to print this statement.</p>
-  if (error) return <p className="p-8 text-sm">{error}</p>
+  if (error) return <PageError error={new Error(error)} />
   if (!data) return <p className="p-8 text-sm text-neutral-500">Preparing statement…</p>
 
   const debit = data.rows.reduce((s, r) => s + r.debitPaise, 0)

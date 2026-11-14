@@ -51,7 +51,7 @@ function useStartWarehouse() {
   return list?.find((w) => w.isDefault && w.isActive)?.id ?? ""
 }
 
-export function StockDialog({ kind, item: given, onClose, onDone }: { kind: Kind; item: StockTarget | null; onClose: () => void; onDone: () => void }) {
+export function StockDialog({ kind, item: given, onClose, onDone, locationId: fixed }: { kind: Kind; item: StockTarget | null; onClose: () => void; onDone: () => void; /** Start in this warehouse */ locationId?: string }) {
   const { me } = useAuth()
   const showCost = !!me?.fieldAccess?.["item.cost_price"] && me.fieldAccess["item.cost_price"] !== "hidden"
   const start = useStartWarehouse()
@@ -72,7 +72,7 @@ export function StockDialog({ kind, item: given, onClose, onDone }: { kind: Kind
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
 
-  const from = picked || start
+  const from = picked || fixed || start
   const tracking = item?.tracking ?? "none"
   const incoming = kind === "add" || (kind === "adjust" && mode === "in")
   const counting = kind === "adjust" && mode === "count"

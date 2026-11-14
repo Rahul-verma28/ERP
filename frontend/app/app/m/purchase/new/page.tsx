@@ -9,7 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { PageHeader } from "@/components/app-shell"
-import { MoneyInput, Spinner } from "@/components/common"
+import { MoneyInput } from "@/components/common"
 import { WarehouseSelect } from "@/components/creatable-select"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { ItemPicker, SupplierPicker, type ContactOption, type ItemOption } from "@/components/pickers"
@@ -23,6 +23,7 @@ import { qty, type StockLocation, type Tracking } from "@/lib/inventory"
 import { KIND_LABEL, KIND_PATH, type PurchaseDoc, type PurchaseKind } from "@/lib/purchase"
 import { useApi } from "@/lib/use-api"
 import { todayInIndia } from "@contracts/validation"
+import { PageLoading } from "@/components/page-states"
 
 // One screen for a purchase invoice, order or goods receipt: details and items on the left, the
 // money on the right. A receipt or invoice can start from an order, an invoice from a receipt; the
@@ -130,7 +131,7 @@ function PurchaseForm({ kind, editId, fromId, supplierId }: { kind: FormKind; ed
   }, [source.data, editId, kind])
 
   if (!can(editId && kind === "purchase_order" ? "inventory.purchase_order.edit" : PERM[kind])) return <PageHeader title={KIND_LABEL[kind]} description="You don't have access to this. Ask your admin." />
-  if (!locations.data || ((fromId || editId) && !source.data)) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (!locations.data || ((fromId || editId) && !source.data)) return <PageLoading />
 
   const fromDoc = fromId ? source.data : null
   const invoice = kind === "purchase_bill"

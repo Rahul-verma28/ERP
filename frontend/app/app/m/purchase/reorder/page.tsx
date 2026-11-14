@@ -8,13 +8,13 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
-import { Spinner } from "@/components/common"
 import { SupplierPicker, type ContactOption } from "@/components/pickers"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
+import { PageLoading } from "@/components/page-states"
 
 // Items at or under their low-stock level, less what is already on order. Pick quantities and a
 // supplier; one purchase order is made per supplier at the last purchase price.
@@ -31,7 +31,7 @@ export default function ReorderPage() {
   const suggested = (r: Row): Pick => ({ on: r.suggest > 0 && !!r.supplierId, quantity: String(r.suggest || ""), supplier: r.supplierId ? { id: r.supplierId, name: r.supplier ?? "" } : null })
   const pickOf = (r: Row) => picks[r.itemId] ?? suggested(r)
   if (!can("inventory.purchase_order.view")) return <PageHeader title="Low stock" description="You don't have access to this. Ask your admin." />
-  if (!list.data) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (!list.data) return <PageLoading />
   const rows = list.data.data
   const set = (id: string, patch: Partial<Pick>) => setPicks((p) => ({ ...p, [id]: { ...(p[id] ?? suggested(rows.find((r) => r.itemId === id)!)), ...patch } }))
   const chosen = rows.filter((r) => pickOf(r).on && Number(pickOf(r).quantity) > 0 && pickOf(r).supplier)
@@ -65,7 +65,7 @@ export default function ReorderPage() {
                     return (
                       <tr key={r.itemId} className="border-t align-middle">
                         <td className="py-2 pr-3"><input type="checkbox" checked={p.on} onChange={(e) => set(r.itemId, { on: e.target.checked })} aria-label={`Order ${r.name}`} /></td>
-                        <td className="py-2 pr-3 font-medium"><Link href={`/app/m/inventory/items/${r.itemId}`} className="hover:underline">{r.name}</Link></td>
+                        <td className="py-2 pr-3 font-medium"><Link href={`/app/m/catalog/${r.itemId}?tab=stock`} className="hover:underline">{r.name}</Link></td>
                         <td className="py-2 pr-3 text-right tabular-nums text-amber-700 dark:text-amber-300">{qty(r.available)} {r.unit}</td>
                         <td className="py-2 pr-3 text-right tabular-nums">{qty(r.reorderLevel)}</td>
                         <td className="py-2 pr-3 text-right tabular-nums">{r.onOrder ? qty(r.onOrder) : "—"}</td>

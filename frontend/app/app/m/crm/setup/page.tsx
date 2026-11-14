@@ -7,13 +7,14 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { PageHeader } from "@/components/app-shell"
-import { ConfirmDialog, Spinner } from "@/components/common"
+import { ConfirmDialog } from "@/components/common"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { NumberStepper } from "@/components/number-stepper"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { STAGE_COLORS, tone, useCrmSetup, type CrmOption, type Pipeline, type Stage } from "@/lib/crm"
 import { cn } from "@/lib/utils"
+import { PageError, PageLoading } from "@/components/page-states"
 
 // CRM setup on one page: pipelines and their lead and deal stages, sources, labels, lost reasons.
 
@@ -208,7 +209,8 @@ export default function CrmSetupPage() {
   const [removing, setRemoving] = React.useState<Pipeline | null>(null)
   if (!can("crm.pipeline.edit")) return <PageHeader title="CRM setup" description="You don't have access to this. Ask your admin." />
   const data = setup.data
-  if (!data) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (setup.error) return <PageError error={setup.error} onRetry={() => void setup.reload()} />
+  if (!data) return <PageLoading />
   const pipeline = data.pipelines.find((p) => p.id === pipelineId) ?? data.pipelines.find((p) => p.isDefault) ?? data.pipelines[0]
 
   return (

@@ -8,7 +8,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { ConfirmDialog, MoneyInput, Spinner } from "@/components/common"
+import { ConfirmDialog, MoneyInput } from "@/components/common"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { todayInIndia } from "@contracts/validation"
 import { api, ApiError, errorMessage } from "@/lib/api"
@@ -17,6 +17,7 @@ import { downloadCsv } from "@/lib/csv"
 import { formatDate, formatPaise } from "@/lib/format"
 import { PAYMENT_METHODS } from "@/lib/money"
 import { useApi } from "@/lib/use-api"
+import { PageError, PageLoading } from "@/components/page-states"
 
 // The customer's khata: everything billed and received, with a running balance.
 // Above zero the customer owes; below zero the business holds the customer's money.
@@ -181,8 +182,8 @@ export function CustomerLedger({ contactId }: { contactId: string }) {
   const [paying, setPaying] = React.useState(false)
   const [removing, setRemoving] = React.useState(false)
 
-  if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
-  if (!data) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (error) return <PageError error={error} />
+  if (!data) return <PageLoading />
 
   const opening = data.openingBalance
   const openingLocked = !!opening && opening.paidPaise > 0

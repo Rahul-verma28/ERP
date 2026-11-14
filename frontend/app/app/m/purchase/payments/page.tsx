@@ -7,7 +7,7 @@ import { Eye, Plus, Undo2, Wallet } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
-import { ConfirmDialog, EmptyState, Spinner } from "@/components/common"
+import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, periodFilter, type Column } from "@/components/data-list"
 import type { ContactOption } from "@/components/pickers"
 import { methodLabel, PaySupplierDialog, SupplierPaymentDialog, type SupplierPayment } from "@/components/pay-supplier"
@@ -17,6 +17,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { PAYMENT_METHODS } from "@/lib/money"
 import { cn } from "@/lib/utils"
+import { PageLoading } from "@/components/page-states"
 
 // Payments made: money paid to suppliers. One payment can clear several of a supplier's invoices.
 
@@ -32,7 +33,7 @@ export default function PaymentsMadePage() {
   const [version, setVersion] = React.useState(0)
   const icon = buttonVariants({ variant: "ghost", size: "icon-sm" })
   if (!can("inventory.supplier_bill.view")) return <PageHeader title="Payments Made" description="You don't have access to this. Ask your admin." />
-  if (params.get("supplier") && preset.loading) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (params.get("supplier") && preset.loading) return <PageLoading />
 
   const columns: Column<SupplierPayment>[] = [
     { key: "number", header: "Payment no.", hideable: false, sort: (r) => r.number, csv: (r) => r.number, cell: (r) => <span className="inline-flex w-fit rounded-lg border px-2 py-0.5 font-mono text-xs font-medium text-primary">{r.number}</span> },

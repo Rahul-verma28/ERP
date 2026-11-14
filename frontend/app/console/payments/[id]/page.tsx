@@ -20,6 +20,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatDateTime, formatPaise } from "@/lib/format"
 import { paiseToRupees, rupeesToPaise } from "@/lib/money"
 import type { OrderDetail } from "@/lib/console"
+import { PageError } from "@/components/page-states"
 
 const METHODS = [
   { value: "bank_transfer", label: "Bank transfer (NEFT/RTGS/IMPS)" },
@@ -136,7 +137,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   const [approving, setApproving] = React.useState(false)
   const [sendingLink, setSendingLink] = React.useState(false)
 
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>
+  if (error) return <PageError error={error} />
   if (!o) return <Skeleton className="h-96 rounded-4xl" />
   const open = o.status === "pending_approval" || o.status === "awaiting_payment"
   const canApprove = o.status === "pending_approval" && canConsole("platform.discount.approve") && o.createdBy !== me?.user.id

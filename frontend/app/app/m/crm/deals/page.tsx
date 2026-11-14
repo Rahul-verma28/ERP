@@ -2,23 +2,23 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { toast } from "sonner"
 import { Handshake, KanbanSquare, List, Pencil, Plus, Trophy } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
-import { EmptyState, SearchInput, Spinner } from "@/components/common"
+import { EmptyState, SearchInput } from "@/components/common"
 import { DataList, type Column, type ViewPreset } from "@/components/data-list"
 import { NativeSelect } from "@/components/form"
 import { Board } from "@/components/crm/board"
 import { Avatar, DealDialog, LabelChips, StagePill, TaskBar } from "@/components/crm/dialogs"
 import { DealMenu, DealStatus, useDealActions } from "@/components/crm/deal-actions"
 import { todayInIndia } from "@contracts/validation"
-import { api, errorMessage } from "@/lib/api"
+import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { dueLabel, useCrmSetup, type Deal } from "@/lib/crm"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useDebounced } from "@/lib/use-list"
 import { cn } from "@/lib/utils"
+import { PageError, PageLoading } from "@/components/page-states"
 
 // Deals: sales being worked on, stage by stage, until won or lost. A list or a board per pipeline.
 
@@ -54,11 +54,13 @@ function DealBoard({ pipelineId, version, actions, onAdd, today }: { pipelineId:
   const [q, setQ] = React.useState("")
   const query = useDebounced(q.trim())
   const [data, setData] = React.useState<Deal[] | null>(null)
+  const [failed, setFailed] = React.useState<unknown>(null)
+  const [retry, setRetry] = React.useState(0)
   React.useEffect(() => {
     let off = false
-    api.get<{ data: Deal[] }>(`/deals?limit=500&status=open&pipelineId=${pipelineId}${query ? `&q=${encodeURIComponent(query)}` : ""}`).then((r) => !off && setData(r.data)).catch((e) => toast.error(errorMessage(e)))
+    api.get<{ data: Deal[] }>(`/deals?limit=500&status=open&pipelineId=${pipelineId}${query ? `&q=${encodeURIComponent(query)}` : ""}`).then((r) => { if (!off) { setData(r.data); setFailed(null) } }).catch((e) => !off && setFailed(e))
     return () => { off = true }
-  }, [pipelineId, version, query])
+  }, [pipelineId, version, query, retry])
   const stages = setup?.pipelines.find((p) => p.id === pipelineId)?.dealStages ?? []
   const prob = new Map(stages.map((s) => [s.id, s.probability ?? 0]))
   const total = (data ?? []).reduce((s, d) => s + d.valuePaise, 0)
@@ -69,7 +71,7 @@ function DealBoard({ pipelineId, version, actions, onAdd, today }: { pipelineId:
         <div className="w-full max-w-xs"><SearchInput value={q} onChange={setQ} placeholder="Search deal or customer" /></div>
         <p className="text-sm text-muted-foreground">{data?.length ?? 0} open · <strong className="text-foreground tabular-nums">{formatPaise(total)}</strong> · likely <strong className="text-foreground tabular-nums">{formatPaise(weighted)}</strong></p>
       </div>
-      {!data ? <div className="grid place-items-center py-24"><Spinner /></div> : (
+      {failed && !data ? <PageError error={failed} onRetry={() => setRetry((n) => n + 1)} /> : !data ? <PageLoading /> : (
         <Board<Deal>
           stages={stages}
           items={data}
@@ -88,7 +90,8 @@ function DealBoard({ pipelineId, version, actions, onAdd, today }: { pipelineId:
 export default function DealsPage() {
   const router = useRouter()
   const { can, me } = useAuth()
-  const setup = useCrmSetup().data
+  const setupApi = useCrmSetup()
+  const setup = setupApi.data
   const today = todayInIndia()
   const [version, setVersion] = React.useState(0)
   const reload = () => setVersion((v) => v + 1)
@@ -100,7 +103,8 @@ export default function DealsPage() {
   const switchView = (v: "list" | "board") => { setView(v); try { localStorage.setItem(VIEW_KEY, v) } catch { /* private window */ } }
 
   if (!can("crm.deal.view")) return <PageHeader title="Deals" description="You don't have access to deals. Ask your admin." />
-  if (!setup || !pipeline) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (setupApi.error) return <PageError error={setupApi.error} onRetry={() => void setupApi.reload()} />
+  if (!setup || !pipeline) return <PageLoading />
 
   const icon = buttonVariants({ variant: "ghost", size: "icon-sm" })
   const columns: Column<Deal>[] = [

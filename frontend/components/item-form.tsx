@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { PageHeader } from "@/components/app-shell"
-import { MoneyInput, Spinner } from "@/components/common"
+import { MoneyInput } from "@/components/common"
 import { CategorySelect, WarehouseSelect, UnitSelect } from "@/components/creatable-select"
 import { CustomFieldsForm, useCustomFields } from "@/components/custom-fields"
 import { Field, FormError, NativeSelect } from "@/components/form"
@@ -25,6 +25,7 @@ import { formatPaise } from "@/lib/format"
 import { GST_RATES } from "@/lib/money"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
+import { PageLoading } from "@/components/page-states"
 
 const BLANK = { type: "product" as Item["type"], name: "", sku: "", categoryId: "", unit: "pcs", pricePaise: null as number | null, costPricePaise: null as number | null, gstRateBp: 1800, hsnSac: "", durationMin: "", description: "", imageUrl: null as string | null, trackStock: true, reorderLevel: "", tracking: "none" as NonNullable<Item["tracking"]>, altUnit: "", altFactor: "", barcode: "", openingQty: "", locationId: "", custom: {} as Record<string, unknown> }
 type Form = typeof BLANK
@@ -115,10 +116,10 @@ function Preview({ form, category }: { form: Form; category?: string }) {
   )
 }
 
-export function ItemForm({ editId }: { editId?: string | null }) {
+export function ItemForm({ editId, copyId }: { editId?: string | null; copyId?: string | null }) {
   const router = useRouter()
   const { can, me } = useAuth()
-  const source = useApi<Item>(editId ? `/items/${editId}` : null)
+  const source = useApi<Item>(editId ? `/items/${editId}` : copyId ? `/items/${copyId}` : null)
   const categories = useApi<{ data: Category[] }>("/item-categories")
   const customFields = useCustomFields("item")
   const places = useApi<{ data: { id: string; isDefault: boolean; isActive: boolean }[] }>(can("inventory.stock.view") ? "/stock-locations" : null).data?.data
@@ -130,12 +131,14 @@ export function ItemForm({ editId }: { editId?: string | null }) {
   const [variants, setVariants] = React.useState(false)
 
   const item = editId ? source.data : null
-  if (editId && source.error) return <PageHeader title="Not found" description={errorMessage(source.error)} />
-  if (editId && !item) return <div className="grid place-items-center py-24"><Spinner /></div>
+  // A copy starts from another item: same prices and settings, a new name, no SKU or barcode
+  const copy = copyId && source.data ? { ...fromItem(source.data), name: `${source.data.name} (copy)`, sku: "", barcode: "", openingQty: "" } : null
+  if ((editId || copyId) && source.error) return <PageHeader title="Not found" description={errorMessage(source.error)} />
+  if ((editId || copyId) && !source.data) return <PageLoading />
 
   const canStock = can("inventory.stock.view")
   const startAt = places?.find((w) => w.isDefault && w.isActive)?.id ?? ""
-  const form: Form = { ...(item ? fromItem(item) : { ...BLANK, trackStock: canStock, locationId: startAt }), ...edits }
+  const form: Form = { ...(item ? fromItem(item) : copy ? { ...copy, locationId: startAt } : { ...BLANK, trackStock: canStock, locationId: startAt }), ...edits }
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setEdits((e) => ({ ...e, [k]: v }))
   const editable = item ? can("catalog.item.edit") : can("catalog.item.create")
   const canCost = me?.fieldAccess?.["item.cost_price"] === "write"
@@ -155,8 +158,11 @@ export function ItemForm({ editId }: { editId?: string | null }) {
   /** What is wrong on one step; empty means it can be left */
   const problems = (key: string) => {
     const p: Record<string, string> = {}
-    if (key === "basic" && !form.name.trim()) p.name = "Enter a name"
+    if (key === "basic" && form.name.trim().length < 2) p.name = "Enter the item name"
+    if (key === "basic" && form.hsnSac && (isProduct ? !/^(\d{4}|\d{6}|\d{8})$/.test(form.hsnSac) : !/^99\d{4}$/.test(form.hsnSac))) p.hsnSac = isProduct ? "HSN has 4, 6 or 8 digits" : "SAC has 6 digits and starts with 99"
     if (key === "pricing" && form.pricePaise === null) p.pricePaise = "Enter the sale price"
+    if (key === "pricing" && !form.unit) p.unit = "Choose the unit"
+    if (key === "stock" && form.barcode && !/^[\x20-\x7E]+$/.test(form.barcode)) p.barcode = "Letters, digits and symbols only"
     if (key === "stock" && form.altUnit.trim() && !(Number(form.altFactor) > 1)) p.altFactor = "More than 1"
     if (key === "stock" && canOpen && Number(form.openingQty) > 0 && !form.locationId) p.locationId = "Choose a warehouse"
     return p
@@ -199,10 +205,9 @@ export function ItemForm({ editId }: { editId?: string | null }) {
       custom: form.custom,
     }
     try {
-      if (item) await api.patch(`/items/${item.id}`, { ...body, version: item.version })
-      else await api.post("/items", { ...body, ...(opening ? { opening } : {}) })
+      const saved = item ? await api.patch<Item>(`/items/${item.id}`, { ...body, version: item.version }) : await api.post<Item>("/items", { ...body, ...(opening ? { opening } : {}) })
       toast.success(item ? "Item saved" : `${form.name} created`)
-      router.push("/app/m/catalog")
+      router.push(`/app/m/catalog/${saved.id}`)
     } catch (e) {
       if (e instanceof ApiError) {
         setErrors(e.fields)
@@ -219,13 +224,13 @@ export function ItemForm({ editId }: { editId?: string | null }) {
   return (
     <>
       <PageHeader
-        title={item ? `Edit ${item.name}` : "Create Item"}
+        title={item ? `Edit ${item.name}` : copy ? "Copy item" : "Create Item"}
         description="A product or service you buy, sell or keep in stock. Prices exclude GST."
         actions={
           <>
             {item?.type === "product" && <a href={`/print/labels?ids=${item.id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}>Print labels</a>}
             {item?.type === "product" && can("catalog.item.create") && <Button variant="outline" onClick={() => setVariants(true)}>Make variants</Button>}
-            <Link href="/app/m/catalog" className={buttonVariants({ variant: "outline" })}><ArrowLeft /> Back</Link>
+            <Link href={item ? `/app/m/catalog/${item.id}` : "/app/m/catalog"} className={buttonVariants({ variant: "outline" })}><ArrowLeft /> Back</Link>
           </>
         }
       />
@@ -241,29 +246,29 @@ export function ItemForm({ editId }: { editId?: string | null }) {
                   <option value="service">Service</option>
                 </NativeSelect>
               </Field>
-              <Field label="Name" required error={errors.name}><Input value={form.name} onChange={(e) => set("name", e.target.value)} disabled={!editable} maxLength={160} placeholder="Enter name" /></Field>
+              <Field label="Name" required error={errors.name}><Input value={form.name} onChange={(e) => set("name", e.target.value)} disabled={!editable} maxLength={160} placeholder={isProduct ? "e.g. Ceiling fan 48 inch, white" : "e.g. Fan installation"} autoFocus={!item} /></Field>
               <Field label="SKU" error={errors.sku}>
                 <div className="flex gap-2">
-                  <Input value={form.sku} onChange={(e) => set("sku", e.target.value)} disabled={!editable} maxLength={40} placeholder="Enter SKU" />
+                  <Input value={form.sku} onChange={(e) => set("sku", e.target.value)} disabled={!editable} maxLength={40} placeholder="e.g. FAN-48-WHT" />
                   <Button type="button" variant="outline" disabled={!editable} onClick={skuFromName}>Generate</Button>
                 </div>
               </Field>
               <Field label="Category" error={errors.categoryId}><CategorySelect value={form.categoryId} onChange={(v) => set("categoryId", v)} disabled={!editable} aria-label="Category" /></Field>
-              <Field label="GST rate" error={errors.gstRateBp}>
+              <Field label="GST rate" error={errors.gstRateBp} hint="Prices are entered before GST">
                 <NativeSelect value={form.gstRateBp} onChange={(e) => set("gstRateBp", Number(e.target.value))} disabled={!editable} aria-label="GST rate">
                   {GST_RATES.map((r) => <option key={r.bp} value={r.bp}>{r.label}</option>)}
                 </NativeSelect>
               </Field>
-              <Field label={isProduct ? "HSN code" : "SAC code"} error={errors.hsnSac} hint="4 to 8 digits"><Input inputMode="numeric" value={form.hsnSac} onChange={(e) => set("hsnSac", e.target.value.replace(/\D/g, ""))} maxLength={8} disabled={!editable} /></Field>
-              <Field label="Description" className="md:col-span-2"><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={3} disabled={!editable} maxLength={2000} /></Field>
+              <Field label={isProduct ? "HSN code" : "SAC code"} error={errors.hsnSac} hint={isProduct ? "4, 6 or 8 digits; on every GST invoice" : "6 digits starting with 99"}><Input inputMode="numeric" value={form.hsnSac} onChange={(e) => set("hsnSac", e.target.value.replace(/\D/g, ""))} maxLength={8} disabled={!editable} placeholder={isProduct ? "e.g. 8414" : "e.g. 998719"} /></Field>
+              <Field label="Description" className="md:col-span-2"><Textarea value={form.description} onChange={(e) => set("description", e.target.value)} rows={3} disabled={!editable} maxLength={2000} placeholder="Size, colour, brand, warranty — printed under the name on bills" /></Field>
               <div className="md:col-span-2"><CustomFieldsForm fields={customFields} value={form.custom} onChange={(v) => set("custom", v)} errors={errors} disabled={!editable} /></div>
             </div>
           )}
 
           {current === "pricing" && (
             <div className="grid gap-4 md:grid-cols-2">
-              <Field label="Sale price" required error={errors.pricePaise}><MoneyInput value={form.pricePaise} onChange={(v) => set("pricePaise", v)} disabled={!editable} aria-label="Sale price" /></Field>
-              {canCost && <Field label="Purchase price" error={errors.costPricePaise}><MoneyInput value={form.costPricePaise} onChange={(v) => set("costPricePaise", v)} disabled={!editable} aria-label="Purchase price" /></Field>}
+              <Field label="Sale price" required error={errors.pricePaise} hint="Per unit, before GST"><MoneyInput value={form.pricePaise} onChange={(v) => set("pricePaise", v)} disabled={!editable} aria-label="Sale price" /></Field>
+              {canCost && <Field label="Purchase price" error={errors.costPricePaise} hint={form.costPricePaise && form.pricePaise ? (form.costPricePaise > form.pricePaise ? "Higher than the sale price: you lose on each sale" : `${Math.round(((form.pricePaise - form.costPricePaise) / form.pricePaise) * 100)}% margin`) : "What you pay the supplier, before GST"}><MoneyInput value={form.costPricePaise} onChange={(v) => set("costPricePaise", v)} disabled={!editable} aria-label="Purchase price" /></Field>}
               <Field label="Unit" required error={errors.unit}><UnitSelect value={form.unit} onChange={(v) => set("unit", v)} disabled={!editable} aria-label="Unit" /></Field>
               {!isProduct && <Field label="Duration (minutes)" hint="Used for bookings" error={errors.durationMin}><NumberStepper step={15} max={1440} suffix="min" value={form.durationMin} onChange={(v) => set("durationMin", v)} placeholder="e.g. 30" disabled={!editable} /></Field>}
             </div>
@@ -304,9 +309,9 @@ export function ItemForm({ editId }: { editId?: string | null }) {
                 </div>
               )}
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="Barcode" hint="Scan into bills; printed on labels" error={errors.barcode}><Input value={form.barcode} onChange={(e) => set("barcode", e.target.value)} maxLength={48} disabled={!editable} /></Field>
+                <Field label="Barcode" hint="Scan into bills; printed on labels" error={errors.barcode}><Input value={form.barcode} onChange={(e) => set("barcode", e.target.value)} maxLength={48} disabled={!editable} placeholder="Scan it or type the number" /></Field>
                 <div className="grid grid-cols-[1fr_8rem] gap-2">
-                  <Field label="Second unit" hint="e.g. box, carton" error={errors.altUnit}><Input value={form.altUnit} onChange={(e) => set("altUnit", e.target.value)} maxLength={20} disabled={!editable} /></Field>
+                  <Field label="Second unit" hint="e.g. box, carton" error={errors.altUnit}><Input value={form.altUnit} onChange={(e) => set("altUnit", e.target.value)} maxLength={20} disabled={!editable} placeholder="e.g. box" /></Field>
                   <Field label={`${form.unit} in one`} error={errors.altFactor}><NumberStepper decimals min={0} value={form.altFactor} onChange={(v) => set("altFactor", v)} suffix={form.unit} placeholder="e.g. 12" disabled={!editable || !form.altUnit.trim()} /></Field>
                 </div>
               </div>

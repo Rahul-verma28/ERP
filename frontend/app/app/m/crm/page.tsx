@@ -8,7 +8,7 @@ import { KanbanSquare, List, Pencil, Plus, Settings2, Upload, Users } from "luci
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { PageHeader } from "@/components/app-shell"
-import { EmptyState, Spinner } from "@/components/common"
+import { EmptyState } from "@/components/common"
 import { DataList, type Column, type ViewPreset } from "@/components/data-list"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { SearchInput } from "@/components/common"
@@ -23,6 +23,7 @@ import { dueLabel, LEAD_STATUS, tone, useCrmSetup, type Lead } from "@/lib/crm"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useDebounced } from "@/lib/use-list"
 import { cn } from "@/lib/utils"
+import { PageError, PageLoading } from "@/components/page-states"
 
 // Leads: people who may buy, moving through the stages of a pipeline. A list with every action on
 // each row, or a board to drag them across stages. Won leads become deals or customers.
@@ -104,11 +105,13 @@ function LeadBoard({ pipelineId, version, actions, onAdd, today }: { pipelineId:
   const [q, setQ] = React.useState("")
   const query = useDebounced(q.trim())
   const [data, setData] = React.useState<Lead[] | null>(null)
+  const [failed, setFailed] = React.useState<unknown>(null)
+  const [retry, setRetry] = React.useState(0)
   React.useEffect(() => {
     let off = false
-    api.get<{ data: Lead[] }>(`/leads/board?pipelineId=${pipelineId}${query ? `&q=${encodeURIComponent(query)}` : ""}`).then((r) => !off && setData(r.data)).catch((e) => toast.error(errorMessage(e)))
+    api.get<{ data: Lead[] }>(`/leads/board?pipelineId=${pipelineId}${query ? `&q=${encodeURIComponent(query)}` : ""}`).then((r) => { if (!off) { setData(r.data); setFailed(null) } }).catch((e) => !off && setFailed(e))
     return () => { off = true }
-  }, [pipelineId, version, query])
+  }, [pipelineId, version, query, retry])
   const stages = setup?.pipelines.find((p) => p.id === pipelineId)?.leadStages ?? []
   const total = (data ?? []).reduce((s, l) => s + (l.valuePaise ?? 0), 0)
   return (
@@ -117,7 +120,7 @@ function LeadBoard({ pipelineId, version, actions, onAdd, today }: { pipelineId:
         <div className="w-full max-w-xs"><SearchInput value={q} onChange={setQ} placeholder="Search name, company, need" /></div>
         <p className="text-sm text-muted-foreground">{data?.length ?? 0} open leads · <strong className="text-foreground tabular-nums">{formatPaise(total)}</strong> expected</p>
       </div>
-      {!data ? <div className="grid place-items-center py-24"><Spinner /></div> : (
+      {failed && !data ? <PageError error={failed} onRetry={() => setRetry((n) => n + 1)} /> : !data ? <PageLoading /> : (
         <Board<Lead>
           stages={stages}
           items={data}
@@ -136,7 +139,8 @@ function LeadBoard({ pipelineId, version, actions, onAdd, today }: { pipelineId:
 export default function LeadsPage() {
   const router = useRouter()
   const { can, me, term } = useAuth()
-  const setup = useCrmSetup().data
+  const setupApi = useCrmSetup()
+  const setup = setupApi.data
   const today = todayInIndia()
   const [version, setVersion] = React.useState(0)
   const reload = () => setVersion((v) => v + 1)
@@ -152,7 +156,8 @@ export default function LeadsPage() {
   const switchView = (v: "list" | "board") => { setView(v); try { localStorage.setItem(VIEW_KEY, v) } catch { /* private window */ } }
 
   if (!can("crm.lead.view")) return <PageHeader title={leads} description="You don't have access to leads. Ask your admin." />
-  if (!setup || !pipeline) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (setupApi.error) return <PageError error={setupApi.error} onRetry={() => void setupApi.reload()} />
+  if (!setup || !pipeline) return <PageLoading />
 
   async function runBulk(body: Record<string, unknown>, done: string) {
     const r = await api.post<{ done: number; skipped: number }>("/leads/bulk", { ids: bulk!.rows.map((x) => x.id), action: bulk!.kind, ...body })

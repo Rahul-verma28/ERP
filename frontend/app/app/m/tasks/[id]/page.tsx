@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { ConfirmDialog, Spinner } from "@/components/common"
+import { ConfirmDialog } from "@/components/common"
 import { Field, NativeSelect } from "@/components/form"
 import { UserSelect } from "@/components/pickers"
 import { api, errorMessage } from "@/lib/api"
@@ -18,6 +18,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { TaskDialog, type Task } from "../task-dialog"
+import { PageError, PageLoading } from "@/components/page-states"
 
 interface Detail extends Task {
   contact: { id: string; name: string } | null
@@ -46,8 +47,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [addingSub, setAddingSub] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
 
-  if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
-  if (!t) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (error) return <PageError error={error} />
+  if (!t) return <PageLoading />
   const editable = can("tasks.task.edit")
 
   const patch = async (body: Record<string, unknown>) => {

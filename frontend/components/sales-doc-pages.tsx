@@ -4,7 +4,8 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeft, Ban, CalendarDays, Copy, Eye, FileMinus, FileOutput, FileText, IndianRupee, Pencil, Plus, Printer, Send, Trash2, Truck, Undo2 } from "lucide-react"
+import { ArrowLeft, Ban, CalendarDays, Check, Copy, Eye, FileMinus, FileOutput, FileText, IndianRupee, Mail, MessageCircle, Pencil, Plus, Printer, Send, Trash2, Truck, Undo2, X } from "lucide-react"
+import { ActionMenu, BackLink, DetailHeader, Pill, StatGrid, Steps, type Step } from "@/components/page-parts"
 import { UseAdvanceDialog, type AdvanceList } from "@/components/advances"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -28,6 +29,7 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { PAYMENT_METHODS } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import { docApi, docLabel, docPath, type DocKind, type SalesDoc } from "@/lib/sales"
+import { PageError, PageLoading } from "@/components/page-states"
 
 type Kind = DocKind
 const perm = (kind: Kind) => ({ invoice: "billing.invoice", quotation: "sales.quotation", sales_order: "sales.order", delivery_challan: "sales.delivery" })[kind]
@@ -36,6 +38,7 @@ const LIST_NAME = { invoice: "Sales Invoices", quotation: "Quotations", sales_or
 interface Row {
   id: string
   status: string
+  contactId?: string | null
   number: string | null
   buyer: { name: string; phone?: string | null; gstin?: string | null }
   issueDate: string
@@ -93,6 +96,9 @@ const STATUS_FILTERS: Record<Kind, { value: string; label: string }[]> = {
     { value: "cancelled", label: "Cancelled" },
   ],
 }
+
+/** List tones to the shared colour names */
+const PILL_TONE: Record<string, string> = { red: "rose", amber: "amber", gray: "slate", green: "emerald", blue: "blue" }
 
 const PILL: Record<string, string> = {
   red: "bg-[#FDECEA] text-[#B42318] dark:bg-red-950 dark:text-red-200",
@@ -226,20 +232,32 @@ export function SalesDocList({ kind }: { kind: Kind }) {
     },
     {
       key: "actions", header: "Actions", hideable: false,
-      cell: (r) => (
-        <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-          <Link href={`/app/m/${docPath(kind)}/${r.id}`} className={icon} title="View" aria-label={`View ${r.number ?? "draft"}`}><Eye /></Link>
-          {r.status !== "draft" && <a href={`/print/${kind}/${r.id}`} target="_blank" rel="noreferrer" className={icon} title="Print or PDF" aria-label={`Print ${r.number}`}><Printer /></a>}
-          {kind === "invoice" && r.status === "draft" && canCreate && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Post" aria-label={`Post draft for ${r.buyer?.name}`} onClick={() => act(r, `/invoices/${r.id}/issue`, "Invoice posted")}><Send /></Button>}
-          {open(r) && can("billing.payment.create") && <Link href={`/app/m/billing/${r.id}?pay=1`} className={icon} title="Receive payment" aria-label={`Receive payment on ${r.number}`}><IndianRupee /></Link>}
-          {kind === "invoice" && ["issued", "partially_paid", "paid"].includes(r.status) && can("billing.credit_note.create") && <Link href={`/app/m/billing/${r.id}/credit-note`} className={icon} title="Sales return or credit note" aria-label={`Sales return on ${r.number}`}><Undo2 /></Link>}
-          {kind === "quotation" && ["draft", "sent", "accepted"].includes(r.status) && can("billing.invoice.create") && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Convert to invoice" aria-label={`Convert ${r.number} to invoice`} onClick={() => act(r, `/quotations/${r.id}/convert`, "Draft invoice made from the quotation", (d) => router.push(`/app/m/billing/${d.id}`))}><FileOutput /></Button>}
-          {kind === "delivery_challan" && r.status === "issued" && can("billing.invoice.create") && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Make invoice" aria-label={`Make invoice from ${r.number}`} onClick={() => act(r, `/delivery-challans/${r.id}/invoice`, "Draft invoice made from the challan", (d) => router.push(`/app/m/billing/${d.id}`))}><FileOutput /></Button>}
-          {kind === "sales_order" && ["open", "part_invoiced"].includes(r.status) && can("billing.invoice.create") && <Link href={`/app/m/sales/orders/${r.id}`} className={icon} title="Make invoice" aria-label={`Make invoice from ${r.number}`}><FileOutput /></Link>}
-          {editable(r) && canEdit && <Link href={`/app/m/${docPath(kind)}/${r.id}/edit`} className={icon} title="Edit" aria-label={`Edit ${r.number ?? "draft"}`}><Pencil /></Link>}
-          {r.status === "draft" && canEdit && <Button variant="ghost" size="icon-sm" className="text-destructive" title="Delete draft" aria-label={`Delete draft for ${r.buyer?.name}`} onClick={() => setDeleting(r)}><Trash2 /></Button>}
-        </span>
-      ),
+      cell: (r) => {
+        // One main action per status, shown as an icon; the rest live in the ⋮ menu
+        const post = kind === "invoice" && r.status === "draft" && canCreate
+        const pay = open(r) && can("billing.payment.create")
+        const quoteToInvoice = kind === "quotation" && ["draft", "sent", "accepted"].includes(r.status) && can("billing.invoice.create")
+        const challanToInvoice = kind === "delivery_challan" && r.status === "issued" && can("billing.invoice.create")
+        const orderToInvoice = kind === "sales_order" && ["open", "part_invoiced"].includes(r.status) && can("billing.invoice.create")
+        return (
+          <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+            {post && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Post invoice" aria-label={`Post draft for ${r.buyer?.name}`} onClick={() => act(r, `/invoices/${r.id}/issue`, "Invoice posted")}><Send /></Button>}
+            {pay && <Link href={`/app/m/billing/${r.id}?pay=1`} className={cn(icon, "text-emerald-600 dark:text-emerald-400")} title="Receive payment" aria-label={`Receive payment on ${r.number}`}><IndianRupee /></Link>}
+            {quoteToInvoice && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Convert to invoice" aria-label={`Convert ${r.number} to invoice`} onClick={() => act(r, `/quotations/${r.id}/convert`, "Draft invoice made from the quotation", (d) => router.push(`/app/m/billing/${d.id}`))}><FileOutput /></Button>}
+            {challanToInvoice && <Button variant="ghost" size="icon-sm" disabled={busy === r.id} title="Make invoice" aria-label={`Make invoice from ${r.number}`} onClick={() => act(r, `/delivery-challans/${r.id}/invoice`, "Draft invoice made from the challan", (d) => router.push(`/app/m/billing/${d.id}`))}><FileOutput /></Button>}
+            {orderToInvoice && <Link href={`/app/m/sales/orders/${r.id}`} className={icon} title="Make invoice" aria-label={`Make invoice from ${r.number}`}><FileOutput /></Link>}
+            {r.status !== "draft" && <a href={`/print/${kind}/${r.id}`} target="_blank" rel="noreferrer" className={icon} title="Print or PDF" aria-label={`Print ${r.number}`}><Printer /></a>}
+            <ActionMenu label={`More actions for ${r.number ?? "draft"}`} items={[
+              { label: "Open", icon: Eye, href: `/app/m/${docPath(kind)}/${r.id}` },
+              editable(r) && canEdit && { label: "Edit", icon: Pencil, href: `/app/m/${docPath(kind)}/${r.id}/edit` },
+              kind === "invoice" && ["issued", "partially_paid", "paid"].includes(r.status) && can("billing.credit_note.create") && { label: "Return or credit note", icon: Undo2, href: `/app/m/billing/${r.id}/credit-note` },
+              r.contactId && { label: "Open customer", icon: FileText, href: `/app/m/sales/customers/${r.contactId}` },
+              "-",
+              r.status === "draft" && canEdit && { label: "Delete draft", icon: Trash2, destructive: true, onClick: () => setDeleting(r) },
+            ]} />
+          </span>
+        )
+      },
     },
   ]
 
@@ -325,7 +343,7 @@ function NewDoc({ kind }: { kind: Kind }) {
   const contactId = params.get("contact")
   const cash = kind === "invoice" && params.get("cash") === "1"
   const contact = useApi<ContactOption>(contactId ? `/contacts/${contactId}` : null)
-  if (contactId && contact.loading) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (contactId && contact.loading) return <PageLoading />
   return (
     <>
       <Link href={`/app/m/${docPath(kind)}`} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {LIST_NAME[kind]}</Link>
@@ -345,8 +363,8 @@ export function SalesDocNew({ kind }: { kind: Kind }) {
 
 export function SalesDocEdit({ kind, id }: { kind: Kind; id: string }) {
   const { data, error } = useApi<SalesDoc>(`${docApi(kind)}/${id}`)
-  if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
-  if (!data) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (error) return <PageError error={error} />
+  if (!data) return <PageLoading />
   return (
     <>
       <Link href={`/app/m/${docPath(kind)}/${id}`} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> Back</Link>
@@ -423,8 +441,8 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
   const [deleting, setDeleting] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
 
-  if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
-  if (!doc) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (error) return <PageError error={error} />
+  if (!doc) return <PageLoading />
 
   const p = perm(kind)
   const editable = kind === "invoice" ? doc.status === "draft" : kind === "sales_order" ? doc.status === "open" : kind === "delivery_challan" ? doc.status === "issued" : ["draft", "sent"].includes(doc.status)
@@ -448,135 +466,94 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
 
   const whatsappText = encodeURIComponent(`${docLabel(kind)} ${doc.number} from ${me?.tenant?.name}: ${formatPaise(doc.totalPaise)}. View: ${shareUrl}`)
 
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true)
+    try {
+      await fn()
+    } catch (e) {
+      if (e instanceof ApiError && e.details?.creditLimit && can("billing.invoice.approve")) setOverLimit(e.message)
+      else toast.error(errorMessage(e))
+      setBusy(false)
+    }
+  }
+  const postInvoice = () => run(async () => { setData(await api.post<SalesDoc>(`/invoices/${id}/issue`)); toast.success("Invoice posted"); setBusy(false) })
+  const toInvoice = (path: string) => run(async () => { const inv = await api.post<SalesDoc>(path); toast.success("Draft invoice created"); router.push(`/app/m/billing/${inv.id}`) })
+  const toOrder = () => run(async () => { const o = await api.post<SalesDoc>(`/quotations/${id}/convert-order`); toast.success("Sales order created"); router.push(`/app/m/sales/orders/${o.id}`) })
+  const quoteStatus = (status: string, done: string) => act(() => api.post<SalesDoc>(`/quotations/${id}/status`, { status }), done)
+
+  const today = todayInIndia()
+  const status = listStatus(kind, doc as unknown as Row, today)
+  const open = kind === "invoice" && ["issued", "partially_paid"].includes(doc.status)
+  const late = open && !!doc.dueDate && doc.dueDate.slice(0, 10) < today
+  const cancelled = doc.status === "cancelled"
+  const quoteOpen = kind === "quotation" && ["draft", "sent", "accepted"].includes(doc.status)
+  const orderOpen = kind === "sales_order" && ["open", "part_invoiced"].includes(doc.status)
+
+  // Where the document stands, as steps
+  const order: Record<Kind, [string, string][]> = {
+    invoice: [["draft", "Draft"], ["issued", "Posted"], ["partially_paid", "Partly paid"], ["paid", "Paid"]],
+    quotation: [["draft", "Draft"], ["sent", "Sent"], ["accepted", "Accepted"], ["converted", "Invoiced"]],
+    sales_order: [["open", "Open"], ["part_invoiced", "Part invoiced"], ["completed", "Completed"]],
+    delivery_challan: [["issued", "Sent with goods"], ["converted", "Invoiced"]],
+  }
+  const at = order[kind].findIndex(([k]) => k === doc.status)
+  const steps: Step[] = order[kind].map(([k, label], i) => ({ key: k, label, state: at < 0 ? "todo" : i < at ? "done" : i === at ? "current" : "todo", color: k === "paid" || k === "converted" || k === "completed" || k === "accepted" ? "emerald" : k === "partially_paid" || k === "part_invoiced" ? "amber" : k === "draft" ? "slate" : "blue" }))
+  const end = cancelled ? <span className="flex h-11 items-center justify-center rounded-xl bg-muted px-3 font-semibold text-muted-foreground line-through">Cancelled</span> : doc.status === "declined" ? <span className="flex h-11 items-center justify-center rounded-xl bg-rose-100 px-3 font-semibold text-rose-800 dark:bg-rose-500/15 dark:text-rose-300">Declined</span> : undefined
+
+  const primary =
+    kind === "invoice" && doc.status === "draft" && can("billing.invoice.create") ? <Button disabled={busy} onClick={postInvoice}><Send /> Post invoice</Button>
+    : open && can("billing.payment.create") ? <Button onClick={() => setPaying(true)}><IndianRupee /> Receive payment</Button>
+    : quoteOpen && can("billing.invoice.create") ? <Button disabled={busy} onClick={() => toInvoice(`/quotations/${id}/convert`)}><FileText /> Convert to invoice</Button>
+    : orderOpen && can("billing.invoice.create") ? <Button onClick={() => setInvoicingOrder("invoice")}><FileText /> Create invoice</Button>
+    : kind === "delivery_challan" && doc.status === "issued" && can("billing.invoice.create") ? <Button disabled={busy} onClick={() => toInvoice(`/delivery-challans/${id}/invoice`)}><FileText /> Create invoice</Button>
+    : null
+
   return (
-    <>
-      <Link href={`/app/m/${docPath(kind)}`} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {LIST_NAME[kind]}</Link>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
-            {doc.number ?? `Draft ${docLabel(kind).toLowerCase()}`}
-            {(() => {
-              // The same words and colours as the list
-              const s = listStatus(kind, doc as unknown as Row, todayInIndia())
-              return <span className={cn("inline-flex h-6 items-center rounded-full px-2.5 text-xs font-semibold", PILL[s.tone])}>{s.label}</span>
-            })()}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {doc.buyer.name} · {formatPaise(doc.totalPaise)}{doc.location ? ` · ${doc.location.name}` : ""}
-            {kind === "invoice" && doc.paidPaise > 0 && balance > 0 && ` · ${formatPaise(balance)} due`}
-            {doc.cancelReason && ` · Cancelled: ${doc.cancelReason}`}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <div className="grid gap-5">
+      <BackLink href={`/app/m/${docPath(kind)}`}>{LIST_NAME[kind]}</BackLink>
+      <DetailHeader
+        title={doc.number ?? `Draft ${docLabel(kind).toLowerCase()}`}
+        icon={FileText}
+        pills={<><Pill color={PILL_TONE[status.tone]} dot strike={cancelled}>{status.label}</Pill>{doc.noteType === "proforma" && <Pill color="violet">Proforma</Pill>}</>}
+        subtitle={<>{doc.contactId ? <Link href={`/app/m/sales/customers/${doc.contactId}`} className="font-medium text-foreground hover:underline">{doc.buyer.name}</Link> : doc.buyer.name} · {formatDate(doc.issueDate)}{doc.location ? ` · ${doc.location.name}` : ""}{doc.sourceNumber ? ` · from ${doc.sourceNumber}` : ""}{doc.cancelReason ? ` · Cancelled: ${doc.cancelReason}` : ""}</>}
+        actions={<>
           {editable && can(`${p}.edit`) && <Link href={`/app/m/${docPath(kind)}/${id}/edit`} className={buttonVariants({ variant: "outline" })}><Pencil /> Edit</Link>}
-          {kind === "invoice" && doc.status === "draft" && can("billing.invoice.create") && (
-            <Button disabled={busy} onClick={async () => {
-              setBusy(true)
-              try {
-                setData(await api.post<SalesDoc>(`/invoices/${id}/issue`))
-                toast.success("Invoice posted")
-              } catch (e) {
-                if (e instanceof ApiError && e.details?.creditLimit && can("billing.invoice.approve")) setOverLimit(e.message)
-                else toast.error(errorMessage(e))
-              } finally {
-                setBusy(false)
-              }
-            }}><Send /> Post invoice</Button>
-          )}
-          {kind === "invoice" && ["issued", "partially_paid"].includes(doc.status) && can("billing.payment.create") && (
-            <Button onClick={() => setPaying(true)}><IndianRupee /> Receive payment</Button>
-          )}
-          {kind === "invoice" && ["issued", "partially_paid"].includes(doc.status) && can("billing.payment.create") && spendable > 0 && (
-            <Button variant="outline" onClick={() => setUsingAdvance(true)}>Use advance or credit ({formatPaise(spendable)})</Button>
-          )}
-          {kind === "invoice" && ["issued", "partially_paid", "paid"].includes(doc.status) && can("billing.credit_note.create") && (
-            <Link href={`/app/m/billing/${id}/credit-note`} className={buttonVariants({ variant: "outline" })}><FileMinus /> Return or credit note</Link>
-          )}
-          {kind === "quotation" && doc.status === "draft" && can("sales.quotation.edit") && (
-            <Button variant="outline" disabled={busy} onClick={() => act(() => api.post<SalesDoc>(`/quotations/${id}/status`, { status: "sent" }), "Marked as sent")}><Send /> Mark sent</Button>
-          )}
-          {kind === "quotation" && doc.status === "sent" && can("sales.quotation.edit") && (
-            <>
-              <Button variant="outline" disabled={busy} onClick={() => act(() => api.post<SalesDoc>(`/quotations/${id}/status`, { status: "accepted" }), "Marked accepted")}>Accepted</Button>
-              <Button variant="ghost" disabled={busy} onClick={() => act(() => api.post<SalesDoc>(`/quotations/${id}/status`, { status: "declined" }), "Marked declined")}>Declined</Button>
-            </>
-          )}
-          {kind === "quotation" && ["draft", "sent", "accepted"].includes(doc.status) && can("billing.invoice.create") && (
-            <Button
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true)
-                try {
-                  const inv = await api.post<SalesDoc>(`/quotations/${id}/convert`)
-                  toast.success("Draft invoice created")
-                  router.push(`/app/m/billing/${inv.id}`)
-                } catch (e) {
-                  toast.error(errorMessage(e))
-                  setBusy(false)
-                }
-              }}
-            >
-              <FileText /> Convert to invoice
-            </Button>
-          )}
-          {kind === "quotation" && ["draft", "sent", "accepted"].includes(doc.status) && can("sales.order.create") && (
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true)
-                try {
-                  const order = await api.post<SalesDoc>(`/quotations/${id}/convert-order`)
-                  toast.success("Sales order created")
-                  router.push(`/app/m/sales/orders/${order.id}`)
-                } catch (e) {
-                  toast.error(errorMessage(e))
-                  setBusy(false)
-                }
-              }}
-            >
-              Make sales order
-            </Button>
-          )}
-          {kind === "sales_order" && ["open", "part_invoiced"].includes(doc.status) && can("billing.invoice.create") && (
-            <Button onClick={() => setInvoicingOrder("invoice")}><FileText /> Create invoice</Button>
-          )}
-          {kind === "sales_order" && ["open", "part_invoiced"].includes(doc.status) && can("sales.delivery.create") && (
-            <Button variant="outline" onClick={() => setInvoicingOrder("challan")}><Truck /> Create challan</Button>
-          )}
-          {kind === "delivery_challan" && doc.status === "issued" && can("billing.invoice.create") && (
-            <Button
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true)
-                try {
-                  const inv = await api.post<SalesDoc>(`/delivery-challans/${id}/invoice`)
-                  toast.success("Draft invoice created")
-                  router.push(`/app/m/billing/${inv.id}`)
-                } catch (e) {
-                  toast.error(errorMessage(e))
-                  setBusy(false)
-                }
-              }}
-            >
-              <FileText /> Create invoice
-            </Button>
-          )}
-          {kind === "delivery_challan" && doc.status === "issued" && can("sales.delivery.edit") && (
-            <Button variant="ghost" onClick={() => setCancelling(true)}><Ban /> Cancel</Button>
-          )}
+          {doc.status !== "draft" && <a href={`/print/${kind}/${id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><Printer /> Print</a>}
           {(kind === "invoice" || kind === "delivery_challan") && <EwayBillButton doc={doc} onSaved={(d) => setData({ ...doc, ...(d as Partial<SalesDoc>) })} />}
           {kind === "invoice" && <EInvoiceButton doc={doc} onSaved={(d) => setData({ ...doc, ...(d as Partial<SalesDoc>) })} />}
-          {doc.status !== "draft" && <a href={`/print/${kind}/${id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><Printer /> Print / PDF</a>}
-          {kind === "invoice" && ["issued", "partially_paid"].includes(doc.status) && doc.paidPaise === 0 && can("billing.invoice.approve") && (
-            <Button variant="ghost" onClick={() => setCancelling(true)}><Ban /> Cancel</Button>
-          )}
-          {kind === "sales_order" && doc.status === "open" && can("sales.order.edit") && (
-            <Button variant="ghost" onClick={() => setCancelling(true)}><Ban /> Cancel</Button>
-          )}
-          {doc.status === "draft" && can(`${p}.edit`) && <Button variant="ghost" size="icon" onClick={() => setDeleting(true)} aria-label="Delete draft"><Trash2 /></Button>}
-        </div>
-      </div>
+          {primary}
+          <ActionMenu items={[
+            open && can("billing.payment.create") && spendable > 0 && { label: `Use advance or credit (${formatPaise(spendable)})`, icon: IndianRupee, onClick: () => setUsingAdvance(true) },
+            kind === "invoice" && ["issued", "partially_paid", "paid"].includes(doc.status) && can("billing.credit_note.create") && { label: "Return or credit note", icon: FileMinus, href: `/app/m/billing/${id}/credit-note` },
+            kind === "quotation" && doc.status === "draft" && can("sales.quotation.edit") && { label: "Mark sent", icon: Send, onClick: () => void quoteStatus("sent", "Marked as sent") },
+            kind === "quotation" && doc.status === "sent" && can("sales.quotation.edit") && { label: "Mark accepted", icon: Check, onClick: () => void quoteStatus("accepted", "Marked accepted") },
+            kind === "quotation" && doc.status === "sent" && can("sales.quotation.edit") && { label: "Mark declined", icon: X, onClick: () => void quoteStatus("declined", "Marked declined") },
+            quoteOpen && can("sales.order.create") && { label: "Make sales order", icon: FileOutput, onClick: () => void toOrder() },
+            orderOpen && can("sales.delivery.create") && { label: "Create delivery challan", icon: Truck, onClick: () => setInvoicingOrder("challan") },
+            "-",
+            shareUrl && { label: "Copy share link", icon: Copy, onClick: () => void navigator.clipboard.writeText(shareUrl).then(() => toast.success("Link copied")) },
+            shareUrl && doc.buyer.phone && { label: "Send on WhatsApp", icon: MessageCircle, onClick: () => window.open(`https://wa.me/${doc.buyer.phone!.replace(/\D/g, "").replace(/^(\d{10})$/, "91$1")}?text=${whatsappText}`, "_blank", "noopener") },
+            shareUrl && doc.buyer.email && { label: "Send by email", icon: Mail, onClick: () => window.open(`mailto:${doc.buyer.email}?subject=${encodeURIComponent(`${docLabel(kind)} ${doc.number}`)}&body=${whatsappText}`) },
+            "-",
+            ((kind === "invoice" && open && doc.paidPaise === 0 && can("billing.invoice.approve")) || (kind === "sales_order" && doc.status === "open" && can("sales.order.edit")) || (kind === "delivery_challan" && doc.status === "issued" && can("sales.delivery.edit"))) && { label: `Cancel ${docLabel(kind).toLowerCase()}`, icon: Ban, destructive: true, onClick: () => setCancelling(true) },
+            doc.status === "draft" && can(`${p}.edit`) && { label: "Delete draft", icon: Trash2, destructive: true, onClick: () => setDeleting(true) },
+          ]} />
+        </>}
+      />
+      <Steps steps={steps} end={end} label="Status" />
+      <StatGrid items={
+        kind === "invoice" ? [
+          { label: "Total", value: formatPaise(doc.totalPaise), hint: `${doc.lines.length} item${doc.lines.length === 1 ? "" : "s"}` },
+          { label: "Received", value: formatPaise(doc.paidPaise), accent: doc.paidPaise ? "text-emerald-700 dark:text-emerald-300" : undefined },
+          { label: "Balance due", value: doc.status === "draft" || cancelled ? "—" : formatPaise(Math.max(0, balance)), accent: late ? "text-destructive" : balance > 0 && open ? "text-orange-600 dark:text-orange-300" : undefined, hint: late ? "Overdue" : undefined },
+          { label: "Due date", value: doc.dueDate ? formatDate(doc.dueDate) : "On receipt", accent: late ? "text-destructive" : undefined },
+        ] : [
+          { label: "Total", value: formatPaise(doc.totalPaise), hint: `${doc.lines.length} item${doc.lines.length === 1 ? "" : "s"}` },
+          { label: kind === "quotation" ? "Valid until" : "Deliver by", value: doc.dueDate ? formatDate(doc.dueDate) : "—", accent: kind === "quotation" && doc.dueDate && doc.dueDate.slice(0, 10) < today && quoteOpen ? "text-destructive" : undefined },
+          { label: "Customer", value: doc.buyer.name, hint: doc.buyer.gstin ?? doc.buyer.phone ?? undefined },
+          { label: kind === "quotation" ? "Made on" : "Date", value: formatDate(doc.issueDate) },
+        ]
+      } />
 
       <div className="grid gap-6 xl:grid-cols-[1fr_18rem]">
         <div className="overflow-hidden rounded-4xl border shadow-sm">
@@ -786,6 +763,6 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
           router.replace(`/app/m/${docPath(kind)}`)
         }}
       />
-    </>
+    </div>
   )
 }

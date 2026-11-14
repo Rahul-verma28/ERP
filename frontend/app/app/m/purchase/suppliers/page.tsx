@@ -1,9 +1,10 @@
 "use client"
 
+import { ActionMenu } from "@/components/page-parts"
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Eye, FilePlus2, Pencil, Plus, Truck } from "lucide-react"
+import { Eye, FilePlus2, IndianRupee, MessageCircle, Pencil, Plus, Truck } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/common"
@@ -36,7 +37,11 @@ export default function SuppliersPage() {
         <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
           <Link href={`/app/m/purchase/suppliers/${r.id}`} className={icon} title="View ledger" aria-label={`View ${r.name}`}><Eye /></Link>
           {can("inventory.supplier_bill.create") && <Link href={`/app/m/purchase/new?kind=purchase_bill&supplier=${r.id}`} className={icon} title="New invoice" aria-label={`New invoice from ${r.name}`}><FilePlus2 /></Link>}
-          {can("inventory.supplier.edit") && <Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit ${r.name}`} onClick={() => setEditing(r)}><Pencil /></Button>}
+          {can("inventory.supplier_bill.create") && <Link href={`/app/m/purchase/payments?new=1&supplier=${r.id}`} className={icon} title="Pay supplier" aria-label={`Pay ${r.name}`}><IndianRupee /></Link>}
+          <ActionMenu label={`More actions for ${r.name}`} items={[
+            can("inventory.supplier.edit") && { label: "Edit", icon: Pencil, onClick: () => setEditing(r) },
+            r.phone && { label: "WhatsApp", icon: MessageCircle, onClick: () => window.open(`https://wa.me/${r.phone!.replace(/\D/g, "").replace(/^(\d{10})$/, "91$1")}`, "_blank", "noopener") },
+          ]} />
         </span>
       ),
     },

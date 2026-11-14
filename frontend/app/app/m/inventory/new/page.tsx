@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
-import { MoneyInput, Spinner } from "@/components/common"
+import { MoneyInput } from "@/components/common"
 import { WarehouseSelect } from "@/components/creatable-select"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { ItemPicker, type ItemOption } from "@/components/pickers"
@@ -21,6 +21,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { ENTRY_LABEL, REASONS, qty, type BatchRow, type StockEntry, type StockLocation, type StockRow, type Tracking } from "@/lib/inventory"
 import { todayInIndia } from "@contracts/validation"
+import { PageLoading } from "@/components/page-states"
 
 // One form for opening stock, stock in, adjustments and transfers. Lines are items with a quantity
 // (in the base unit or the second unit), a cost where stock comes in from outside, a batch with expiry
@@ -90,7 +91,7 @@ function EntryForm() {
 
   const perm = { opening: "inventory.receipt.create", stock_in: "inventory.receipt.create", adjustment: "inventory.stock_adjustment.create", transfer: "inventory.transfer.create" }[kind]
   if (!can(perm)) return <PageHeader title={ENTRY_LABEL[kind]} description="You don't have access to this. Ask your admin." />
-  if (!locations.data) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (!locations.data) return <PageLoading />
 
   const pick = (picked: ItemOption) => {
     const it = picked as ItemOption & { costPricePaise?: number | null; tracking?: Tracking; altUnit?: string | null; altFactor?: number | null }

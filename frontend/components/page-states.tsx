@@ -107,3 +107,31 @@ export function TableSkeleton({ rows = 6, columns = 5 }: { rows?: number; column
     </div>
   )
 }
+
+/**
+ * A whole page that could not load: the same card everywhere, with Retry. Retry calls `onRetry`
+ * when the page can reload its data, otherwise it reloads the page.
+ */
+export function PageError({ error, onRetry, title }: { error: unknown; onRetry?: () => void; title?: string }) {
+  const offline = error instanceof ApiError && error.status === 0
+  return (
+    <div className="ui-surface mx-auto my-6 max-w-xl">
+      <ErrorState error={error} title={title ?? (offline ? "You seem to be offline" : "Couldn't load this page")} onRetry={onRetry ?? (() => window.location.reload())} />
+    </div>
+  )
+}
+
+/** A page waiting for its data: a spinner, then a note if the server is slow */
+export function PageLoading({ label = "Loading" }: { label?: string }) {
+  const [slow, setSlow] = React.useState(false)
+  React.useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 10_000)
+    return () => clearTimeout(t)
+  }, [])
+  return (
+    <div className="grid place-items-center gap-3 py-24" aria-busy="true" aria-label={label}>
+      <span className="size-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      {slow && <p className="text-center text-sm text-muted-foreground">Still loading… <button type="button" className="font-medium text-primary underline" onClick={() => window.location.reload()}>Refresh</button></p>}
+    </div>
+  )
+}

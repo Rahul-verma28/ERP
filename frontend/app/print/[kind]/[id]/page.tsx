@@ -8,6 +8,7 @@ import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import type { SalesDoc } from "@/lib/sales"
+import { PageError } from "@/components/page-states"
 
 // Browser printing (HW-02): A4 invoice, or 80 mm / 58 mm thermal receipt.
 
@@ -69,7 +70,7 @@ export default function PrintPage({ params }: { params: Promise<{ kind: string; 
   }, [status, kind, id])
 
   if (status === "anonymous") return <p className="p-8 text-sm">Please sign in to print this document.</p>
-  if (error) return <p className="p-8 text-sm">{error}</p>
+  if (error) return <PageError error={new Error(error)} />
   if (!doc) return <p className="p-8 text-sm text-neutral-500">Preparing document…</p>
 
   return (

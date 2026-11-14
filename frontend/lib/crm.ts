@@ -80,19 +80,9 @@ export function useCrmSetup() {
   return useSharedApi<CrmSetup>("/crm/setup")
 }
 
-/** Full class strings so Tailwind keeps them */
-export const STAGE_TONE: Record<string, { pill: string; dot: string; bar: string; soft: string }> = {
-  slate: { pill: "bg-slate-100 text-slate-700 dark:bg-slate-500/15 dark:text-slate-300", dot: "bg-slate-400", bar: "bg-slate-400", soft: "bg-slate-50 dark:bg-slate-500/5" },
-  blue: { pill: "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-300", dot: "bg-blue-500", bar: "bg-blue-500", soft: "bg-blue-50/60 dark:bg-blue-500/5" },
-  violet: { pill: "bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300", dot: "bg-violet-500", bar: "bg-violet-500", soft: "bg-violet-50/60 dark:bg-violet-500/5" },
-  amber: { pill: "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300", dot: "bg-amber-500", bar: "bg-amber-500", soft: "bg-amber-50/60 dark:bg-amber-500/5" },
-  orange: { pill: "bg-orange-100 text-orange-800 dark:bg-orange-500/15 dark:text-orange-300", dot: "bg-orange-500", bar: "bg-orange-500", soft: "bg-orange-50/60 dark:bg-orange-500/5" },
-  emerald: { pill: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300", dot: "bg-emerald-500", bar: "bg-emerald-500", soft: "bg-emerald-50/60 dark:bg-emerald-500/5" },
-  rose: { pill: "bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-300", dot: "bg-rose-500", bar: "bg-rose-500", soft: "bg-rose-50/60 dark:bg-rose-500/5" },
-  cyan: { pill: "bg-cyan-100 text-cyan-800 dark:bg-cyan-500/15 dark:text-cyan-300", dot: "bg-cyan-500", bar: "bg-cyan-500", soft: "bg-cyan-50/60 dark:bg-cyan-500/5" },
-}
-export const STAGE_COLORS = Object.keys(STAGE_TONE)
-export const tone = (color: string | null | undefined) => STAGE_TONE[color ?? "slate"] ?? STAGE_TONE.slate
+export { TONES as STAGE_TONE, tone } from "@/lib/tones"
+import { TONES } from "@/lib/tones"
+export const STAGE_COLORS = Object.keys(TONES)
 
 export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?"
 

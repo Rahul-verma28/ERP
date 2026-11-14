@@ -4,10 +4,12 @@ import * as React from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeft, MapPin, Package, Printer } from "lucide-react"
+import { Ban, Building2, Check, FileText, IndianRupee, MapPin, Package, Pencil, Printer, Trash2, Undo2 } from "lucide-react"
+import { todayInIndia } from "@contracts/validation"
+import { ActionMenu, BackLink, DetailHeader, Pill, StatGrid, Steps, type Step } from "@/components/page-parts"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
-import { ConfirmDialog, Spinner, StatusBadge } from "@/components/common"
+import { ConfirmDialog, StatusBadge } from "@/components/common"
 import { PaySupplierDialog } from "@/components/pay-supplier"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -15,6 +17,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
 import { INVOICE_STEPS, KIND_LABEL, KIND_PATH, KIND_PLURAL, RETURN_STEPS, invoiceStatus, returnStatus, type PurchaseDoc } from "@/lib/purchase"
+import { PageLoading } from "@/components/page-states"
 
 // A purchase document with what happened since: received or billed quantities, documents made
 // from it, payments. The next step is one button away: receive, bill, return, pay.
@@ -32,7 +35,7 @@ export default function PurchaseDocPage() {
   const [deleting, setDeleting] = React.useState(false)
   const router = useRouter()
   if (res.error) return <PageHeader title="Not found" description={errorMessage(res.error)} />
-  if (!doc) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (!doc) return <PageLoading />
 
   const draft = doc.status === "draft"
   const live = doc.status !== "cancelled" && !draft
@@ -50,56 +53,65 @@ export default function PurchaseDocPage() {
   const tax = doc.cgstPaise + doc.sgstPaise + doc.igstPaise
   const cardTitle = "flex items-center gap-2.5 border-b px-5 py-4 font-semibold"
 
+  const today = todayInIndia()
+  const late = isBill && live && doc.balancePaise > 0 && !!doc.dueDate && doc.dueDate.slice(0, 10) < today
+  const statusText = label(doc.kind, doc.status) ?? doc.status.replace(/_/g, " ")
+  const statusColor = doc.status === "cancelled" ? "slate" : draft ? "slate" : ["paid", "issued", "closed", "received"].includes(doc.status) ? "emerald" : ["part_paid", "part_received", "approved"].includes(doc.status) ? "amber" : late ? "rose" : "blue"
+  const stepList: Step[] | null = steps
+    ? steps.map(([key, text], i) => { const at = steps.findIndex(([k]) => k === doc.status); return { key, label: text, state: at < 0 ? "todo" : i < at ? "done" : i === at ? "current" : "todo", color: key === "paid" || key === "issued" ? "emerald" : key === "part_paid" || key === "approved" ? "amber" : key === "draft" ? "slate" : "blue" } })
+    : null
+  const editHref = (isBill || isReturn) && draft ? `/app/m/purchase/new?kind=${doc.kind}&edit=${doc.id}` : isOrder && doc.status === "open" ? `/app/m/purchase/new?kind=purchase_order&edit=${doc.id}` : null
+  const canEdit = editHref && can(isOrder ? "inventory.purchase_order.edit" : "inventory.supplier_bill.create")
+  const post = () => act(() => api.post(`/purchases/${doc.id}/post`, { version: doc.version }), "Invoice posted. Stock is in.")
+  const approve = () => act(() => api.post(`/purchases/${doc.id}/approve`, { version: doc.version }), "Return approved")
+  const complete = () => act(() => api.post(`/purchases/${doc.id}/complete`, { version: doc.version }), "Return completed. Stock has gone out.")
+
+  const primary =
+    isBill && draft && can("inventory.supplier_bill.create") ? <Button onClick={post}>Post invoice</Button>
+    : isBill && live && doc.balancePaise > 0 && can("inventory.supplier_bill.create") ? <Button onClick={() => setPaying(true)}><IndianRupee /> Pay supplier</Button>
+    : isReturn && draft && can("inventory.supplier_bill.approve") ? <Button onClick={approve}>Approve return</Button>
+    : isReturn && doc.status === "approved" && can("inventory.supplier_bill.create") ? <Button onClick={complete}>Complete return</Button>
+    : live && isOrder && left && doc.status !== "closed" && can("inventory.receipt.create") ? <Link href={`/app/m/purchase/new?kind=goods_receipt&from=${doc.id}`} className={buttonVariants()}>Receive goods</Link>
+    : live && doc.kind === "goods_receipt" && left && can("inventory.supplier_bill.create") ? <Link href={`/app/m/purchase/new?kind=purchase_bill&from=${doc.id}`} className={buttonVariants()}>Make invoice</Link>
+    : null
+
   return (
-    <>
-      <Link href={KIND_PATH[doc.kind]} className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {KIND_PLURAL[doc.kind]}</Link>
-      <PageHeader
+    <div className="grid gap-5">
+      <BackLink href={KIND_PATH[doc.kind]}>{KIND_PLURAL[doc.kind]}</BackLink>
+      <DetailHeader
         title={`${KIND_LABEL[doc.kind]} ${doc.number}`}
-        description={`${doc.supplier.name}${doc.supplier.gstin ? ` · ${doc.supplier.gstin}` : ""}`}
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <a href={`/print/purchase/${doc.id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><Printer /> Print / PDF</a>
-            {isReturn && draft && can("inventory.supplier_bill.approve") && <Button onClick={() => act(() => api.post(`/purchases/${doc.id}/approve`, { version: doc.version }), "Return approved")}>Approve return</Button>}
-            {isReturn && doc.status === "approved" && can("inventory.supplier_bill.create") && <Button onClick={() => act(() => api.post(`/purchases/${doc.id}/complete`, { version: doc.version }), "Return completed. Stock has gone out.")}>Complete return</Button>}
-            {isReturn && draft && can("inventory.supplier_bill.create") && (
-              <>
-                <Link href={`/app/m/purchase/new?kind=purchase_return&edit=${doc.id}`} className={buttonVariants({ variant: "outline" })}>Edit</Link>
-                <Button variant="outline" className="text-destructive" onClick={() => setDeleting(true)}>Delete</Button>
-              </>
-            )}
-            {isBill && draft && can("inventory.supplier_bill.create") && (
-              <>
-                <Button onClick={() => act(() => api.post(`/purchases/${doc.id}/post`, { version: doc.version }), "Invoice posted. Stock is in.")}>Post invoice</Button>
-                <Link href={`/app/m/purchase/new?kind=purchase_bill&edit=${doc.id}`} className={buttonVariants({ variant: "outline" })}>Edit</Link>
-                <Button variant="outline" className="text-destructive" onClick={() => setDeleting(true)}>Delete</Button>
-              </>
-            )}
-            {live && isOrder && left && doc.status !== "closed" && can("inventory.receipt.create") && <Link href={`/app/m/purchase/new?kind=goods_receipt&from=${doc.id}`} className={buttonVariants()}>Receive goods</Link>}
-            {live && isOrder && left && doc.status !== "closed" && can("inventory.supplier_bill.create") && <Link href={`/app/m/purchase/new?kind=purchase_bill&from=${doc.id}`} className={buttonVariants({ variant: "outline" })}>Invoice directly</Link>}
-            {live && doc.kind === "goods_receipt" && left && can("inventory.supplier_bill.create") && <Link href={`/app/m/purchase/new?kind=purchase_bill&from=${doc.id}`} className={buttonVariants()}>Make invoice</Link>}
-            {live && isBill && doc.balancePaise > 0 && can("inventory.supplier_bill.create") && <Button onClick={() => setPaying(true)}>Pay</Button>}
-            {live && isBill && left && can("inventory.supplier_bill.create") && <Link href={`/app/m/purchase/new?kind=purchase_return&from=${doc.id}`} className={buttonVariants({ variant: "outline" })}>Return goods</Link>}
-            {isOrder && doc.status === "open" && can("inventory.purchase_order.edit") && <Link href={`/app/m/purchase/new?kind=purchase_order&edit=${doc.id}`} className={buttonVariants({ variant: "outline" })}>Edit</Link>}
-            {isOrder && doc.status === "part_received" && can("inventory.purchase_order.edit") && <Button variant="outline" onClick={() => act(() => api.post(`/purchases/${doc.id}/close`), "Order closed")}>Close order</Button>}
-            {live && can(cancelPerm) && <Button variant="outline" className="text-destructive" onClick={() => setCancelling(true)}>Cancel</Button>}
-          </div>
-        }
+        icon={isReturn ? Undo2 : FileText}
+        pills={<><Pill color={statusColor} dot strike={doc.status === "cancelled"}>{statusText}</Pill>{late && <Pill color="rose">Overdue</Pill>}</>}
+        subtitle={<><Link href={`/app/m/purchase/suppliers/${doc.contactId}`} className="font-medium text-foreground hover:underline">{doc.supplier.name}</Link>{doc.supplierRef ? ` · their no. ${doc.supplierRef}` : ""} · {formatDate(doc.supplierDate ?? doc.issueDate)}{doc.location ? ` · ${doc.location.name}` : ""}</>}
+        actions={<>
+          <a href={`/print/purchase/${doc.id}`} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><Printer /> Print</a>
+          {canEdit && <Link href={editHref!} className={buttonVariants({ variant: "outline" })}><Pencil /> Edit</Link>}
+          {primary}
+          <ActionMenu items={[
+            live && isOrder && left && doc.status !== "closed" && can("inventory.supplier_bill.create") && { label: "Invoice directly", icon: FileText, href: `/app/m/purchase/new?kind=purchase_bill&from=${doc.id}` },
+            live && isBill && left && can("inventory.supplier_bill.create") && { label: "Return goods", icon: Undo2, href: `/app/m/purchase/new?kind=purchase_return&from=${doc.id}` },
+            isOrder && doc.status === "part_received" && can("inventory.purchase_order.edit") && { label: "Close order", icon: Check, onClick: () => void act(() => api.post(`/purchases/${doc.id}/close`), "Order closed") },
+            { label: "Open supplier", icon: Building2, href: `/app/m/purchase/suppliers/${doc.contactId}` },
+            "-",
+            draft && can("inventory.supplier_bill.create") && { label: "Delete draft", icon: Trash2, destructive: true, onClick: () => setDeleting(true) },
+            live && can(cancelPerm) && { label: `Cancel ${KIND_LABEL[doc.kind].toLowerCase()}`, icon: Ban, destructive: true, onClick: () => setCancelling(true) },
+          ]} />
+        </>}
       />
+      {stepList && <Steps steps={stepList} label="Status" end={doc.status === "cancelled" ? <span className="flex h-11 items-center justify-center rounded-xl bg-muted px-3 font-semibold text-muted-foreground line-through">Cancelled</span> : undefined} />}
+      <StatGrid items={isBill ? [
+        { label: "Total", value: formatPaise(doc.totalPaise), hint: `${doc.lines.length} item${doc.lines.length === 1 ? "" : "s"}` },
+        { label: "Paid", value: formatPaise(doc.paidPaise), accent: doc.paidPaise ? "text-emerald-700 dark:text-emerald-300" : undefined, hint: doc.returnedPaise ? `${formatPaise(doc.returnedPaise)} returned` : undefined },
+        { label: "You owe", value: draft || doc.status === "cancelled" ? "—" : formatPaise(Math.max(0, doc.balancePaise)), accent: late ? "text-destructive" : doc.balancePaise > 0 && live ? "text-orange-600 dark:text-orange-300" : undefined },
+        { label: "Due date", value: doc.dueDate ? formatDate(doc.dueDate) : "—", accent: late ? "text-destructive" : undefined, hint: late ? "Overdue" : undefined },
+      ] : [
+        { label: "Total", value: formatPaise(doc.totalPaise), hint: `${doc.lines.length} item${doc.lines.length === 1 ? "" : "s"}` },
+        { label: "GST", value: formatPaise(tax) },
+        { label: "Date", value: formatDate(doc.issueDate) },
+        { label: "Warehouse", value: doc.location?.name ?? "—" },
+      ]} />
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="grid gap-5">
-          {steps && doc.status !== "cancelled" && (
-            <ol className="flex flex-wrap items-center gap-1.5 text-xs font-medium" aria-label="Status">
-              {steps.map(([key, text], i) => {
-                const at = steps.findIndex(([k]) => k === doc.status)
-                return (
-                  <li key={key} className="flex items-center gap-1.5">
-                    {i > 0 && <span className="h-px w-5 bg-border" />}
-                    <span aria-current={i === at ? "step" : undefined} className={i === at ? "rounded-full bg-primary px-2.5 py-1 text-primary-foreground" : i < at ? "rounded-full bg-primary/15 px-2.5 py-1 text-primary" : "rounded-full bg-muted px-2.5 py-1 text-muted-foreground"}>{text}</span>
-                  </li>
-                )
-              })}
-            </ol>
-          )}
           {draft && <p className="rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">{isReturn ? "This is a draft. Stock and the invoice balance change only when the return is completed." : "This is a draft. Stock and what you owe change only when you post it."}</p>}
           {isReturn && doc.status === "approved" && <p className="rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">Approved. Press Complete return once the goods have actually gone back to the supplier.</p>}
           {doc.status === "cancelled" && doc.cancelReason && <p className="rounded-2xl bg-muted px-3 py-2 text-sm">Cancelled: {doc.cancelReason}</p>}
@@ -240,6 +252,6 @@ export default function PurchaseDocPage() {
           try { setDoc(await api.post<PurchaseDoc>(`/purchases/${doc.id}/cancel`, { reason })); toast.success("Cancelled") } catch (e) { toast.error(errorMessage(e)); throw e }
         }}
       />
-    </>
+    </div>
   )
 }

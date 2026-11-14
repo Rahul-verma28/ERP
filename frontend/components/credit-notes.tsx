@@ -27,6 +27,7 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { PAYMENT_METHODS } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import type { SalesDoc } from "@/lib/sales"
+import { PageError, PageLoading } from "@/components/page-states"
 
 // Sales returns (credit notes) and debit notes. An issued invoice is never edited: goods come
 // back, the value is reduced, or the customer owes more. Each is made against one invoice.
@@ -315,8 +316,8 @@ export function CreditNoteNew({ invoiceId }: { invoiceId: string }) {
   const [busy, setBusy] = React.useState(false)
 
   const failed = invoice.error ?? lines.error
-  if (failed) return <p className="text-sm text-muted-foreground">{failed.message}</p>
-  if (!invoice.data || !lines.data) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (failed) return <PageError error={failed} />
+  if (!invoice.data || !lines.data) return <PageLoading />
 
   const doc = invoice.data
   const debit = kind === "debit"
@@ -626,8 +627,8 @@ export function CreditNoteDetail({ id }: { id: string }) {
   const [cancelling, setCancelling] = React.useState(false)
   const [reversing, setReversing] = React.useState<NonNullable<SalesDoc["payments"]>[number] | null>(null)
 
-  if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
-  if (!note) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (error) return <PageError error={error} />
+  if (!note) return <PageLoading />
 
   const live = note.status === "issued"
   const left = live ? note.totalPaise - note.paidPaise : 0
@@ -795,8 +796,8 @@ export function DebitNoteDetail({ id }: { id: string }) {
   const [cancelling, setCancelling] = React.useState(false)
   const [reversing, setReversing] = React.useState<NonNullable<SalesDoc["payments"]>[number] | null>(null)
 
-  if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
-  if (!note) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (error) return <PageError error={error} />
+  if (!note) return <PageLoading />
 
   const due = note.status === "cancelled" ? 0 : note.totalPaise - note.paidPaise
   return (

@@ -8,6 +8,7 @@ import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { amountInWords } from "@/lib/money"
+import { PageError } from "@/components/page-states"
 
 // Payment receipt for printing, saving as PDF, or opening from the WhatsApp link.
 export default function ReceiptPrintPage({ params }: { params: Promise<{ id: string }> }) {
@@ -22,7 +23,7 @@ export default function ReceiptPrintPage({ params }: { params: Promise<{ id: str
   }, [status, id])
 
   if (status === "anonymous") return <p className="p-8 text-sm">Please sign in to see this receipt.</p>
-  if (error) return <p className="p-8 text-sm">{error}</p>
+  if (error) return <PageError error={new Error(error)} />
   if (!r) return <p className="p-8 text-sm text-neutral-500">Preparing receipt…</p>
 
   return (

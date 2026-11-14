@@ -5,8 +5,10 @@ import { useSearchParams } from "next/navigation"
 import { ItemForm } from "@/components/item-form"
 
 function Keyed() {
-  const edit = useSearchParams().get("edit")
-  return <ItemForm key={edit ?? "new"} editId={edit} />
+  const params = useSearchParams()
+  const edit = params.get("edit")
+  const copy = params.get("copy")
+  return <ItemForm key={edit ?? copy ?? "new"} editId={edit} copyId={copy} />
 }
 
 export default function ItemFormPage() {

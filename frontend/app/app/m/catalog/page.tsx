@@ -3,7 +3,8 @@
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { Eye, Package, Pencil, Plus, ShoppingCart, Tag, Trash2 } from "lucide-react"
+import { Archive, ArchiveRestore, ArrowLeftRight, Barcode, Copy, Eye, History, Package, Pencil, Plus, ShoppingCart, SlidersHorizontal, Tag, Trash2 } from "lucide-react"
+import { ActionMenu } from "@/components/page-parts"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ConfirmDialog, EmptyState } from "@/components/common"
@@ -20,6 +21,7 @@ const PRESETS: ViewPreset[] = [
   { key: "all", label: "All", params: {} },
   { key: "product", label: "Products", params: { type: "product" } },
   { key: "service", label: "Services", params: { type: "service" } },
+  { key: "low", label: "Low stock", params: { low: "true" } },
   { key: "archived", label: "Archived", params: { active: "false" } },
 ]
 
@@ -28,7 +30,7 @@ const iconLink = buttonVariants({ variant: "ghost", size: "icon-sm" })
 export default function ItemsPage() {
   const { can, term, me } = useAuth()
   const categories = useApi<{ data: Category[] }>("/item-categories")
-  const [adding, setAdding] = React.useState<Item | null>(null)
+  const [stock, setStock] = React.useState<{ kind: "add" | "adjust" | "move"; item: Item } | null>(null)
   const [deleting, setDeleting] = React.useState<Item | null>(null)
   const [version, setVersion] = React.useState(0)
   const refresh = () => setVersion((v) => v + 1)
@@ -38,6 +40,15 @@ export default function ItemsPage() {
   const canAddStock = can("inventory.receipt.create")
   const places = useApi<{ data: { id: string; name: string; isActive: boolean }[] }>(showStock ? "/stock-locations" : null).data?.data.filter((w) => w.isActive) ?? []
   const nameOf = (id: string | null) => categories.data?.data.find((c) => c.id === id)?.name
+  async function setActive(r: Item, active: boolean) {
+    try {
+      await api.patch(`/items/${r.id}`, { isActive: active, version: r.version })
+      toast.success(active ? `${r.name} restored` : `${r.name} archived`)
+      refresh()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
 
   const columns: Column<Item>[] = [
     {
@@ -74,14 +85,28 @@ export default function ItemsPage() {
     { key: "type", header: "Type", csv: (r) => r.type, cell: (r) => <Badge variant="outline" className="capitalize">{r.type}</Badge> },
     {
       key: "actions", header: "Actions", hideable: false,
-      cell: (r) => (
-        <span className="flex items-center gap-0.5" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
-          {r.type === "product" && canAddStock && (r.tracking ?? "none") === "none" && r.isActive && <Button variant="ghost" size="icon-sm" title="Add stock" aria-label={`Add stock to ${r.name}`} onClick={() => setAdding(r)}><Plus /></Button>}
-          {r.type === "product" && showStock && r.trackStock && <Link href={`/app/m/inventory/items/${r.id}`} className={iconLink} title="View stock" aria-label={`View stock of ${r.name}`}><Eye /></Link>}
-          {can("catalog.item.edit") && <Link href={`/app/m/catalog/new?edit=${r.id}`} className={iconLink} title="Edit" aria-label={`Edit ${r.name}`}><Pencil /></Link>}
-          {can("catalog.item.delete") && r.isActive && <Button variant="ghost" size="icon-sm" className="text-destructive" title="Delete" aria-label={`Delete ${r.name}`} onClick={() => setDeleting(r)}><Trash2 /></Button>}
-        </span>
-      ),
+      cell: (r) => {
+        const stock = r.type === "product" && showStock && r.isActive && !!r.trackStock
+        return (
+          <span className="flex items-center gap-0.5" onClick={(e) => { e.preventDefault(); e.stopPropagation() }}>
+            {stock && canAddStock && <Button variant="ghost" size="icon-sm" title="Add stock" aria-label={`Add stock to ${r.name}`} onClick={() => setStock({ kind: "add", item: r })}><Plus /></Button>}
+            {can("catalog.item.edit") && <Link href={`/app/m/catalog/new?edit=${r.id}`} className={iconLink} title="Edit" aria-label={`Edit ${r.name}`}><Pencil /></Link>}
+            <ActionMenu label={`More actions for ${r.name}`} items={[
+              { label: "Open", icon: Eye, href: `/app/m/catalog/${r.id}` },
+              stock && { label: "Stock history", icon: History, href: `/app/m/catalog/${r.id}?tab=stock` },
+              "-",
+              stock && can("inventory.stock_adjustment.create") && { label: "Adjust stock", icon: SlidersHorizontal, onClick: () => setStock({ kind: "adjust", item: r }) },
+              stock && can("inventory.transfer.create") && { label: "Move to another warehouse", icon: ArrowLeftRight, onClick: () => setStock({ kind: "move", item: r }) },
+              "-",
+              can("catalog.item.create") && { label: "Make a copy", icon: Copy, href: `/app/m/catalog/new?copy=${r.id}` },
+              r.type === "product" && { label: "Print barcode labels", icon: Barcode, onClick: () => window.open(`/print/labels?ids=${r.id}`, "_blank", "noopener") },
+              can("catalog.item.edit") && (r.isActive ? { label: "Archive", icon: Archive, onClick: () => void setActive(r, false) } : { label: "Restore", icon: ArchiveRestore, onClick: () => void setActive(r, true) }),
+              "-",
+              can("catalog.item.delete") && r.isActive && { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(r) },
+            ]} />
+          </span>
+        )
+      },
     },
   ]
 
@@ -92,20 +117,20 @@ export default function ItemsPage() {
         id="catalog-items"
         path="/items"
         params={{ active: "true", v: String(version) }}
-        header={{ title, description: "Manage your products, services, prices and stock.", primary: create }}
+        header={{ title, description: "Everything you buy and sell: prices, GST, stock. Open one to see where it is and how it moved.", primary: create, more: [...(can("catalog.item.create") && showStock ? [{ label: "Import items and stock", href: "/app/m/inventory/import" }] : []), { label: "Price lists", href: "/app/m/catalog/price-lists" }, ...(showStock ? [{ label: "Stock by warehouse", href: "/app/m/inventory" }] : [])] }}
         columns={columns}
         searchPlaceholder="Search name, SKU, HSN or barcode"
         presets={PRESETS}
-        presetLabel="Type"
+        presetLabel="Show"
         filters={[
           ...(categories.data?.data.length ? [{ key: "categoryId", label: "Category", options: categories.data.data.map((c) => ({ value: c.id, label: c.name })) }] : []),
           ...(places.length ? [{ key: "locationId", label: "Warehouse", options: places.map((w) => ({ value: w.id, label: w.name })) }] : []),
         ]}
-        rowHref={(r) => `/app/m/catalog/new?edit=${r.id}`}
+        rowHref={(r) => `/app/m/catalog/${r.id}`}
         exportName="items"
         emptyState={<EmptyState icon={Package} title="No items yet" description="Add what you buy and sell so you can bill it in seconds." action={create} />}
       />
-      {adding && <StockDialog kind="add" item={{ id: adding.id, name: adding.name, unit: adding.unit, sku: adding.sku, tracking: adding.tracking, costPaise: adding.costPricePaise ?? null, warehouses: adding.warehouses }} onClose={() => setAdding(null)} onDone={() => { setAdding(null); refresh() }} />}
+      {stock && <StockDialog kind={stock.kind} item={{ id: stock.item.id, name: stock.item.name, unit: stock.item.unit, sku: stock.item.sku, tracking: stock.item.tracking, costPaise: stock.item.costPricePaise ?? null, warehouses: stock.item.warehouses }} onClose={() => setStock(null)} onDone={() => { setStock(null); refresh() }} />}
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

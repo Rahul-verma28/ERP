@@ -538,12 +538,12 @@ export async function getEntry(ctx: TenantCtx, id: string) {
   return { ...entry, location: locs.find((l) => l.id === entry.locationId)?.name ?? '—', toLocation: locs.find((l) => l.id === entry.toLocationId)?.name ?? null };
 }
 
-export const EntryList = z.object({ kind: z.string().max(20).optional(), notKind: z.string().max(20).optional(), status: z.string().max(12).optional(), q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), cursor: z.string().uuid().optional() });
+export const EntryList = z.object({ locationId: z.string().uuid().optional(), kind: z.string().max(20).optional(), notKind: z.string().max(20).optional(), status: z.string().max(12).optional(), q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), cursor: z.string().uuid().optional() });
 
 export async function listEntries(ctx: TenantCtx, query: z.infer<typeof EntryList>) {
   const rows = await db().stockEntry.findMany({
     where: {
-      tenantId: ctx.tenantId, ...(query.kind ? { kind: query.kind } : query.notKind ? { kind: { not: query.notKind } } : {}), ...(query.status ? { status: query.status } : {}),
+      tenantId: ctx.tenantId, ...(query.locationId ? { AND: [{ OR: [{ locationId: query.locationId }, { toLocationId: query.locationId }] }] } : {}), ...(query.kind ? { kind: query.kind } : query.notKind ? { kind: { not: query.notKind } } : {}), ...(query.status ? { status: query.status } : {}),
       ...(query.q ? { OR: [{ party: { contains: query.q, mode: 'insensitive' } }, { reference: { contains: query.q, mode: 'insensitive' } }, { note: { contains: query.q, mode: 'insensitive' } }] } : {}),
     },
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],

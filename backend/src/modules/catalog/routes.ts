@@ -73,6 +73,8 @@ const ItemList = ListQuery.extend({
   categoryId: z.string().uuid().optional(),
   active: z.enum(['true', 'false', 'all']).default('true'),
   locationId: z.string().uuid().optional(),
+  /** Tracked items at or below their low-stock level */
+  low: z.enum(['true']).optional(),
   withTotal: z.enum(['1']).optional(),
 });
 
@@ -98,8 +100,14 @@ async function checkCategory(categoryId?: string | null) {
 router.get('/items', requirePermission('catalog.item.view'), validate(ItemList, 'query'), tx(async (req, res) => {
   const q = req.query as unknown as z.infer<typeof ItemList>;
   const here = q.locationId ? (await db().stockBalance.findMany({ where: { locationId: q.locationId, quantity: { not: 0 } }, select: { itemId: true } })).map((b) => b.itemId) : undefined;
+  let low: string[] | undefined;
+  if (q.low) {
+    const watched = await db().item.findMany({ where: { trackStock: true, reorderLevel: { not: null } }, select: { id: true, reorderLevel: true } });
+    const stock = await stockByItem(req.ctx!.tenantId, watched.map((w) => w.id));
+    low = watched.filter((w) => (stock.get(w.id) ?? 0) <= Number(w.reorderLevel)).map((w) => w.id);
+  }
   const where: Prisma.ItemWhereInput = {
-    ...(here ? { id: { in: here } } : {}),
+    AND: [here ? { id: { in: here } } : {}, low ? { id: { in: low } } : {}],
     type: q.type,
     categoryId: q.categoryId,
     isActive: q.active === 'all' ? undefined : q.active === 'true',
@@ -114,6 +122,26 @@ router.get('/items/:id', requirePermission('catalog.item.view'), validate(IdPara
   const item = await db().item.findUnique({ where: { id: String(req.params.id) } });
   if (!item) throw notFound('Item');
   res.json((await serialize(req.ctx!, [item]))[0]);
+}));
+
+/** Where an item was sold and bought lately, with all-time totals, for its page */
+router.get('/items/:id/history', requirePermission('catalog.item.view'), validate(IdParam, 'params'), tx(async (req, res) => {
+  const itemId = String(req.params.id);
+  if (!(await db().item.findUnique({ where: { id: itemId }, select: { id: true } }))) throw notFound('Item');
+  const soldWhere: Prisma.SalesDocumentLineWhereInput = { itemId, document: { kind: { in: ['invoice', 'credit_note'] }, status: { notIn: ['draft', 'cancelled'] } } };
+  const boughtWhere: Prisma.PurchaseDocumentLineWhereInput = { itemId, document: { kind: { in: ['purchase_bill', 'purchase_return'] }, status: { notIn: ['draft', 'cancelled'] } } };
+  const [sold, bought, soldAll, boughtAll] = await Promise.all([
+    db().salesDocumentLine.findMany({ where: soldWhere, orderBy: { document: { issueDate: 'desc' } }, take: 20, select: { id: true, quantity: true, unitPricePaise: true, totalPaise: true, document: { select: { id: true, kind: true, number: true, issueDate: true, buyer: true } } } }),
+    db().purchaseDocumentLine.findMany({ where: boughtWhere, orderBy: { document: { issueDate: 'desc' } }, take: 20, select: { id: true, quantity: true, unitPricePaise: true, document: { select: { id: true, kind: true, number: true, supplierRef: true, issueDate: true, supplier: true } } } }),
+    db().salesDocumentLine.findMany({ where: soldWhere, select: { quantity: true, taxablePaise: true, document: { select: { kind: true } } } }),
+    db().purchaseDocumentLine.findMany({ where: boughtWhere, select: { quantity: true, taxablePaise: true, document: { select: { kind: true } } } }),
+  ]);
+  const sum = (rows: { quantity: Prisma.Decimal; taxablePaise: bigint; document: { kind: string } }[], minus: string) => rows.reduce((t, r) => { const s = r.document.kind === minus ? -1 : 1; return { quantity: t.quantity + s * Number(r.quantity), valuePaise: t.valuePaise + BigInt(s) * r.taxablePaise }; }, { quantity: 0, valuePaise: 0n });
+  res.json({
+    sold: sold.map((l) => ({ id: l.id, quantity: Number(l.quantity), ratePaise: l.unitPricePaise, document: { id: l.document.id, kind: l.document.kind, number: l.document.number, date: l.document.issueDate, party: (l.document.buyer as { name?: string }).name ?? null } })),
+    bought: bought.map((l) => ({ id: l.id, quantity: Number(l.quantity), ratePaise: l.unitPricePaise, document: { id: l.document.id, kind: l.document.kind, number: l.document.supplierRef ?? l.document.number, date: l.document.issueDate, party: (l.document.supplier as { name?: string }).name ?? null } })),
+    totals: { sold: sum(soldAll, 'credit_note'), bought: sum(boughtAll, 'purchase_return') },
+  });
 }));
 
 const openingAllowed = requirePermission('inventory.receipt.create');

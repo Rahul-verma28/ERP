@@ -16,6 +16,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise, GST_STATES } from "@/lib/format"
 import { amountInWords } from "@/lib/money"
 import type { PlatformInvoice } from "@/lib/console"
+import { PageError } from "@/components/page-states"
 
 const stateName = (code: string) => GST_STATES.find(([c]) => c === code)?.[1] ?? code
 
@@ -29,7 +30,7 @@ export default function PlatformInvoicePage({ params }: { params: Promise<{ id: 
   const [refundError, setRefundError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
 
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>
+  if (error) return <PageError error={error} />
   if (!inv) return <Skeleton className="h-[40rem] rounded-4xl" />
   const intra = inv.igstPaise === 0
   const rate = inv.seller.gstRateBp / 100

@@ -9,6 +9,7 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
 import { KIND_LABEL, invoiceStatus, returnStatus, type PurchaseDoc } from "@/lib/purchase"
 import { stateName } from "@contracts/validation"
+import { PageError } from "@/components/page-states"
 
 // A purchase invoice, return, order or receipt on A4: print it, or save it as PDF from the print dialog.
 
@@ -25,7 +26,7 @@ export default function PurchasePrintPage({ params }: { params: Promise<{ id: st
   }, [status, id])
 
   if (status === "anonymous") return <p className="p-8 text-sm">Please sign in to print this document.</p>
-  if (error) return <p className="p-8 text-sm">{error}</p>
+  if (error) return <PageError error={new Error(error)} />
   if (!doc || !me?.tenant) return <p className="p-8 text-sm text-neutral-500">Preparing document…</p>
 
   const t = me.tenant

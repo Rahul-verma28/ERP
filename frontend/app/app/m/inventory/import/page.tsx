@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
-import { Spinner } from "@/components/common"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { parseSerials } from "@/components/stock-line"
 import { api, errorMessage } from "@/lib/api"
@@ -18,6 +17,7 @@ import { useApi } from "@/lib/use-api"
 import { downloadCsv, parseCsv } from "@/lib/csv"
 import { qty, type BatchRow, type StockEntry, type StockLocation } from "@/lib/inventory"
 import { todayInIndia } from "@contracts/validation"
+import { PageLoading } from "@/components/page-states"
 
 // Opening stock or a stock count from a spreadsheet saved as CSV. Items are matched by SKU,
 // barcode or exact name; every row is checked and shown before anything is posted.
@@ -57,7 +57,7 @@ function ImportStock() {
   const [busy, setBusy] = React.useState(false)
 
   if (!can(kind === "count" ? "inventory.stock_count.create" : "inventory.receipt.create")) return <PageHeader title="Import stock" description="You don't have access to this. Ask your admin." />
-  if (!locations.data) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (!locations.data) return <PageLoading />
 
   async function read(f: File) {
     setFileError(null)

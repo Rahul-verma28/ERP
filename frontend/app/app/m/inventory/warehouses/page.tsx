@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Archive, ArchiveRestore, MapPin, Pencil, Phone, Plus, Star, Warehouse } from "lucide-react"
+import { Archive, ArchiveRestore, Eye, MapPin, Pencil, Phone, Plus, Star, Warehouse } from "lucide-react"
+import { ActionMenu } from "@/components/page-parts"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
@@ -56,18 +57,22 @@ export default function WarehousesPage() {
           { key: "items", header: "Items in stock", align: "right", defaultHidden: true, sort: (g) => g.itemsInStock, cell: (g) => g.itemsInStock },
           { key: "value", header: "Value", align: "right", defaultHidden: true, sort: (g) => g.valuePaise, cell: (g) => formatPaise(g.valuePaise) },
           { key: "status", header: "Status", cell: (g) => <Badge variant={g.isActive ? "secondary" : "outline"}>{g.isActive ? "Active" : "Closed"}</Badge> },
-          ...(can("inventory.warehouse.edit") ? [{
+          {
             key: "actions", header: "Actions", hideable: false,
             cell: (g: StockLocation) => (
-              <span className="flex gap-0.5">
-                <Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit ${g.name}`} onClick={() => setEditing(g)}><Pencil /></Button>
-                {g.isActive && !g.isDefault && <Button variant="ghost" size="icon-sm" title="Make default" aria-label={`Make ${g.name} default`} onClick={() => act(g, { isDefault: true }, `${g.name} is the default`)}><Star /></Button>}
-                {!g.isDefault && <Button variant="ghost" size="icon-sm" title={g.isActive ? "Close" : "Reopen"} aria-label={`${g.isActive ? "Close" : "Reopen"} ${g.name}`} onClick={() => act(g, { isActive: !g.isActive }, g.isActive ? `${g.name} closed` : `${g.name} reopened`)}>{g.isActive ? <Archive /> : <ArchiveRestore />}</Button>}
+              <span className="flex gap-0.5" onClick={(e) => e.stopPropagation()}>
+                {can("inventory.warehouse.edit") && <Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit ${g.name}`} onClick={() => setEditing(g)}><Pencil /></Button>}
+                <ActionMenu label={`More actions for ${g.name}`} items={[
+                  { label: "Open", icon: Eye, href: `/app/m/inventory/warehouses/${g.id}` },
+                  can("inventory.warehouse.edit") && g.isActive && !g.isDefault && { label: "Make default", icon: Star, onClick: () => void act(g, { isDefault: true }, `${g.name} is the default`) },
+                  can("inventory.warehouse.edit") && !g.isDefault && (g.isActive ? { label: "Close warehouse", icon: Archive, onClick: () => void act(g, { isActive: false }, `${g.name} closed`) } : { label: "Reopen", icon: ArchiveRestore, onClick: () => void act(g, { isActive: true }, `${g.name} reopened`) }),
+                ]} />
               </span>
             ),
-          }] : []),
+          },
         ]}
         searchPlaceholder="Search warehouses"
+        rowHref={(g) => `/app/m/inventory/warehouses/${g.id}`}
         emptyState={<EmptyState icon={Warehouse} title="No warehouses yet" />}
       />
       {editing && <WarehouseFormDialog warehouse={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}

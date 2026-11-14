@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArrowLeft, Check, CheckSquare, FileText, MessageCircle, Pencil, Phone, RotateCcw, Trophy, XCircle } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { ConfirmDialog, Spinner } from "@/components/common"
+import { ConfirmDialog } from "@/components/common"
 import { ACTIVITY_META, ActivityDialog, LabelChips, ProductsEditor, StagePill } from "@/components/crm/dialogs"
 import { DealMenu, DealStatus, useDealActions } from "@/components/crm/deal-actions"
 import { TaskList, Timeline } from "@/components/crm/timeline"
@@ -17,6 +17,7 @@ import { useApi } from "@/lib/use-api"
 import { dueLabel, tone, useCrmSetup, waLink, type Activity, type CrmProduct, type Deal } from "@/lib/crm"
 import { formatDate, formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { PageError, PageLoading } from "@/components/page-states"
 
 // One deal: where it stands in the pipeline, what was said and is to be done, what is being sold,
 // and the quotations and invoices made for it.
@@ -42,8 +43,8 @@ export default function DealPage() {
   const today = todayInIndia()
   const actions = useDealActions((d) => { if (d === null) router.push("/app/m/crm/deals"); else void reload() })
 
-  if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
-  if (!data) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (error) return <PageError error={error} />
+  if (!data) return <PageLoading />
 
   const deal = data
   const open = deal.status === "open"

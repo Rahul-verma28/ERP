@@ -6,7 +6,7 @@ import { toast } from "sonner"
 import { Eye, Plus, Printer, Undo2, Wallet } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { ConfirmDialog, EmptyState, Spinner } from "@/components/common"
+import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, periodFilter, type Column } from "@/components/data-list"
 import type { ContactOption } from "@/components/pickers"
 import { KIND_LABEL, methodLabel, ReceiptDialog, ReceiveDialog, type Receipt } from "@/components/receive-payment"
@@ -16,6 +16,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { PAYMENT_METHODS } from "@/lib/money"
 import { cn } from "@/lib/utils"
+import { PageLoading } from "@/components/page-states"
 
 // Payments received: money in from customers. One receipt can clear several bills; what is not put
 // on a bill stays with the customer as an advance for a later invoice.
@@ -72,7 +73,7 @@ export default function PaymentsReceivedPage() {
   ]
   const newButton = canCreate && <Button className="h-10 rounded-xl px-4 font-semibold" onClick={() => setReceiving(true)}><Plus /> Receive payment</Button>
 
-  if (params.get("contact") && presetContact.loading) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (params.get("contact") && presetContact.loading) return <PageLoading />
 
   return (
     <>

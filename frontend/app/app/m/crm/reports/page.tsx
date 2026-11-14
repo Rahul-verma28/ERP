@@ -2,13 +2,13 @@
 
 import * as React from "react"
 import { PageHeader } from "@/components/app-shell"
-import { Spinner } from "@/components/common"
 import { NativeSelect } from "@/components/form"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { tone, useCrmSetup } from "@/lib/crm"
 import { formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { PageError, PageLoading } from "@/components/page-states"
 
 // CRM reports: how many leads, where they come from, who works them, how many turn into sales,
 // what is in the pipeline and why sales are lost.
@@ -47,12 +47,14 @@ function Bars({ title, hint, rows, money, label }: { title: string; hint?: strin
 
 export default function CrmReportsPage() {
   const { can } = useAuth()
-  const setup = useCrmSetup().data
+  const setupApi = useCrmSetup()
+  const setup = setupApi.data
   const [pipelineId, setPipelineId] = React.useState("")
   const pipeline = setup?.pipelines.find((p) => p.id === pipelineId) ?? setup?.pipelines.find((p) => p.isDefault) ?? setup?.pipelines[0]
-  const { data } = useApi<Report>(pipeline ? `/crm/report?pipelineId=${pipeline.id}` : null)
+  const { data, error, reload } = useApi<Report>(pipeline ? `/crm/report?pipelineId=${pipeline.id}` : null)
   if (!can("crm.lead.view")) return <PageHeader title="CRM reports" description="You don't have access to this. Ask your admin." />
-  if (!data || !setup) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (setupApi.error || error) return <PageError error={setupApi.error ?? error} onRetry={() => { void setupApi.reload(); void reload() }} />
+  if (!data || !setup) return <PageLoading />
   const kpi = (label: string, value: React.ReactNode, hint?: string, accent?: string) => <div className="ui-surface grid gap-1 p-4"><p className="text-xs text-muted-foreground">{label}</p><p className={cn("text-2xl font-bold tabular-nums", accent)}>{value}</p>{hint && <p className="text-xs text-muted-foreground">{hint}</p>}</div>
   return (
     <div className="grid gap-5">

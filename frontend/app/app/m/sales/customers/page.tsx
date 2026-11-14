@@ -1,9 +1,10 @@
 "use client"
 
+import { ActionMenu } from "@/components/page-parts"
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Eye, FilePlus2, Pencil, Upload, UserPlus, Users } from "lucide-react"
+import { Eye, FilePlus2, FileText, IndianRupee, MessageCircle, MessageSquare, Pencil, Printer, Upload, UserPlus, Users } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { EmptyState } from "@/components/common"
@@ -75,7 +76,14 @@ export default function CustomersPage() {
         <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
           <Link href={`/app/m/sales/customers/${r.id}`} className={icon} title="View" aria-label={`View ${r.name}`}><Eye /></Link>
           {can("billing.invoice.create") && r.isActive && <Link href={`/app/m/billing/new?contact=${r.id}`} className={icon} title="New invoice" aria-label={`New invoice for ${r.name}`}><FilePlus2 /></Link>}
-          {can("crm.contact.edit") && <Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit ${r.name}`} onClick={() => setEditing(r)}><Pencil /></Button>}
+          {can("billing.payment.create") && <Link href={`/app/m/billing/payments?new=1&contact=${r.id}`} className={icon} title="Receive payment" aria-label={`Receive payment from ${r.name}`}><IndianRupee /></Link>}
+          <ActionMenu label={`More actions for ${r.name}`} items={[
+            can("crm.contact.edit") && { label: "Edit", icon: Pencil, onClick: () => setEditing(r) },
+            r.isActive && can("sales.quotation.create") && { label: "New quotation", icon: FileText, href: `/app/m/sales/new?contact=${r.id}` },
+            can("crm.activity.view") && { label: "Notes, calls and tasks", icon: MessageSquare, href: `/app/m/crm/${r.id}` },
+            r.phone && { label: "WhatsApp", icon: MessageCircle, onClick: () => window.open(`https://wa.me/${r.phone!.replace(/\D/g, "").replace(/^(\d{10})$/, "91$1")}`, "_blank", "noopener") },
+            can("billing.dues.view") && { label: "Print statement", icon: Printer, onClick: () => window.open(`/print/statement/${r.id}`, "_blank", "noopener") },
+          ]} />
         </span>
       ),
     },

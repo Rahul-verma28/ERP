@@ -1,10 +1,11 @@
 "use client"
 
+import { ActionMenu } from "@/components/page-parts"
 import * as React from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { CalendarDays, Check, CheckCheck, Eye, Pencil, Plus, Printer, Send, ShoppingCart, Trash2 } from "lucide-react"
+import { Building2, CalendarDays, Check, CheckCheck, Eye, IndianRupee, Pencil, Plus, Printer, Send, ShoppingCart, Trash2, Undo2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ConfirmDialog, EmptyState, StatusBadge } from "@/components/common"
@@ -121,8 +122,14 @@ function List({ kind }: { kind: PurchaseKind }) {
           <Link href={`/app/m/purchase/${r.id}`} className={iconLink} title="View" aria-label={`View ${r.number}`}><Eye /></Link>
           <a href={`/print/purchase/${r.id}`} target="_blank" rel="noreferrer" className={iconLink} title="Print or PDF" aria-label={`Print ${r.number}`}><Printer /></a>
           {bill && r.status === "draft" && canWrite && <Button variant="ghost" size="icon-sm" title="Post" aria-label={`Post ${r.number}`} onClick={() => act("post", r, "Invoice posted. Stock is in.")}><Send /></Button>}
-          {(bill || isReturn) && r.status === "draft" && canWrite && <Link href={`/app/m/purchase/new?kind=${kind}&edit=${r.id}`} className={iconLink} title="Edit" aria-label={`Edit ${r.number}`}><Pencil /></Link>}
-          {(bill || isReturn) && r.status === "draft" && canWrite && <Button variant="ghost" size="icon-sm" className="text-destructive" title="Delete" aria-label={`Delete ${r.number}`} onClick={() => setDeleting(r)}><Trash2 /></Button>}
+          <ActionMenu label={`More actions for ${r.number}`} items={[
+            (bill || isReturn) && r.status === "draft" && canWrite && { label: "Edit", icon: Pencil, href: `/app/m/purchase/new?kind=${kind}&edit=${r.id}` },
+            bill && ["unpaid", "part_paid"].includes(r.status) && canWrite && { label: "Pay supplier", icon: IndianRupee, href: `/app/m/purchase/payments?new=1&supplier=${r.contactId}` },
+            bill && ["unpaid", "part_paid", "paid"].includes(r.status) && canWrite && { label: "Return goods", icon: Undo2, href: `/app/m/purchase/new?kind=purchase_return&from=${r.id}` },
+            { label: "Open supplier", icon: Building2, href: `/app/m/purchase/suppliers/${r.contactId}` },
+            "-",
+            (bill || isReturn) && r.status === "draft" && canWrite && { label: "Delete draft", icon: Trash2, destructive: true, onClick: () => setDeleting(r) },
+          ]} />
         </span>
       ),
     },

@@ -2,10 +2,10 @@
 
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
-import { ArrowLeftRight, Boxes, History, Plus, SlidersHorizontal } from "lucide-react"
-import Link from "next/link"
+import { ArrowLeftRight, Boxes, Eye, History, Plus, SlidersHorizontal } from "lucide-react"
+import { ActionMenu } from "@/components/page-parts"
 import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { StockDialog } from "@/components/stock-dialogs"
 import { EmptyState } from "@/components/common"
 import { DataList, type Column, type FilterDef } from "@/components/data-list"
@@ -46,9 +46,13 @@ function StockList() {
       cell: (r) => (
         <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
           {can("inventory.receipt.create") && <Button variant="ghost" size="icon-sm" title="Add stock" aria-label={`Add stock to ${r.name}`} onClick={() => setOpen({ kind: "add", row: r })}><Plus /></Button>}
-          {can("inventory.stock_adjustment.create") && <Button variant="ghost" size="icon-sm" title="Adjust stock" aria-label={`Adjust stock of ${r.name}`} onClick={() => setOpen({ kind: "adjust", row: r })}><SlidersHorizontal /></Button>}
-          {can("inventory.transfer.create") && <Button variant="ghost" size="icon-sm" title="Move to another warehouse" aria-label={`Move ${r.name}`} onClick={() => setOpen({ kind: "move", row: r })}><ArrowLeftRight /></Button>}
-          <Link href={`/app/m/inventory/items/${r.id}`} className={buttonVariants({ variant: "ghost", size: "icon-sm" })} title="History" aria-label={`History of ${r.name}`}><History /></Link>
+          <ActionMenu label={`More actions for ${r.name}`} items={[
+            { label: "Open item", icon: Eye, href: `/app/m/catalog/${r.id}` },
+            { label: "Stock history", icon: History, href: `/app/m/catalog/${r.id}?tab=stock` },
+            "-",
+            can("inventory.stock_adjustment.create") && { label: "Adjust stock", icon: SlidersHorizontal, onClick: () => setOpen({ kind: "adjust", row: r }) },
+            can("inventory.transfer.create") && { label: "Move to another warehouse", icon: ArrowLeftRight, onClick: () => setOpen({ kind: "move", row: r }) },
+          ]} />
         </span>
       ),
     },
@@ -66,14 +70,14 @@ function StockList() {
       id="stock"
       path="/stock"
       params={{ v: String(version) }}
-      header={{ title: "Stock", description: "How much of each item you have. Sales and purchases change it by themselves.", primary: add, more }}
+      header={{ title: "Stock", description: "How much of each item you have, in each warehouse. Sales and purchases change it by themselves.", primary: add, more: [...more, { label: "Warehouses", href: "/app/m/inventory/warehouses" }, { label: "Stock entries", href: "/app/m/inventory/entries" }, { label: "Transfers", href: "/app/m/inventory/transfers" }] }}
       columns={columns}
       searchPlaceholder="Search item, SKU or scan a barcode"
       presetLabel="Show"
       presets={[{ key: "all", label: "All", params: {} }, { key: "low", label: "Low stock", params: { low: "true" } }]}
       defaultPreset={params.get("low") ? "low" : undefined}
       filters={filters}
-      rowHref={(r) => `/app/m/inventory/items/${r.id}`}
+      rowHref={(r) => `/app/m/catalog/${r.id}?tab=stock`}
       exportName="stock"
       emptyState={<EmptyState icon={Boxes} title="No stock yet" description="Add the stock you have today. From then on, every invoice and bill moves it by itself." action={add} />}
     />

@@ -21,6 +21,7 @@ import { KIND_PATH, RETURN_REASONS, type PurchaseDoc, type PurchaseLine } from "
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
 import { todayInIndia } from "@contracts/validation"
+import { PageLoading } from "@/components/page-states"
 
 // A return is one screen: pick the invoice, type how much of each item goes back.
 
@@ -45,7 +46,7 @@ export function PurchaseReturnForm({ fromId, editId }: { fromId: string | null; 
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
 
-  if (editId && !saved.data) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (editId && !saved.data) return <PageLoading />
 
   const draft = saved.data
   const savedLine = (id: string) => draft?.lines.find((l) => l.sourceLineId === id)

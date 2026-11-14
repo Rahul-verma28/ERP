@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { ArrowLeft, Check, CheckSquare, Handshake, Mail, MessageCircle, Pencil, Phone, Plus } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { ConfirmDialog, EmptyState, Spinner } from "@/components/common"
+import { ConfirmDialog, EmptyState } from "@/components/common"
 import { ACTIVITY_META, ActivityDialog, DealDialog, LabelChips, ProductsEditor, StagePill } from "@/components/crm/dialogs"
 import { LeadMenu, useLeadActions } from "@/components/crm/lead-actions"
 import { TaskList, Timeline } from "@/components/crm/timeline"
@@ -17,6 +17,7 @@ import { useApi } from "@/lib/use-api"
 import { dueLabel, LEAD_STATUS, tone, useCrmSetup, waLink, type Activity, type CrmProduct, type Deal, type Lead } from "@/lib/crm"
 import { formatDate, formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { PageError, PageLoading } from "@/components/page-states"
 
 // One lead (or a customer's CRM side): where it stands, what was said, what is to be done,
 // what they want, and the deals made from it.
@@ -78,8 +79,8 @@ export default function LeadPage() {
   const today = todayInIndia()
   const actions = useLeadActions((l) => { if (l === null) router.push("/app/m/crm"); else void reload() })
 
-  if (error) return <p className="text-sm text-muted-foreground">{error.message}</p>
-  if (!data) return <div className="grid place-items-center py-24"><Spinner /></div>
+  if (error) return <PageError error={error} />
+  if (!data) return <PageLoading />
 
   const lead = data
   const isLead = lead.type === "lead"

@@ -9,6 +9,7 @@ import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
 import { code128Path } from "@/lib/code128"
+import { PageError } from "@/components/page-states"
 
 // Barcode labels for items: name, price and a Code 128 barcode of the item's barcode (or SKU).
 // Printed on A4 sheets of 3 × 8 labels; copies per item is chosen on the page.
@@ -40,7 +41,7 @@ function Labels() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params])
 
-  if (error) return <p className="p-6 text-sm">{error}</p>
+  if (error) return <PageError error={new Error(error)} />
   if (!items) return <p className="p-6 text-sm text-neutral-500">Loading…</p>
   const n = Math.min(Math.max(Number(copies) || 1, 1), 100)
   const labels = items.flatMap((it) => Array.from({ length: n }, () => it))

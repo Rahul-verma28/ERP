@@ -50,7 +50,7 @@ export function useApi<T>(path: string | null) {
 
 // Lists many parts of one screen need (warehouses, categories, units): fetched once and shared,
 // so a dialog with three warehouse boxes asks the server one time, not three.
-const shared = new Map<string, { data?: unknown; at?: number; promise?: Promise<unknown>; listeners: Set<() => void> }>()
+const shared = new Map<string, { data?: unknown; error?: ApiError; at?: number; promise?: Promise<unknown>; listeners: Set<() => void> }>()
 
 function entry(path: string) {
   let e = shared.get(path)
@@ -61,13 +61,22 @@ function entry(path: string) {
 function fetchShared(path: string, force = false) {
   const e = entry(path)
   if (e.promise && !force) return e.promise
-  e.promise = api.get(path).then((data) => {
-    e.data = data
-    e.at = Date.now()
-    e.listeners.forEach((l) => l())
-    return data
-  })
-  e.promise.catch(() => { e.promise = undefined })
+  e.promise = api.get(path).then(
+    (data) => {
+      e.data = data
+      e.error = undefined
+      e.at = Date.now()
+      e.listeners.forEach((l) => l())
+      return data
+    },
+    (err) => {
+      // Every screen reading this list learns it failed, so none of them spins for ever
+      e.error = toApiError(err)
+      e.promise = undefined
+      e.listeners.forEach((l) => l())
+      throw e.error
+    },
+  )
   return e.promise
 }
 
@@ -85,7 +94,11 @@ export function useSharedApi<T>(path: string | null) {
     }
   }, [path])
   const reload = React.useCallback(async () => {
-    if (path) await fetchShared(path, true)
+    if (path) await fetchShared(path, true).catch(() => undefined)
   }, [path])
-  return { data: (path ? (shared.get(path)?.data as T | undefined) : undefined) ?? null, reload }
+  const e = path ? shared.get(path) : undefined
+  const data = (e?.data as T | undefined) ?? null
+  // Data already on screen wins over a later failed refresh
+  const error = data ? null : (e?.error ?? null)
+  return { data, error, loading: !!path && !data && !error, reload }
 }
