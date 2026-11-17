@@ -17,6 +17,7 @@ import { getRolePermissions } from '../access/service';
 import { customerBalances, setOpeningBalance } from '../billing/ledger';
 import * as crm from './pipeline';
 import { DateStr } from '../../kernel/query';
+import { listCustomers } from '../billing/lists';
 import { dateOnly, todayIST } from '../../kernel/gst';
 
 // CRM basic (CRM-01..04): customers, leads → convert, timeline, CSV import with de-duplication.
@@ -126,11 +127,11 @@ async function loadInScope(req: Request, kind?: Kind) {
 function registerContactRoutes(kind: Kind, base: string) {
   router.get(base, requirePermission(perm(kind, 'view')), validate(ContactList, 'query'), tx(async (req, res) => {
     const q = req.query as unknown as z.infer<typeof ContactList>;
-    const dueIds = kind === 'customer' && q.dues ? [...(await customerBalances())].filter(([, b]) => (q.dues === 'overdue' ? b.overduePaise > 0n : b.balancePaise > 0n)).map(([id]) => id) : null;
+    // Customers: one round trip with what each bought, paid and owes, and the tab counts
+    if (kind === 'customer') return res.json(await listCustomers(req.ctx!, q, (await getRolePermissions(req.ctx!.roleId)).has('billing.dues.view')));
     const where: Prisma.ContactWhereInput = {
       AND: [
         { type: kind },
-        dueIds ? { id: { in: dueIds } } : {},
         scopeWhere(req.ctx!, OWNER_FIELDS),
         kind === 'lead' ? leadWhere(q) : { isActive: q.active === 'all' ? undefined : q.active === 'true' },
         q.q
@@ -141,11 +142,6 @@ function registerContactRoutes(kind: Kind, base: string) {
     const rows = await db().contact.findMany({ where, ...pageArgs(q) });
     const result = page(rows, q.limit);
     if (kind === 'lead') return res.json({ ...result, data: await decorateLeads(req.ctx!, result.data) });
-    // Customers carry what they owe, for people who may see dues
-    if (kind === 'customer' && (await getRolePermissions(req.ctx!.roleId)).has('billing.dues.view')) {
-      const owed = await customerBalances(result.data.map((c) => c.id));
-      return res.json({ ...result, data: result.data.map((c) => ({ ...c, ...(owed.get(c.id) ?? { balancePaise: 0n, overduePaise: 0n }) })) });
-    }
     res.json(result);
   }));
 

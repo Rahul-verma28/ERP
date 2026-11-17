@@ -4,7 +4,8 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeft, Ban, CalendarDays, Check, Copy, Eye, FileMinus, FileOutput, FileText, IndianRupee, Mail, MessageCircle, Pencil, Plus, Printer, Send, Trash2, Truck, Undo2, X } from "lucide-react"
+import { AlarmClock, ArrowLeft, Ban, CalendarDays, Check, Copy, Eye, FileMinus, FileOutput, FileText, IndianRupee, Mail, MessageCircle, Pencil, Plus, Printer, Send, Trash2, Truck, Undo2, Wallet, X } from "lucide-react"
+import { SummaryCards, type SummaryCard } from "@/components/summary-cards"
 import { ActionMenu, BackLink, DetailHeader, Pill, StatGrid, Steps, type Step } from "@/components/page-parts"
 import { UseAdvanceDialog, type AdvanceList } from "@/components/advances"
 import { Badge } from "@/components/ui/badge"
@@ -53,6 +54,50 @@ interface Row {
   noteType?: string | null
   sourceNumber?: string | null
   location?: { id: string; name: string } | null
+  /** From the list */
+  items?: string | null
+  lineCount?: number
+  overdueDays?: number
+  paymentCount?: number
+  lastPaidOn?: string | null
+  createdByName?: string | null
+  createdAt?: string
+  ewayBillNo?: string | null
+  irn?: string | null
+}
+
+type Totals = { counts?: Record<string, number>; sums?: Record<string, number> }
+/** The cards over each list, from the same response as the rows */
+function listCards(kind: Kind, r: Totals): SummaryCard[] {
+  const c = r.counts ?? {}
+  const m = (k: string) => formatPaise(r.sums?.[k] ?? 0)
+  const n = (k: string) => c[k] ?? 0
+  if (kind === "invoice") return [
+    { label: "Total invoiced", value: m("all"), hint: `${n("all") - n("draft") - n("cancelled")} posted · ${n("customers")} customers`, color: "blue", icon: FileText },
+    { label: "This month", value: m("month"), hint: "Posted this month", color: "violet", icon: CalendarDays },
+    { label: "Received", value: m("received"), hint: `${n("paid")} fully paid`, color: "emerald", icon: Wallet },
+    { label: "To receive", value: m("balance"), hint: `${n("unpaid")} invoices open`, color: "amber", icon: IndianRupee },
+    { label: "Overdue", value: m("overdue"), hint: `${n("overdue")} past due date`, color: "rose", icon: AlarmClock },
+  ]
+  if (kind === "quotation") return [
+    { label: "All quotations", value: n("all"), hint: m("all"), color: "blue", icon: FileText },
+    { label: "Waiting for reply", value: n("draft") + n("sent"), hint: `${n("expired")} past their valid date`, color: "amber", icon: AlarmClock },
+    { label: "Accepted", value: n("accepted"), hint: m("accepted"), color: "emerald", icon: Check },
+    { label: "Made into invoices", value: n("converted"), hint: m("converted"), color: "violet", icon: FileOutput },
+    { label: "Declined", value: n("declined"), hint: m("declined"), color: "rose", icon: X },
+  ]
+  if (kind === "sales_order") return [
+    { label: "All orders", value: n("all"), hint: m("all"), color: "blue", icon: FileText },
+    { label: "Open", value: n("open"), hint: m("open"), color: "amber", icon: AlarmClock },
+    { label: "Part invoiced", value: n("part_invoiced"), hint: m("part_invoiced"), color: "violet", icon: FileOutput },
+    { label: "Completed", value: n("completed"), hint: m("completed"), color: "emerald", icon: Check },
+  ]
+  return [
+    { label: "All challans", value: n("all"), hint: m("all"), color: "blue", icon: Truck },
+    { label: "Not billed", value: n("issued"), hint: `${m("issued")} waiting for the invoice`, color: "amber", icon: AlarmClock },
+    { label: "Invoiced", value: n("converted"), hint: m("converted"), color: "emerald", icon: FileOutput },
+    { label: "Cancelled", value: n("cancelled"), color: "slate", icon: Ban },
+  ]
 }
 
 const DATE_HEADER: Record<Kind, string> = { invoice: "Invoice date", quotation: "Quotation date", sales_order: "Order date", delivery_challan: "Challan date" }
@@ -200,7 +245,7 @@ export function SalesDocList({ kind }: { kind: Kind }) {
       cell: (r) => (
         <span className="flex items-center gap-2.5">
           <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{initials(r.buyer?.name ?? "?")}</span>
-          <span className="min-w-0"><span className="block font-medium">{r.buyer?.name ?? "—"}</span>{(r.buyer?.phone || r.buyer?.gstin) && <span className="block text-xs text-muted-foreground">{r.buyer.gstin ?? r.buyer.phone}</span>}</span>
+          <span className="min-w-0"><span className="block font-medium">{r.buyer?.name ?? "—"}</span>{(r.buyer?.phone || r.buyer?.gstin) && <span className="block text-xs text-muted-foreground">{r.buyer.gstin ?? r.buyer.phone}</span>}{r.contactId == null && <span className="block text-[11px] text-muted-foreground">Walk-in</span>}</span>
         </span>
       ),
     },
@@ -211,18 +256,36 @@ export function SalesDocList({ kind }: { kind: Kind }) {
           cell: (r: Row) => {
             if (!r.dueDate) return <span className="text-muted-foreground">—</span>
             const late = r.dueDate.slice(0, 10) < today && (open(r) || (kind === "quotation" && ["draft", "sent"].includes(r.status)))
-            return <span className={late ? "text-destructive" : ""}>{dated(r.dueDate)}{late && <span className="block text-xs">{kind === "quotation" ? "Expired" : "Overdue"}</span>}</span>
+            return <span className={late ? "text-destructive" : ""}>{dated(r.dueDate)}{late && <span className="block text-xs font-medium">{kind === "quotation" ? "Expired" : `Overdue · ${r.overdueDays ?? 0} day${r.overdueDays === 1 ? "" : "s"}`}</span>}</span>
           },
         }]
       : []),
     ...(kind !== "quotation" ? [{ key: "warehouse", header: "Warehouse", defaultHidden: (warehouses.data?.data.length ?? 0) < 2, csv: (r: Row) => r.location?.name ?? "", cell: (r: Row) => (r.location ? <Badge variant="outline">{r.location.name}</Badge> : "—") }] : []),
+    { key: "items", header: "Items", defaultHidden: kind === "invoice", csv: (r) => r.items ?? "", cell: (r) => <span className="block max-w-60 text-[13px]" title={r.items ?? ""}><span className="block truncate">{r.items ?? "—"}</span>{(r.lineCount ?? 0) > 4 && <span className="text-xs text-muted-foreground">{r.lineCount} items</span>}</span> },
     { key: "branch", header: "Branch", defaultHidden: true, cell: (r) => branchName(r.branchId), csv: (r) => branchName(r.branchId) },
-    { key: "subtotal", header: "Subtotal", align: "right", defaultHidden: true, sort: (r) => r.taxablePaise ?? 0, csv: (r) => ((r.taxablePaise ?? 0) / 100).toFixed(2), cell: (r) => <span className="tabular-nums">{formatPaise(r.taxablePaise ?? 0)}</span> },
-    { key: "tax", header: "Tax", align: "right", defaultHidden: true, csv: (r) => (tax(r) / 100).toFixed(2), cell: (r) => <span className="tabular-nums">{formatPaise(tax(r))}</span> },
+    { key: "subtotal", header: "Subtotal", align: "right", defaultHidden: kind !== "invoice", sort: (r) => r.taxablePaise ?? 0, csv: (r) => ((r.taxablePaise ?? 0) / 100).toFixed(2), cell: (r) => <span className="tabular-nums">{formatPaise(r.taxablePaise ?? 0)}</span> },
+    { key: "tax", header: "Tax", align: "right", defaultHidden: kind !== "invoice", csv: (r) => (tax(r) / 100).toFixed(2), cell: (r) => <span className="tabular-nums">{formatPaise(tax(r))}</span> },
     { key: "amount", header: "Total", align: "right", sort: (r) => r.totalPaise, csv: (r) => (r.totalPaise / 100).toFixed(2), cell: (r) => <span className="font-semibold tabular-nums">{formatPaise(r.totalPaise)}</span> },
     ...(kind === "invoice"
-      ? [{ key: "balance", header: "Balance", align: "right" as const, sort: (r: Row) => due(r), csv: (r: Row) => (due(r) / 100).toFixed(2), cell: (r: Row) => <span className={cn("font-medium tabular-nums", r.status === "paid" ? "text-emerald-700 dark:text-emerald-300" : due(r) > 0 && "text-orange-600 dark:text-orange-300")}>{r.status === "draft" ? "—" : formatPaise(due(r))}</span> }]
+      ? [
+          { key: "received", header: "Received", align: "right" as const, defaultHidden: true, sort: (r: Row) => r.paidPaise, csv: (r: Row) => (r.paidPaise / 100).toFixed(2), cell: (r: Row) => <span className="tabular-nums text-emerald-700 dark:text-emerald-300">{r.paidPaise ? formatPaise(r.paidPaise) : "—"}</span> },
+          {
+            key: "balance", header: "Balance", align: "right" as const, sort: (r: Row) => due(r), csv: (r: Row) => (due(r) / 100).toFixed(2),
+            cell: (r: Row) => {
+              const pct = r.totalPaise ? Math.min(100, Math.round((r.paidPaise / r.totalPaise) * 100)) : 0
+              return (
+                <span className="grid min-w-24 justify-items-end gap-1">
+                  <span className={cn("font-medium tabular-nums", r.status === "paid" ? "text-emerald-700 dark:text-emerald-300" : due(r) > 0 && "text-orange-600 dark:text-orange-300")}>{r.status === "draft" ? "—" : formatPaise(due(r))}</span>
+                  {!["draft", "cancelled"].includes(r.status) && <span className="h-1.5 w-20 overflow-hidden rounded-full bg-muted" title={`${pct}% received`}><span className="block h-full rounded-full bg-emerald-500" style={{ width: `${pct}%` }} /></span>}
+                </span>
+              )
+            },
+          },
+          { key: "lastPaid", header: "Last payment", defaultHidden: true, csv: (r: Row) => r.lastPaidOn?.slice(0, 10) ?? "", cell: (r: Row) => (r.lastPaidOn ? <span className="text-sm">{formatDate(r.lastPaidOn)}<span className="block text-[11px] text-muted-foreground">{r.paymentCount} payment{r.paymentCount === 1 ? "" : "s"}</span></span> : <span className="text-muted-foreground">Not yet</span>) },
+          { key: "gstFiles", header: "E-way / IRN", defaultHidden: true, csv: (r: Row) => [r.ewayBillNo, r.irn ? "IRN" : ""].filter(Boolean).join(" "), cell: (r: Row) => (r.ewayBillNo || r.irn ? <span className="flex flex-wrap gap-1">{r.ewayBillNo && <Pill color="blue">EWB {r.ewayBillNo}</Pill>}{r.irn && <Pill color="violet">IRN</Pill>}</span> : <span className="text-muted-foreground">—</span>) },
+        ]
       : []),
+    { key: "createdBy", header: "Made by", defaultHidden: true, csv: (r) => r.createdByName ?? "", cell: (r) => <span className="text-sm">{r.createdByName ?? "—"}{r.createdAt && <span className="block text-[11px] text-muted-foreground">{formatDate(r.createdAt)}</span>}</span> },
     {
       key: "status", header: "Status", csv: (r) => status(r).label,
       cell: (r) => {
@@ -282,7 +345,8 @@ export function SalesDocList({ kind }: { kind: Kind }) {
         id={slug}
         path={docApi(kind)}
         params={{ v: String(version) }}
-        countsPath={`${docApi(kind)}/counts`}
+        tabs
+        top={(res) => <SummaryCards items={listCards(kind, res as Totals)} />}
         header={{
           title: LIST_NAME[kind],
           description: LIST_HINT[kind],
@@ -297,7 +361,7 @@ export function SalesDocList({ kind }: { kind: Kind }) {
           ],
         }}
         columns={columns}
-        searchPlaceholder="Search number, customer, mobile or GSTIN"
+        searchPlaceholder="Search number, customer, mobile, GSTIN or item"
         presets={presets}
         filters={[
           periodFilter(me?.tenant?.fyStartMonth ?? 4),

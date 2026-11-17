@@ -35,6 +35,12 @@ export interface Receipt {
   contactId: string | null
   customer: string | null
   customerPhone?: string | null
+  /** From the list */
+  customerGstin?: string | null
+  accountName?: string | null
+  accountKind?: string | null
+  createdByName?: string | null
+  createdAt?: string
   reversed: boolean
   reversal: { number: string; paidOn: string } | null
   advance: boolean

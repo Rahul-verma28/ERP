@@ -3,6 +3,7 @@ import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
 import { DateStr, inScope, scopeWhere } from '../../kernel/query';
+import { bundle, userNames, userPart } from '../../kernel/bundle';
 import { dateOnly, todayIST } from '../../kernel/gst';
 import { Prisma } from '@prisma/client';
 import { publish } from '../events/outbox';
@@ -136,28 +137,75 @@ export const ReceiptList = z.object({
   view: z.enum(['advance', 'reversed', 'active']).optional(),
 });
 
-/** Money in from customers. Refunds (money out) and the reversal entries themselves are left out. */
+/** Money in from customers. Refunds (money out) and the reversal entries themselves are left out.
+ *  One round trip (kernel/bundle): the receipts with customer, bill, account, reversal and where each
+ *  advance went, plus the counts and totals for the tabs and cards. */
 export async function listReceipts(ctx: TenantCtx, q: z.infer<typeof ReceiptList>) {
-  const matched = q.q ? await db().contact.findMany({ where: { tenantId: ctx.tenantId, name: { contains: q.q, mode: 'insensitive' } }, select: { id: true }, take: 200 }) : [];
-  const where: Prisma.PaymentWhereInput = {
-    AND: [
-      { tenantId: ctx.tenantId },
-      scopeWhere(ctx, { owner: ['createdBy'] }),
-      { reversesId: null, amountPaise: { gt: 0 } },
-      { OR: [{ documentId: null }, { document: { kind: { in: [...OPEN_KINDS] } } }] },
-      q.from || q.to ? { paidOn: { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } } : {},
-      q.method ? { method: q.method } : {},
-      q.contactId ? { contactId: q.contactId } : {},
-      q.view === 'advance' ? { documentId: null, reversal: null } : q.view === 'reversed' ? { reversal: { isNot: null } } : q.view === 'active' ? { reversal: null } : {},
-      q.q
-        ? { OR: [{ number: { contains: q.q, mode: 'insensitive' } }, { reference: { contains: q.q, mode: 'insensitive' } }, { contactId: { in: matched.map((c) => c.id) } }, { document: { number: { contains: q.q, mode: 'insensitive' } } }] }
-        : {},
-    ],
+  const t = ctx.tenantId;
+  const scope = (ctx.scope ?? 'own') === 'own' ? Prisma.sql`and p.created_by = ${ctx.userId}::uuid` : Prisma.empty;
+  const b = await bundle({
+    rows: Prisma.sql`
+      select p.id, p.number, p.paid_on, p.method::text as method, p.reference, p.notes, p.amount_paise, p.contact_id, p.document_id, p.account_id, p.created_by, p.created_at, p.reverses_id,
+        c.name as c_name, c.company_name as c_company, c.phone as c_phone, c.gstin as c_gstin,
+        d.kind::text as doc_kind, d.number as doc_number, d.buyer as doc_buyer,
+        r.id as rev_id, r.number as rev_number, r.paid_on as rev_paid_on,
+        a.name as account_name, a.kind as account_kind,
+        (select coalesce(json_agg(json_build_object('id', ad.id, 'kind', ad.kind::text, 'number', ad.number, 'amountPaise', aa.amount_paise) order by aa.created_at), '[]'::json)
+           from advance_adjustments aa join sales_documents ad on ad.id = aa.document_id
+           where aa.payment_id = p.id and aa.reverses_id is null and not exists (select 1 from advance_adjustments x where x.reverses_id = aa.id)) as used
+      from payments_received p
+      left join contacts c on c.id = p.contact_id
+      left join sales_documents d on d.id = p.document_id
+      left join payments_received r on r.reverses_id = p.id
+      left join fin_accounts a on a.id = p.account_id
+      where p.tenant_id = ${t}::uuid and p.reverses_id is null and p.amount_paise > 0 ${scope}
+        and (p.document_id is null or d.kind::text in ('invoice', 'opening_balance', 'debit_note'))
+        ${q.from ? Prisma.sql`and p.paid_on >= ${q.from}::date` : Prisma.empty}
+        ${q.to ? Prisma.sql`and p.paid_on <= ${q.to}::date` : Prisma.empty}
+        ${q.method ? Prisma.sql`and p.method::text = ${q.method}` : Prisma.empty}
+        ${q.contactId ? Prisma.sql`and p.contact_id = ${q.contactId}::uuid` : Prisma.empty}
+      order by p.id desc limit 3000`,
+    ...userPart(t),
+  });
+  const user = userNames(b);
+  const month = todayIST().slice(0, 7);
+  const all = b.rows.map((p) => {
+    const buyer = p.docBuyer as { name?: string; phone?: string } | null;
+    const used = (p.used ?? []) as { id: string; kind: string; number: string | null; amountPaise: number }[];
+    const amount = p.amountPaise as bigint;
+    const usedPaise = used.reduce((n, u) => n + BigInt(u.amountPaise), 0n);
+    return {
+      id: p.id as string, number: p.number as string, paidOn: p.paidOn as Date, method: p.method as string, reference: p.reference ?? null, notes: p.notes ?? null,
+      amountPaise: amount, contactId: p.contactId ?? null, documentId: p.documentId ?? null, accountId: p.accountId ?? null, createdBy: p.createdBy ?? null, createdAt: p.createdAt as Date,
+      document: p.documentId ? { id: p.documentId, kind: p.docKind, number: p.docNumber, buyer } : null,
+      customer: p.contactId ? (p.cCompany || p.cName || null) : (buyer?.name ?? null),
+      customerPhone: p.contactId ? (p.cPhone ?? null) : (buyer?.phone ?? null),
+      customerGstin: p.cGstin ?? null,
+      accountName: p.accountName ?? null, accountKind: p.accountKind ?? null,
+      createdByName: p.createdBy ? user.get(p.createdBy) ?? null : null,
+      reversed: !!p.revId,
+      reversal: p.revId ? { id: p.revId, number: p.revNumber, paidOn: p.revPaidOn } : null,
+      advance: !p.documentId,
+      appliedTo: p.documentId ? [{ id: p.documentId, kind: p.docKind, number: p.docNumber, amountPaise: amount }] : used.map((u) => ({ ...u, amountPaise: BigInt(u.amountPaise) })),
+      unusedPaise: !p.documentId && !p.revId ? amount - usedPaise : 0n,
+    };
+  });
+  const live = all.filter((r) => !r.reversed);
+  const sum = (rows: typeof all) => rows.reduce((n, r) => n + r.amountPaise, 0n);
+  const thisMonth = live.filter((r) => r.paidOn.toISOString().slice(0, 7) === month);
+  const cash = live.filter((r) => r.method === 'cash');
+  const counts = { all: all.length, active: live.length, advance: all.filter((r) => r.advance && !r.reversed).length, reversed: all.length - live.length };
+  const sums = {
+    received: sum(live), month: sum(thisMonth), monthCount: thisMonth.length, cash: sum(cash), cashCount: cash.length, bank: sum(live) - sum(cash), bankCount: live.length - cash.length,
+    advanceLeft: live.reduce((n, r) => n + r.unusedPaise, 0n), customers: new Set(live.map((r) => r.contactId ?? r.customer)).size,
   };
-  const rows = await db().payment.findMany({ where, include: RECEIPT_INCLUDE, take: q.limit + 1, orderBy: { id: 'desc' }, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) });
-  const data = rows.slice(0, q.limit);
-  const n = await names(data.map((r) => r.contactId));
-  return { data: data.map((r) => shape(r, n)), nextCursor: rows.length > q.limit ? data[data.length - 1].id : null };
+  const text = q.q?.toLowerCase();
+  const rows = all.filter((r) =>
+    (q.view === 'advance' ? r.advance && !r.reversed : q.view === 'reversed' ? r.reversed : q.view === 'active' ? !r.reversed : true)
+    && (!text || [r.number, r.reference, r.customer, r.customerGstin, r.accountName, ...r.appliedTo.map((x) => x.number)].some((v) => typeof v === 'string' && v.toLowerCase().includes(text))));
+  const start = q.cursor ? rows.findIndex((r) => r.id === q.cursor) + 1 : 0;
+  const data = rows.slice(start, start + q.limit);
+  return { data, nextCursor: start + q.limit < rows.length ? data[data.length - 1]?.id ?? null : null, total: rows.length, counts, sums };
 }
 
 /** Undo a receipt: first take it off every invoice it was put on, then add the opposite entry. */

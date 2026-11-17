@@ -3,7 +3,9 @@
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { Eye, Plus, Printer, Undo2, Wallet } from "lucide-react"
+import { Banknote, CalendarDays, Eye, Landmark, PiggyBank, Plus, Printer, Undo2, Wallet } from "lucide-react"
+import Link from "next/link"
+import { SummaryCards } from "@/components/summary-cards"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ConfirmDialog, EmptyState } from "@/components/common"
@@ -13,7 +15,7 @@ import { KIND_LABEL, methodLabel, ReceiptDialog, ReceiveDialog, type Receipt } f
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
-import { formatDate, formatPaise } from "@/lib/format"
+import { formatDate, formatPaise, initials } from "@/lib/format"
 import { PAYMENT_METHODS } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import { PageLoading } from "@/components/page-states"
@@ -42,14 +44,23 @@ export default function PaymentsReceivedPage() {
   const columns: Column<Receipt>[] = [
     { key: "number", header: "Receipt no.", hideable: false, sort: (r) => r.number, csv: (r) => r.number, cell: (r) => <span className="inline-flex w-fit rounded-lg border px-2 py-0.5 font-mono text-xs font-medium text-primary">{r.number}</span> },
     { key: "date", header: "Date", sort: (r) => r.paidOn, csv: (r) => r.paidOn.slice(0, 10), cell: (r) => formatDate(r.paidOn) },
-    { key: "customer", header: "Customer", sort: (r) => r.customer?.toLowerCase() ?? "", csv: (r) => r.customer, cell: (r) => <span className="font-medium">{r.customer ?? "—"}</span> },
+    {
+      key: "customer", header: "Customer", sort: (r) => r.customer?.toLowerCase() ?? "", csv: (r) => r.customer,
+      cell: (r) => (
+        <span className="flex items-center gap-2.5">
+          <span className="grid size-9 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{initials(r.customer ?? "?")}</span>
+          <span className="min-w-0">{r.contactId ? <Link href={`/app/m/sales/customers/${r.contactId}`} onClick={(e) => e.stopPropagation()} className="block font-medium hover:underline">{r.customer ?? "—"}</Link> : <span className="block font-medium">{r.customer ?? "—"}</span>}<span className="block truncate text-xs text-muted-foreground">{r.customerGstin ?? r.customerPhone ?? (r.contactId ? "—" : "Walk-in")}</span></span>
+        </span>
+      ),
+    },
     { key: "method", header: "Paid by", csv: (r) => methodLabel(r.method), cell: (r) => <Badge variant="outline">{methodLabel(r.method)}</Badge> },
+    { key: "account", header: "Paid into", csv: (r) => r.accountName ?? "", cell: (r) => (r.accountName ? <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">{r.accountKind === "cash" ? <Banknote className="size-3.5" /> : <Landmark className="size-3.5" />}{r.accountName}</span> : "—") },
     { key: "reference", header: "Reference", csv: (r) => r.reference, cell: (r) => <span className="font-mono text-xs">{r.reference ?? "—"}</span> },
     {
       key: "applied", header: "Put on", csv: (r) => r.appliedTo.map((a) => a.number).join(" "),
       cell: (r) => (r.appliedTo.length === 0 ? <span className="text-muted-foreground">{r.reversed ? "—" : "Advance"}</span> : (
         <span className="flex flex-wrap gap-1">
-          {r.appliedTo.slice(0, 3).map((a) => <span key={a.id} className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px]">{a.number ?? KIND_LABEL[a.kind]}</span>)}
+          {r.appliedTo.slice(0, 3).map((a) => <span key={a.id} title={formatPaise(a.amountPaise)} className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[11px]">{a.number ?? KIND_LABEL[a.kind]}{r.appliedTo.length > 1 && ` · ${formatPaise(a.amountPaise)}`}</span>)}
           {r.appliedTo.length > 3 && <span className="text-xs text-muted-foreground">+{r.appliedTo.length - 3}</span>}
         </span>
       )),
@@ -60,6 +71,7 @@ export default function PaymentsReceivedPage() {
       key: "status", header: "Status", csv: (r) => status(r).label,
       cell: (r) => { const s = status(r); return <span className={cn("inline-flex h-[22px] items-center rounded-full px-2 text-xs font-semibold whitespace-nowrap", PILL[s.tone])}>{s.label}</span> },
     },
+    { key: "createdBy", header: "Recorded by", defaultHidden: true, csv: (r) => r.createdByName ?? "", cell: (r) => <span className="text-sm">{r.createdByName ?? "—"}{r.createdAt && <span className="block text-[11px] text-muted-foreground">{formatDate(r.createdAt)}</span>}</span> },
     {
       key: "actions", header: "Actions", hideable: false,
       cell: (r) => (
@@ -93,11 +105,23 @@ export default function PaymentsReceivedPage() {
         columns={columns}
         searchPlaceholder="Search receipt, customer, reference or bill no."
         presets={[
-          { key: "all", label: "All", params: {} },
-          { key: "active", label: "Received", params: { view: "active" } },
-          { key: "advance", label: "Advances", params: { view: "advance" } },
-          { key: "reversed", label: "Reversed", params: { view: "reversed" } },
+          { key: "all", label: "All", params: {}, countKey: "all" },
+          { key: "active", label: "Received", params: { view: "active" }, countKey: "active" },
+          { key: "advance", label: "Advances", params: { view: "advance" }, countKey: "advance" },
+          { key: "reversed", label: "Reversed", params: { view: "reversed" }, countKey: "reversed" },
         ]}
+        tabs
+        top={(res) => {
+          const s = (res.sums ?? {}) as Record<string, number>
+          const c = (res.counts ?? {}) as Record<string, number>
+          return <SummaryCards items={[
+            { label: "Total received", value: formatPaise(s.received ?? 0), hint: `${c.active ?? 0} payments · ${s.customers ?? 0} customers`, color: "blue", icon: Wallet },
+            { label: "This month", value: formatPaise(s.month ?? 0), hint: `${s.monthCount ?? 0} payments`, color: "violet", icon: CalendarDays },
+            { label: "By bank, UPI or card", value: formatPaise(s.bank ?? 0), hint: `${s.bankCount ?? 0} payments`, color: "emerald", icon: Landmark },
+            { label: "In cash", value: formatPaise(s.cash ?? 0), hint: `${s.cashCount ?? 0} payments`, color: "amber", icon: Banknote },
+            { label: "Advance left", value: formatPaise(s.advanceLeft ?? 0), hint: `${c.advance ?? 0} advances · ${c.reversed ?? 0} reversed`, color: "slate", icon: PiggyBank },
+          ]} />
+        }}
         filters={[
           periodFilter(me?.tenant?.fyStartMonth ?? 4),
           { key: "method", label: "Paid by", options: PAYMENT_METHODS.map((m) => ({ value: m.value, label: m.label })) },

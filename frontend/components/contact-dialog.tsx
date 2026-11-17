@@ -60,6 +60,14 @@ export interface Contact {
   /** What they owe (negative = you hold their money); only for people who can see dues */
   balancePaise?: number
   overduePaise?: number
+  /** From the customer list */
+  overdueCount?: number
+  billedPaise?: number
+  receivedPaise?: number
+  monthPaise?: number
+  invoiceCount?: number
+  lastInvoiceOn?: string | null
+  lastPaidOn?: string | null
   createdAt: string
   version: number
 }

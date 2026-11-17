@@ -4,7 +4,7 @@ import type { Prisma, SalesDocKind } from '@prisma/client';
 import { db, withPlatform } from '../../kernel/db';
 import { AppError } from '../../kernel/errors';
 import { randomToken } from '../../kernel/crypto';
-import { DateStr, IdParam, ListQuery, page, pageArgs, scopeWhere } from '../../kernel/query';
+import { DateStr, IdParam, ListQuery, scopeWhere } from '../../kernel/query';
 import { validate } from '../../middleware/request';
 import { publicRoute, requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { publicLimiter } from '../../middleware/rateLimit';
@@ -24,6 +24,8 @@ export const publicBilling = Router();
 publicBilling.get('/public/documents/:token', publicRoute, publicLimiter, async (req, res) => {
   res.json(await withPlatform(() => billing.publicDocument(String(req.params.token))));
 });
+
+import { listSalesDocs } from './lists';
 
 const router = Router();
 router.use(tenantAuth);
@@ -48,48 +50,11 @@ const DocList = ListQuery.extend({
 const OPEN: Prisma.SalesDocumentWhereInput = { status: { in: ['issued', 'partially_paid'] } };
 const overdueWhere = (): Prisma.SalesDocumentWhereInput => ({ ...OPEN, dueDate: { lt: new Date(`${todayIST()}T00:00:00Z`) } });
 
-const SUMMARY_SELECT = {
-  id: true, kind: true, status: true, number: true, contactId: true, buyer: true, issueDate: true, dueDate: true,
-  totalPaise: true, paidPaise: true, createdAt: true, createdBy: true, branchId: true, noteType: true, sourceId: true, sourceNumber: true,
-  taxablePaise: true, cgstPaise: true, sgstPaise: true, igstPaise: true, locationId: true, sourceType: true, noteReason: true,
-} satisfies Prisma.SalesDocumentSelect;
 
 function registerReadRoutes(kind: SalesDocKind, base: string, module: 'sales.quotation' | 'billing.invoice' | 'billing.credit_note' | 'sales.order' | 'sales.delivery') {
   router.get(base, requirePermission(`${module}.view`), validate(DocList, 'query'), tx(async (req, res) => {
-    const q = req.query as unknown as z.infer<typeof DocList>;
-    const where: Prisma.SalesDocumentWhereInput = {
-      AND: [
-        { kind },
-        scopeWhere(req.ctx!, billing.SCOPE_FIELDS),
-        q.status ? { status: q.status as Prisma.EnumSalesDocStatusFilter['equals'] } : {},
-        q.unpaid === 'true' ? OPEN : {},
-        q.overdue === 'true' ? overdueWhere() : {},
-        q.contactId ? { contactId: q.contactId } : {},
-        q.sourceId ? { sourceId: q.sourceId } : {},
-        q.locationId ? { locationId: q.locationId } : {},
-        q.noteType ? { noteType: q.noteType } : {},
-        q.from || q.to ? { issueDate: { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } } : {},
-        q.q
-          ? {
-              OR: [
-                { number: { contains: q.q, mode: 'insensitive' } },
-                { buyer: { path: ['name'], string_contains: q.q } },
-                { buyer: { path: ['phone'], string_contains: q.q.replace(/\s/g, '') } },
-                { buyer: { path: ['gstin'], string_contains: q.q.toUpperCase() } },
-              ],
-            }
-          : {},
-      ],
-    };
-    const [rows, total] = await Promise.all([
-      db().salesDocument.findMany({ where, select: SUMMARY_SELECT, ...pageArgs(q) }),
-      q.withTotal ? db().salesDocument.count({ where }) : Promise.resolve(undefined),
-    ]);
-    // The warehouse name, for the list's Warehouse column
-    const ids = [...new Set(rows.map((r) => r.locationId).filter(Boolean))] as string[];
-    const places = ids.length ? new Map((await db().stockLocation.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map((l) => [l.id, l])) : new Map();
-    const result = page(rows.map((r) => ({ ...r, location: r.locationId ? (places.get(r.locationId) ?? null) : null })), q.limit);
-    res.json({ ...result, ...(total !== undefined ? { total } : {}) });
+    // One round trip: rows, names, receipts, and the counts and totals for the tabs and cards
+    res.json(await listSalesDocs(req.ctx!, kind, req.query as unknown as z.infer<typeof DocList>));
   }));
 
   // Tab counts on the list page (All · 64, Overdue · 18 …), within the user's scope

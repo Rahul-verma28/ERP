@@ -4,7 +4,8 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeft, Ban, CalendarDays, Eye, FileMinus, IndianRupee, ListChecks, Plus, Printer, Search, Undo2 } from "lucide-react"
+import { ArrowLeft, Ban, CalendarDays, Eye, FileMinus, IndianRupee, ListChecks, Percent, Plus, Printer, Search, Undo2, Wallet } from "lucide-react"
+import { SummaryCards } from "@/components/summary-cards"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -76,6 +77,7 @@ const PILL = {
 }
 
 interface Row {
+  items?: string | null
   id: string
   status: string
   number: string | null
@@ -184,6 +186,7 @@ export function CreditNoteList({ kind = "credit_note" }: { kind?: "credit_note" 
     ...(debit ? [] : [{ key: "type", header: "Type", csv: (r: Row) => NOTE_TYPE[r.noteType ?? ""], cell: (r: Row) => <Badge variant="outline">{NOTE_TYPE[r.noteType ?? ""] ?? "—"}</Badge> }]),
     { key: "reason", header: "Reason", csv: (r) => reasonLabel(debit ? "debit" : r.noteType, r.noteReason), cell: (r) => <span className="text-sm">{reasonLabel(debit ? "debit" : r.noteType, r.noteReason)}</span> },
     ...(debit ? [] : [{ key: "warehouse", header: "Warehouse", defaultHidden: places.length < 2, csv: (r: Row) => r.location?.name ?? "", cell: (r: Row) => (r.location ? <Badge variant="outline">{r.location.name}</Badge> : "—") }]),
+    { key: "items", header: "Items", defaultHidden: debit, csv: (r) => r.items ?? "", cell: (r) => <span className="block max-w-56 truncate text-[13px]" title={r.items ?? ""}>{r.items ?? "—"}</span> },
     { key: "tax", header: "GST", align: "right", defaultHidden: true, csv: (r) => (tax(r) / 100).toFixed(2), cell: (r) => <span className="tabular-nums">{formatPaise(tax(r))}</span> },
     { key: "amount", header: "Amount", align: "right", sort: (r) => r.totalPaise, csv: (r) => (r.totalPaise / 100).toFixed(2), cell: (r) => <span className="font-semibold tabular-nums">{formatPaise(r.totalPaise)}</span> },
     {
@@ -215,7 +218,7 @@ export function CreditNoteList({ kind = "credit_note" }: { kind?: "credit_note" 
     { key: "all", label: "All", params: {}, countKey: "all" },
     ...(debit
       ? [{ key: "issued", label: "Unpaid", params: { status: "issued" }, countKey: "issued" }, { key: "paid", label: "Paid", params: { status: "paid" }, countKey: "paid" }]
-      : [{ key: "return", label: "Goods returned", params: { noteType: "return" } }, { key: "amount", label: "Amount reduced", params: { noteType: "amount" } }]),
+      : [{ key: "return", label: "Goods returned", params: { noteType: "return" }, countKey: "return" }, { key: "amount", label: "Amount reduced", params: { noteType: "amount" }, countKey: "amount" }]),
     { key: "cancelled", label: "Cancelled", params: { status: "cancelled" }, countKey: "cancelled" },
   ]
   const newButton = can("billing.credit_note.create") && (
@@ -228,7 +231,23 @@ export function CreditNoteList({ kind = "credit_note" }: { kind?: "credit_note" 
         id={base}
         path={`/${base}`}
         params={{ v: String(version) }}
-        countsPath={`/${base}/counts`}
+        tabs
+        top={(res) => {
+          const c = (res.counts ?? {}) as Record<string, number>
+          const m = (k: string) => formatPaise(((res.sums ?? {}) as Record<string, number>)[k] ?? 0)
+          return <SummaryCards items={debit ? [
+            { label: "Debit notes", value: c.all ?? 0, hint: m("all"), color: "blue", icon: FileMinus },
+            { label: "To receive", value: m("open"), hint: `${c.issued ?? 0} unpaid`, color: "amber", icon: IndianRupee },
+            { label: "Paid", value: c.paid ?? 0, hint: m("paid"), color: "emerald", icon: Wallet },
+            { label: "Cancelled", value: c.cancelled ?? 0, color: "slate", icon: Ban },
+          ] : [
+            { label: "Sales returns", value: c.all ?? 0, hint: `${m("all")} credited`, color: "blue", icon: FileMinus },
+            { label: "Goods returned", value: c.return ?? 0, hint: "Stock came back", color: "violet", icon: Undo2 },
+            { label: "Amount reduced", value: c.amount ?? 0, hint: "Rate or discount fixed", color: "amber", icon: Percent },
+            { label: "Credit left", value: m("open"), hint: "Not yet used or refunded", color: "emerald", icon: Wallet },
+            { label: "Cancelled", value: c.cancelled ?? 0, color: "slate", icon: Ban },
+          ]} />
+        }}
         header={{
           title: debit ? "Debit Notes" : "Sales Returns",
           description: debit ? "The customer owes more than an invoice said: a rate went up or a bill was short." : "Goods a customer sent back, or a bill you reduced. Each is a credit note against one invoice.",
