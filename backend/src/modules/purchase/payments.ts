@@ -122,22 +122,7 @@ export async function getSupplierPayment(ctx: TenantCtx, id: string) {
   return g;
 }
 
-export const PaymentList = z.object({
-  from: DateStr.optional(),
-  to: DateStr.optional(),
-  method: z.enum(['cash', 'upi', 'card', 'bank', 'cheque', 'other']).optional(),
-  contactId: z.string().uuid().optional(),
-});
-
-/** Payments made, newest first, the last 1,000 rows (searched and paged on the screen) */
-export async function listSupplierPayments(ctx: TenantCtx, q: z.infer<typeof PaymentList>) {
-  const rows = await rowsOf(ctx, {
-    ...(q.from || q.to ? { paidOn: { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } } : {}),
-    ...(q.method ? { method: q.method } : {}),
-    ...(q.contactId ? { contactId: q.contactId } : {}),
-  });
-  return { data: await group(ctx, rows) };
-}
+export { PaymentList, listSupplierPayments } from './lists';
 
 /** Undo a whole payment: an opposite row on each invoice it was on */
 export async function reverseSupplierPaymentGroup(ctx: TenantCtx, id: string) {

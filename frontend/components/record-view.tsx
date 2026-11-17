@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Avatar } from "@/components/page-parts"
 import { cn } from "@/lib/utils"
 
-// One "View" dialog for every HR record: a title with its status, then a grid of small
+// One "View" dialog for every record: a title with its status, then a grid of small
 // cards — one per field — so everything about the record is on one screen.
 
 export interface ViewField {

@@ -49,13 +49,6 @@ const checkSupplierGstin = (b: { gstin?: string | null; stateCode?: string | nul
   if (mismatch) throw new AppError('VALIDATION_FAILED', mismatch, { fields: { gstin: mismatch } });
 };
 export const SupplierPatch = SupplierInput.partial().extend({ isActive: z.boolean().optional(), version: z.number().int() });
-export const SupplierList = z.object({
-  q: z.string().trim().max(100).optional(),
-  active: z.enum(['true', 'false', 'all']).default('true'),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-  cursor: z.string().uuid().optional(),
-});
-
 /** What is owed to each supplier: bills less payments and returns. Negative = they owe you. */
 export async function supplierBalances(contactIds?: string[]) {
   const rows = await db().purchaseDocument.groupBy({
@@ -64,21 +57,6 @@ export async function supplierBalances(contactIds?: string[]) {
     _sum: { totalPaise: true, paidPaise: true, returnedPaise: true },
   });
   return new Map(rows.map((r) => [r.contactId, (r._sum.totalPaise ?? 0n) - (r._sum.paidPaise ?? 0n) - (r._sum.returnedPaise ?? 0n)]));
-}
-
-export async function listSuppliers(ctx: TenantCtx, q: z.infer<typeof SupplierList>) {
-  const rows = await db().contact.findMany({
-    where: {
-      tenantId: ctx.tenantId, type: 'supplier', isActive: q.active === 'all' ? undefined : q.active === 'true',
-      ...(q.q ? { OR: [{ name: { contains: q.q, mode: 'insensitive' } }, { companyName: { contains: q.q, mode: 'insensitive' } }, { phone: { contains: q.q } }, { gstin: { contains: q.q.toUpperCase() } }] } : {}),
-    },
-    orderBy: { name: 'asc' },
-    take: q.limit + 1,
-    ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}),
-  });
-  const data = rows.slice(0, q.limit);
-  const owed = await supplierBalances(data.map((c) => c.id));
-  return { data: data.map((c) => ({ ...c, balancePaise: owed.get(c.id) ?? 0n })), nextCursor: rows.length > q.limit ? data[data.length - 1].id : null };
 }
 
 async function supplierOf(ctx: TenantCtx, id: string, field = 'contactId') {
@@ -619,35 +597,6 @@ export async function closeOrder(ctx: TenantCtx, id: string) {
   await db().purchaseDocument.update({ where: { id }, data: { status: 'closed', version: { increment: 1 } } });
   await audit({ action: 'inventory.purchase_order.close', entity: 'purchase_document', entityId: id, after: { number: d.number } });
   return purchaseView(ctx, id);
-}
-
-export const PurchaseList = z.object({
-  kind: z.enum(['purchase_order', 'goods_receipt', 'purchase_bill', 'purchase_return']),
-  status: z.string().max(16).optional(),
-  contactId: z.string().uuid().optional(),
-  q: z.string().trim().max(100).optional(),
-  from: DateStr.optional(),
-  to: DateStr.optional(),
-  limit: z.coerce.number().int().min(1).max(200).default(50),
-  cursor: z.string().uuid().optional(),
-});
-
-export async function listPurchases(ctx: TenantCtx, q: z.infer<typeof PurchaseList>) {
-  const today = dateOnly(todayIST());
-  const where: Prisma.PurchaseDocumentWhereInput = {
-    tenantId: ctx.tenantId, kind: q.kind, contactId: q.contactId,
-    ...(q.status === 'overdue' ? { status: { in: ['unpaid', 'part_paid'] }, dueDate: { lt: today } } : q.status === 'pending' ? { status: { in: ['open', 'part_received'] } } : q.status ? { status: q.status } : {}),
-    ...(q.from || q.to ? { issueDate: { ...(q.from ? { gte: dateOnly(q.from) } : {}), ...(q.to ? { lte: dateOnly(q.to) } : {}) } } : {}),
-    ...(q.q ? { OR: [{ number: { contains: q.q, mode: 'insensitive' } }, { supplierRef: { contains: q.q, mode: 'insensitive' } }, { supplier: { path: ['name'], string_contains: q.q } }] } : {}),
-  };
-  const [rows, total] = await Promise.all([
-    db().purchaseDocument.findMany({ where, orderBy: { id: 'desc' }, take: q.limit + 1, include: q.kind === 'purchase_return' ? { lines: { orderBy: { position: 'asc' }, select: { description: true, quantity: true, unit: true } } } : undefined, ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) }),
-    db().purchaseDocument.count({ where }),
-  ]);
-  const warehouseIds = [...new Set(rows.map((d) => d.locationId).filter(Boolean))] as string[];
-  const warehouses = new Map(q.kind === 'purchase_return' && warehouseIds.length ? (await db().stockLocation.findMany({ where: { id: { in: warehouseIds } }, select: { id: true, name: true } })).map((g) => [g.id, g]) : []);
-  const data = rows.slice(0, q.limit).map((d) => ({ ...d, location: d.locationId ? (warehouses.get(d.locationId) ?? null) : null, balancePaise: owes(d) ? d.totalPaise - d.paidPaise - d.returnedPaise : 0n, overdue: d.kind === 'purchase_bill' && !!d.dueDate && d.dueDate < today && (d.status === 'unpaid' || d.status === 'part_paid') }));
-  return { data, nextCursor: rows.length > q.limit ? data[data.length - 1].id : null, total };
 }
 
 // ---------------------------------------------------------------- payments to suppliers

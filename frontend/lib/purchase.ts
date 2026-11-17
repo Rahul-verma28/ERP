@@ -47,6 +47,16 @@ export interface Supplier {
   isActive: boolean
   balancePaise: number
   version: number
+  /** From the list */
+  billCount?: number
+  billedPaise?: number
+  paidPaise?: number
+  returnedPaise?: number
+  overduePaise?: number
+  overdueCount?: number
+  monthPaise?: number
+  lastBillOn?: string | null
+  createdAt?: string
 }
 
 export interface PurchaseLine {
@@ -79,7 +89,7 @@ export interface PurchaseDoc {
   status: string
   number: string
   contactId: string
-  supplier: { name: string; gstin: string | null; phone: string | null; stateCode: string | null; address?: Record<string, string> | null }
+  supplier: { name: string; gstin: string | null; phone: string | null; email?: string | null; stateCode: string | null; address?: Record<string, string> | null }
   supplierRef: string | null
   supplierDate: string | null
   issueDate: string
@@ -101,6 +111,13 @@ export interface PurchaseDoc {
   returnedPaise: number
   balancePaise: number
   overdue?: boolean
+  /** List rows only */
+  overdueDays?: number
+  taxPaise?: number
+  lineCount?: number
+  paymentCount?: number
+  lastPaidOn?: string | null
+  createdByName?: string | null
   sourceType: string | null
   sourceId: string | null
   sourceNumber: string | null

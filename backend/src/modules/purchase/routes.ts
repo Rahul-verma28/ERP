@@ -2,12 +2,14 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { prisma } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import { z } from 'zod';
-import { IdParam } from '../../kernel/query';
+import { DateStr, IdParam } from '../../kernel/query';
 import { validate } from '../../middleware/request';
 import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import * as purchase from './service';
 import * as payments from './payments';
 import * as reports from './reports';
+import * as lists from './lists';
+import { getRolePermissions } from '../access/service';
 
 // Purchase lives under the Inventory module and its permissions:
 // suppliers inventory.supplier.*, orders inventory.purchase_order.*, GRNs inventory.receipt.*,
@@ -17,8 +19,8 @@ const router = Router();
 router.use(tenantAuth);
 
 // Suppliers
-router.get('/suppliers', requirePermission('inventory.supplier.view'), validate(purchase.SupplierList, 'query'), tx(async (req, res) => {
-  res.json(await purchase.listSuppliers(req.ctx!, req.query as unknown as z.infer<typeof purchase.SupplierList>));
+router.get('/suppliers', requirePermission('inventory.supplier.view'), validate(lists.SupplierList, 'query'), tx(async (req, res) => {
+  res.json(await lists.listSuppliers(req.ctx!, req.query as unknown as z.infer<typeof lists.SupplierList>));
 }));
 router.post('/suppliers', requirePermission('inventory.supplier.create'), validate(purchase.SupplierInput.required({ stateCode: true })), tx(async (req, res) => {
   res.status(201).json(await purchase.createSupplier(req.ctx!, req.body));
@@ -28,6 +30,16 @@ router.get('/suppliers/:id', requirePermission('inventory.supplier.view'), valid
 }));
 router.patch('/suppliers/:id', requirePermission('inventory.supplier.edit'), validate(IdParam, 'params'), validate(purchase.SupplierPatch), tx(async (req, res) => {
   res.json(await purchase.updateSupplier(req.ctx!, String(req.params.id), req.body));
+}));
+router.get('/suppliers/:id/overview', requirePermission('inventory.supplier.view'), validate(IdParam, 'params'), validate(z.object({ from: DateStr.optional(), to: DateStr.optional() }), 'query'), tx(async (req, res) => {
+  const q = req.query as { from?: string; to?: string };
+  const ov = await lists.supplierOverview(req.ctx!, String(req.params.id), q);
+  // Money with the supplier is for those who may see bills; the rest get the supplier only
+  if (!(await getRolePermissions(req.ctx!.roleId)).has('inventory.supplier_bill.view')) {
+    res.json({ supplier: { ...ov.supplier, billedPaise: 0n, paidPaise: 0n, returnedPaise: 0n, balancePaise: 0n, overduePaise: 0n, monthPaise: 0n }, totals: { billedPaise: 0n, returnedPaise: 0n, paidPaise: 0n, balancePaise: 0n, overduePaise: 0n }, bills: [], returns: [], payments: [] });
+    return;
+  }
+  res.json(ov);
 }));
 router.get('/suppliers/:id/ledger', requirePermission('inventory.supplier_bill.view'), validate(IdParam, 'params'), tx(async (req, res) => {
   const q = req.query as Record<string, string | undefined>;
@@ -77,8 +89,8 @@ const byKind = (action: 'view' | 'create' | 'cancel', from: 'query' | 'body' | '
   return c[action](req, res, next);
 };
 
-router.get('/purchases', validate(purchase.PurchaseList, 'query'), byKind('view', 'query'), tx(async (req, res) => {
-  res.json(await purchase.listPurchases(req.ctx!, req.query as unknown as z.infer<typeof purchase.PurchaseList>));
+router.get('/purchases', validate(lists.PurchaseList, 'query'), byKind('view', 'query'), tx(async (req, res) => {
+  res.json(await lists.listPurchases(req.ctx!, req.query as unknown as z.infer<typeof lists.PurchaseList>));
 }));
 router.post('/purchases', validate(purchase.PurchaseInput.extend({ ...KIND.shape, draft: z.boolean().optional() })), byKind('create', 'body'), tx(async (req, res) => {
   const { kind, draft, ...input } = req.body as purchase.PurchaseInput & { kind: purchase.PurchaseKind; draft?: boolean };
@@ -118,8 +130,8 @@ router.post('/purchases/:id/payments', requirePermission('inventory.supplier_bil
   res.status(201).json(await purchase.paySupplier(req.ctx!, String(req.params.id), req.body));
 }));
 // ── Payments made: one payment over a supplier's open invoices ──
-router.get('/payments-made', requirePermission('inventory.supplier_bill.view'), validate(payments.PaymentList, 'query'), tx(async (req, res) => {
-  res.json(await payments.listSupplierPayments(req.ctx!, req.query as unknown as z.infer<typeof payments.PaymentList>));
+router.get('/payments-made', requirePermission('inventory.supplier_bill.view'), validate(lists.PaymentList, 'query'), tx(async (req, res) => {
+  res.json(await lists.listSupplierPayments(req.ctx!, req.query as unknown as z.infer<typeof lists.PaymentList>));
 }));
 router.get('/payments-made/:id', requirePermission('inventory.supplier_bill.view'), validate(IdParam, 'params'), tx(async (req, res) => {
   res.json(await payments.getSupplierPayment(req.ctx!, String(req.params.id)));

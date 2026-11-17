@@ -15,7 +15,7 @@ import { ActionMenu, BackLink, DetailHeader, Pill, Section } from "@/components/
 import { SalaryDialog } from "@/components/hr/employee-dialogs"
 import { ListSelect } from "@/components/hr/pickers"
 import { LoanDialog, OvertimeDialog, type Loan, type OT } from "@/components/hr/payroll-dialogs"
-import { SummaryCards } from "@/components/hr/summary-cards"
+import { SummaryCards } from "@/components/summary-cards"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"

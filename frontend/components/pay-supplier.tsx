@@ -30,10 +30,16 @@ export interface SupplierPayment {
   contactId: string
   supplier: string
   supplierPhone: string | null
+  /** From the list */
+  supplierGstin?: string | null
+  accountName?: string | null
+  accountKind?: string | null
+  createdByName?: string | null
+  createdAt?: string
   amountPaise: number
   reversed: boolean
   reversal: { number: string; paidOn: string } | null
-  appliedTo: { id: string; paymentId: string; number: string | null; supplierRef: string | null; amountPaise: number }[]
+  appliedTo: { id: string; paymentId: string; number: string | null; supplierRef: string | null; billTotalPaise?: number; amountPaise: number }[]
 }
 interface OpenBill { id: string; number: string | null; supplierRef: string | null; date: string; dueDate: string | null; duePaise: number; overdue: boolean }
 
