@@ -2270,3 +2270,526 @@ model FinCleared {
   @@unique([tenantId, entryId])
   @@map("fin_cleared")
 }
+
+// ── HR & Payroll ──
+
+/// HR rules for a business: working days, payroll rules (PF, ESI, PT), lists (award types and the like)
+model HrSettings {
+  tenantId  String   @id @map("tenant_id") @db.Uuid
+  data      Json     @default("{}")
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@map("hr_settings")
+}
+
+model HrDepartment {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  branchId  String?  @map("branch_id") @db.Uuid
+  headId    String?  @map("head_id") @db.Uuid
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, name])
+  @@map("hr_departments")
+}
+
+model HrDesignation {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  name         String
+  departmentId String?  @map("department_id") @db.Uuid
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@unique([tenantId, name])
+  @@map("hr_designations")
+}
+
+model HrShift {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  name         String
+  startsAt     String   @map("starts_at") @db.VarChar(5)
+  endsAt       String   @map("ends_at") @db.VarChar(5)
+  breakMinutes Int      @default(0) @map("break_minutes")
+  graceMinutes Int      @default(0) @map("grace_minutes")
+  isNight      Boolean  @default(false) @map("is_night")
+  isDefault    Boolean  @default(false) @map("is_default")
+  isActive     Boolean  @default(true) @map("is_active")
+  version      Int      @default(1)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("hr_shifts")
+}
+
+model Employee {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  code            String
+  name            String
+  email           String?
+  phone           String?   @db.VarChar(15)
+  gender          String?   @db.VarChar(10)
+  dob             DateTime? @db.Date
+  photoUrl        String?   @map("photo_url")
+  /// The login of this employee, for self-service (own attendance, leave, payslips)
+  memberId        String?   @map("member_id") @db.Uuid
+  branchId        String?   @map("branch_id") @db.Uuid
+  departmentId    String?   @map("department_id") @db.Uuid
+  designationId   String?   @map("designation_id") @db.Uuid
+  managerId       String?   @map("manager_id") @db.Uuid
+  shiftId         String?   @map("shift_id") @db.Uuid
+  /// full_time | part_time | contract | intern | temporary
+  employmentType  String    @default("full_time") @map("employment_type") @db.VarChar(12)
+  joinedOn        DateTime  @map("joined_on") @db.Date
+  probationEndsOn DateTime? @map("probation_ends_on") @db.Date
+  /// active | on_notice | exited
+  status          String    @default("active") @db.VarChar(10)
+  exitOn          DateTime? @map("exit_on") @db.Date
+  exitReason      String?   @map("exit_reason")
+  address         Json?
+  emergency       Json?
+  bank            Json?
+  pan             String?   @db.VarChar(10)
+  aadhaarLast4    String?   @map("aadhaar_last4") @db.VarChar(4)
+  uan             String?   @db.VarChar(12)
+  esiNo           String?   @map("esi_no") @db.VarChar(17)
+  /// Monthly basic, or the day's wage when payType is daily
+  basicPaise      BigInt    @default(0) @map("basic_paise")
+  /// monthly | daily
+  payType         String    @default("monthly") @map("pay_type") @db.VarChar(8)
+  pf              Boolean   @default(false)
+  esi             Boolean   @default(false)
+  pt              Boolean   @default(false)
+  notes           String?
+  version         Int       @default(1)
+  createdBy       String?   @map("created_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([tenantId, code])
+  @@index([tenantId, status])
+  @@index([memberId])
+  @@map("employees")
+}
+
+/// An allowance or deduction on an employee's monthly salary
+model HrSalaryItem {
+  id         String @id @default(uuid(7)) @db.Uuid
+  tenantId   String @map("tenant_id") @db.Uuid
+  employeeId String @map("employee_id") @db.Uuid
+  /// allowance | deduction
+  kind       String @db.VarChar(10)
+  name       String
+  /// fixed (paise) | percent (basis points of basic)
+  calc       String @default("fixed") @db.VarChar(10)
+  amount     BigInt
+  position   Int    @default(0)
+
+  @@index([employeeId])
+  @@map("hr_salary_items")
+}
+
+/// A salary advance or loan, recovered in monthly instalments through payroll
+model HrLoan {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  employeeId  String   @map("employee_id") @db.Uuid
+  title       String
+  kind        String   @default("Salary advance") @db.VarChar(60)
+  amountPaise BigInt   @map("amount_paise")
+  emiPaise    BigInt   @map("emi_paise")
+  givenOn     DateTime @map("given_on") @db.Date
+  startsMonth String   @map("starts_month") @db.VarChar(7)
+  accountId   String?  @map("account_id") @db.Uuid
+  journalId   String?  @map("journal_id") @db.Uuid
+  /// active | closed
+  status      String   @default("active") @db.VarChar(10)
+  reason      String?
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([employeeId])
+  @@map("hr_loans")
+}
+
+model HrOvertime {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  workOn     DateTime @map("work_on") @db.Date
+  hours      Decimal  @db.Decimal(6, 2)
+  ratePaise  BigInt   @map("rate_paise")
+  notes      String?
+  status     String   @default("approved") @db.VarChar(10)
+  payslipId  String?  @map("payslip_id") @db.Uuid
+  createdBy  String?  @map("created_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, workOn])
+  @@map("hr_overtime")
+}
+
+model Attendance {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  employeeId      String   @map("employee_id") @db.Uuid
+  date            DateTime @db.Date
+  /// present | absent | half_day | leave | holiday | week_off
+  status          String   @db.VarChar(10)
+  clockIn         String?  @map("clock_in") @db.VarChar(5)
+  clockOut        String?  @map("clock_out") @db.VarChar(5)
+  workedMinutes   Int      @default(0) @map("worked_minutes")
+  lateMinutes     Int      @default(0) @map("late_minutes")
+  overtimeMinutes Int      @default(0) @map("overtime_minutes")
+  /// manual | self | leave
+  source          String   @default("manual") @db.VarChar(8)
+  notes           String?
+  createdBy       String?  @map("created_by") @db.Uuid
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@unique([employeeId, date])
+  @@index([tenantId, date])
+  @@map("attendance")
+}
+
+model LeaveType {
+  id           String  @id @default(uuid(7)) @db.Uuid
+  tenantId     String  @map("tenant_id") @db.Uuid
+  name         String
+  code         String  @db.VarChar(6)
+  daysPerYear  Decimal @default(0) @map("days_per_year") @db.Decimal(5, 1)
+  paid         Boolean @default(true)
+  carryForward Boolean @default(false) @map("carry_forward")
+  color        String  @default("blue") @db.VarChar(12)
+  isActive     Boolean @default(true) @map("is_active")
+  position     Int     @default(0)
+  description  String?
+
+  @@unique([tenantId, name])
+  @@map("leave_types")
+}
+
+model LeaveApplication {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  employeeId  String    @map("employee_id") @db.Uuid
+  leaveTypeId String    @map("leave_type_id") @db.Uuid
+  fromDate    DateTime  @map("from_date") @db.Date
+  toDate      DateTime  @map("to_date") @db.Date
+  halfDay     Boolean   @default(false) @map("half_day")
+  days        Decimal   @db.Decimal(5, 1)
+  reason      String
+  /// pending | approved | rejected | cancelled
+  status      String    @default("pending") @db.VarChar(10)
+  comment     String?
+  decidedBy   String?   @map("decided_by") @db.Uuid
+  decidedAt   DateTime? @map("decided_at") @db.Timestamptz
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  version     Int       @default(1)
+
+  @@index([tenantId, fromDate])
+  @@index([employeeId])
+  @@map("leave_applications")
+}
+
+model Holiday {
+  id       String   @id @default(uuid(7)) @db.Uuid
+  tenantId String   @map("tenant_id") @db.Uuid
+  name     String
+  fromDate DateTime @map("from_date") @db.Date
+  toDate   DateTime @map("to_date") @db.Date
+  kind     String   @default("Festival") @db.VarChar(60)
+  paid     Boolean  @default(true)
+  optional Boolean  @default(false)
+  notes    String?
+
+  @@index([tenantId, fromDate])
+  @@map("holidays")
+}
+
+model PayrollRun {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  number          String
+  month           String    @db.VarChar(7)
+  periodFrom      DateTime  @map("period_from") @db.Date
+  periodTo        DateTime  @map("period_to") @db.Date
+  payDate         DateTime  @map("pay_date") @db.Date
+  /// draft | processed | paid | cancelled
+  status          String    @default("draft") @db.VarChar(10)
+  accountId       String?   @map("account_id") @db.Uuid
+  notes           String?
+  employees       Int       @default(0)
+  grossPaise      BigInt    @default(0) @map("gross_paise")
+  deductionsPaise BigInt    @default(0) @map("deductions_paise")
+  netPaise        BigInt    @default(0) @map("net_paise")
+  employerPaise   BigInt    @default(0) @map("employer_paise")
+  paidPaise       BigInt    @default(0) @map("paid_paise")
+  version         Int       @default(1)
+  createdBy       String?   @map("created_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  payslips        Payslip[]
+
+  @@unique([tenantId, month])
+  @@map("payroll_runs")
+}
+
+model Payslip {
+  id              String     @id @default(uuid(7)) @db.Uuid
+  tenantId        String     @map("tenant_id") @db.Uuid
+  runId           String     @map("run_id") @db.Uuid
+  employeeId      String     @map("employee_id") @db.Uuid
+  number          String
+  daysInMonth     Int        @map("days_in_month")
+  payableDays     Decimal    @map("payable_days") @db.Decimal(5, 1)
+  lopDays         Decimal    @default(0) @map("lop_days") @db.Decimal(5, 1)
+  basicPaise      BigInt     @default(0) @map("basic_paise")
+  /// [{ name, amountPaise }]
+  earnings        Json       @default("[]")
+  deductions      Json       @default("[]")
+  employer        Json       @default("[]")
+  grossPaise      BigInt     @default(0) @map("gross_paise")
+  deductionsPaise BigInt     @default(0) @map("deductions_paise")
+  netPaise        BigInt     @default(0) @map("net_paise")
+  employerPaise   BigInt     @default(0) @map("employer_paise")
+  /// unpaid | paid
+  status          String     @default("unpaid") @db.VarChar(8)
+  paidOn          DateTime?  @map("paid_on") @db.Date
+  accountId       String?    @map("account_id") @db.Uuid
+  journalId       String?    @map("journal_id") @db.Uuid
+  /// Employee details frozen for the slip: name, code, designation, department, bank, PAN, UAN
+  snapshot        Json?
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  run             PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, employeeId])
+  @@index([employeeId])
+  @@map("payslips")
+}
+
+/// Career and conduct records: promotion, transfer, award, warning, complaint, resignation, termination
+model HrAction {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  kind        String    @db.VarChar(12)
+  employeeId  String    @map("employee_id") @db.Uuid
+  againstId   String?   @map("against_id") @db.Uuid
+  onDate      DateTime  @map("on_date") @db.Date
+  effectiveOn DateTime? @map("effective_on") @db.Date
+  typeName    String?   @map("type_name")
+  subject     String?
+  description String?
+  severity    String?   @db.VarChar(8)
+  fromData    Json?     @map("from_data")
+  toData      Json?     @map("to_data")
+  status      String    @default("pending") @db.VarChar(12)
+  response    String?
+  documentUrl String?   @map("document_url")
+  decidedBy   String?   @map("decided_by") @db.Uuid
+  decidedAt   DateTime? @map("decided_at") @db.Timestamptz
+  createdBy   String?   @map("created_by") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  version     Int       @default(1)
+
+  @@index([tenantId, kind])
+  @@index([employeeId])
+  @@map("hr_actions")
+}
+
+/// Workplace posts: announcement, event, or document/policy
+model HrPost {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  kind          String    @db.VarChar(12)
+  title         String
+  category      String?
+  body          String?
+  startsOn      DateTime? @map("starts_on") @db.Date
+  endsOn        DateTime? @map("ends_on") @db.Date
+  startsAt      String?   @map("starts_at") @db.VarChar(5)
+  endsAt        String?   @map("ends_at") @db.VarChar(5)
+  location      String?
+  priority      String    @default("normal") @db.VarChar(8)
+  departmentIds String[]  @default([]) @map("department_ids") @db.Uuid
+  url           String?
+  needsAck      Boolean   @default(false) @map("needs_ack")
+  status        String    @default("active") @db.VarChar(10)
+  color         String?   @db.VarChar(12)
+  approvedBy    String?   @map("approved_by") @db.Uuid
+  approvedAt    DateTime? @map("approved_at") @db.Timestamptz
+  createdBy     String?   @map("created_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  version       Int       @default(1)
+
+  @@index([tenantId, kind])
+  @@map("hr_posts")
+}
+
+model HrAck {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  postId     String   @map("post_id") @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  ackedAt    DateTime @default(now()) @map("acked_at") @db.Timestamptz
+
+  @@unique([postId, employeeId])
+  @@map("hr_acks")
+}
+
+model HrGoal {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  employeeId  String   @map("employee_id") @db.Uuid
+  title       String
+  goalType    String?  @map("goal_type")
+  description String?
+  target      String?
+  startsOn    DateTime @map("starts_on") @db.Date
+  endsOn      DateTime @map("ends_on") @db.Date
+  progress    Int      @default(0)
+  status      String   @default("not_started") @db.VarChar(12)
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  version     Int      @default(1)
+
+  @@index([tenantId])
+  @@map("hr_goals")
+}
+
+model HrReview {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  employeeId String   @map("employee_id") @db.Uuid
+  reviewerId String?  @map("reviewer_id") @db.Uuid
+  cycle      String
+  reviewOn   DateTime @map("review_on") @db.Date
+  /// { indicator: 1..5 }
+  ratings    Json     @default("{}")
+  rating     Decimal? @db.Decimal(3, 1)
+  strengths  String?
+  improve    String?
+  status     String   @default("pending") @db.VarChar(12)
+  createdBy  String?  @map("created_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  version    Int      @default(1)
+
+  @@index([tenantId])
+  @@map("hr_reviews")
+}
+
+model HrTraining {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  title        String
+  trainingType String?  @map("training_type")
+  trainer      String?
+  startsOn     DateTime @map("starts_on") @db.Date
+  endsOn       DateTime @map("ends_on") @db.Date
+  location     String?
+  costPaise    BigInt   @default(0) @map("cost_paise")
+  employeeIds  String[] @default([]) @map("employee_ids") @db.Uuid
+  description  String?
+  status       String   @default("scheduled") @db.VarChar(10)
+  createdBy    String?  @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  version      Int      @default(1)
+
+  @@index([tenantId])
+  @@map("hr_trainings")
+}
+
+model HrJob {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  tenantId       String    @map("tenant_id") @db.Uuid
+  title          String
+  departmentId   String?   @map("department_id") @db.Uuid
+  branchId       String?   @map("branch_id") @db.Uuid
+  location       String?
+  employmentType String    @default("full_time") @map("employment_type") @db.VarChar(12)
+  positions      Int       @default(1)
+  minExp         Int?      @map("min_exp")
+  maxExp         Int?      @map("max_exp")
+  minSalaryPaise BigInt?   @map("min_salary_paise")
+  maxSalaryPaise BigInt?   @map("max_salary_paise")
+  skills         String[]  @default([])
+  description    String?
+  closesOn       DateTime? @map("closes_on") @db.Date
+  status         String    @default("open") @db.VarChar(8)
+  createdBy      String?   @map("created_by") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  version        Int       @default(1)
+
+  @@index([tenantId])
+  @@map("hr_jobs")
+}
+
+model HrCandidate {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  jobId            String   @map("job_id") @db.Uuid
+  name             String
+  email            String?
+  phone            String?  @db.VarChar(15)
+  source           String?
+  experience       Decimal? @db.Decimal(4, 1)
+  currentCtcPaise  BigInt?  @map("current_ctc_paise")
+  expectedCtcPaise BigInt?  @map("expected_ctc_paise")
+  resumeUrl        String?  @map("resume_url")
+  /// applied | screening | interview | offer | hired | rejected
+  stage            String   @default("applied") @db.VarChar(10)
+  rating           Int?
+  notes            String?
+  employeeId       String?  @map("employee_id") @db.Uuid
+  createdBy        String?  @map("created_by") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  version          Int      @default(1)
+
+  @@index([tenantId, jobId])
+  @@map("hr_candidates")
+}
+
+model HrInterview {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  candidateId    String   @map("candidate_id") @db.Uuid
+  round          String
+  onDate         DateTime @map("on_date") @db.Date
+  atTime         String?  @map("at_time") @db.VarChar(5)
+  mode           String   @default("in_person") @db.VarChar(10)
+  interviewerIds String[] @default([]) @map("interviewer_ids") @db.Uuid
+  /// scheduled | passed | failed | no_show | cancelled
+  result         String   @default("scheduled") @db.VarChar(10)
+  rating         Int?
+  feedback       String?
+  createdBy      String?  @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  version        Int      @default(1)
+
+  @@index([tenantId, onDate])
+  @@map("hr_interviews")
+}
+
+/// Trainers, candidate assessments, offers, onboarding checklists and onboardings: one shape, checked in code
+model HrRecord {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  /// trainer | assessment | offer | checklist | onboarding
+  kind      String   @db.VarChar(16)
+  /// The candidate (assessment, offer, onboarding)
+  refId     String?  @map("ref_id") @db.Uuid
+  status    String   @db.VarChar(16)
+  data      Json     @default("{}")
+  version   Int      @default(1)
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@index([tenantId, kind])
+  @@index([refId])
+  @@map("hr_records")
+}

@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { DASHBOARD_NAV, MODULE_NAV, MODULE_SUBS, NAV_SECTIONS, PURCHASE_NAV, SALES_NAV, USER_NAV, type NavEntry, type SubNav } from "@/lib/nav"
+import { DASHBOARD_NAV, HRM_NAV, MODULE_NAV, MODULE_SUBS, NAV_SECTIONS, PERFORMANCE_NAV, PURCHASE_NAV, RECRUITMENT_NAV, SALES_NAV, USER_NAV, type NavEntry, type SubNav } from "@/lib/nav"
 import { ReadOnlyBanner } from "@/components/page-states"
 import { CommandPalette } from "@/components/command-palette"
 import { SidePanel } from "@/components/side-panel"
@@ -45,9 +45,34 @@ export function NavLink({ href, active, children, onClick }: { href: string; act
   )
 }
 
+/** Every link in a menu, folders opened up */
+const flatSubs = (subs: SubNav[]): SubNav[] => subs.flatMap((s) => (s.children ? flatSubs(s.children) : [s]))
+
+const subLinkClass = (active: boolean) => cn("rounded-lg px-2.5 py-1.5 text-[13.5px] text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground", active && "bg-sidebar-accent font-semibold text-sidebar-accent-foreground")
+
+/** A folder inside a menu (Attendance → Attendances, Shifts): open while you are inside it */
+function NavFolder({ sub, activeHref, forceOpen, onNavigate }: { sub: SubNav; activeHref: string | null; forceOpen: boolean; onNavigate?: () => void }) {
+  const inside = flatSubs(sub.children ?? []).some((c) => c.href === activeHref)
+  const [open, setOpen] = React.useState(inside)
+  const shown = forceOpen || open || inside
+  return (
+    <div>
+      <button type="button" onClick={() => setOpen(!shown)} aria-expanded={shown} className={cn("flex w-full items-center rounded-lg px-2.5 py-1.5 text-left text-[13.5px] text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground", inside && "font-medium text-sidebar-foreground")}>
+        <span className="flex-1 truncate">{sub.label}</span>
+        <ChevronDown className={cn("size-3.5 transition-transform duration-200", shown && "rotate-180")} />
+      </button>
+      {shown && (
+        <div className="grid gap-px py-0.5 pl-3">
+          {(sub.children ?? []).map((c) => <Link key={c.href} href={c.href} onClick={onNavigate} aria-current={c.href === activeHref ? "page" : undefined} className={subLinkClass(c.href === activeHref)}>{c.label}</Link>)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** A module with sub-modules: opens in place, and shows where you are */
-function NavGroup({ id, label, icon: Icon, subs, open, onToggle, activeHref, onNavigate }: { id: string; label: string; icon: LucideIcon; subs: SubNav[]; open: boolean; onToggle: (id: string) => void; activeHref: string | null; onNavigate?: () => void }) {
-  const inside = subs.some((s) => s.href === activeHref)
+function NavGroup({ id, label, icon: Icon, subs, open, onToggle, activeHref, onNavigate, searching }: { id: string; label: string; icon: LucideIcon; subs: SubNav[]; open: boolean; onToggle: (id: string) => void; activeHref: string | null; onNavigate?: () => void; searching?: boolean }) {
+  const inside = flatSubs(subs).some((s) => s.href === activeHref)
   return (
     <div>
       <button
@@ -62,11 +87,9 @@ function NavGroup({ id, label, icon: Icon, subs, open, onToggle, activeHref, onN
       </button>
       {open && (
         <div className="ui-rise grid gap-px py-1 pl-8">
-          {subs.map((s) => (
-            <Link key={s.href} href={s.href} onClick={onNavigate} aria-current={s.href === activeHref ? "page" : undefined} className={cn("rounded-lg px-2.5 py-1.5 text-[13.5px] text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground", s.href === activeHref && "bg-sidebar-accent font-semibold text-sidebar-accent-foreground")}>
-              {s.label}
-            </Link>
-          ))}
+          {subs.map((s) => s.children
+            ? <NavFolder key={s.label} sub={s} activeHref={activeHref} forceOpen={!!searching} onNavigate={onNavigate} />
+            : <Link key={s.href} href={s.href} onClick={onNavigate} aria-current={s.href === activeHref ? "page" : undefined} className={subLinkClass(s.href === activeHref)}>{s.label}</Link>)}
         </div>
       )}
     </div>
@@ -79,7 +102,11 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const [query, setQuery] = React.useState("")
   const q = query.trim().toLowerCase()
   const isAdmin = can("tenant.billing.view") || can("tenant.member.view")
-  const allowed = (subs: SubNav[]) => subs.filter((s) => !s.permission || can(s.permission))
+  // Links the person may open; a folder stays only if something inside it does
+  const allowed = (subs: SubNav[]): SubNav[] => subs.map((s) => (s.children ? { ...s, children: allowed(s.children) } : s)).filter((s) => (s.children ? s.children.length > 0 : !s.permission || can(s.permission)))
+  const hrOn = me?.modules?.hr?.status !== "inactive"
+  const hrGroups = { hrm: HRM_NAV, performance: PERFORMANCE_NAV, recruitment: RECRUITMENT_NAV } as const
+  const hrSubs = (k: keyof typeof hrGroups) => (hrOn ? allowed(hrGroups[k].subs) : [])
   const purchase = me?.modules?.inventory?.status === "inactive" ? [] : allowed(PURCHASE_NAV.subs)
   const users = allowed(USER_NAV.subs)
   // Each Sales page belongs to the module its permission names (crm, sales or billing)
@@ -87,21 +114,21 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const moduleSubs = (key: ModuleKey) => (me?.modules?.[key]?.status === "inactive" ? [] : allowed(MODULE_SUBS[key] ?? []))
 
   // The group holding this page is open until someone toggles another one
-  const groups: [string, SubNav[]][] = [["users", users], ["salesgroup", sales], ["purchase", purchase], ...MODULE_NAV.map((m) => [m.key, moduleSubs(m.key)] as [string, SubNav[]])]
+  const groups: [string, SubNav[]][] = [["users", users], ["salesgroup", sales], ["purchase", purchase], ...(Object.keys(hrGroups) as (keyof typeof hrGroups)[]).map((k) => [k, hrSubs(k)] as [string, SubNav[]]), ...MODULE_NAV.map((m) => [m.key, moduleSubs(m.key)] as [string, SubNav[]])]
   // A link owns its own path and any listed in `also`; the longest matching path wins
-  const matches = groups.flatMap(([id, subs]) => subs.flatMap((s) => [s.href.split("?")[0], ...(s.also ?? [])].filter((p) => pathname === p || pathname.startsWith(`${p}/`)).map((p) => ({ id, href: s.href, len: p.length }))))
+  const matches = groups.flatMap(([id, subs]) => flatSubs(subs).flatMap((s) => [s.href.split("?")[0], ...(s.also ?? [])].filter((p) => pathname === p || pathname.startsWith(`${p}/`)).map((p) => ({ id, href: s.href, len: p.length }))))
   const current = matches.sort((a, b) => b.len - a.len)[0] ?? null
   const [toggled, setToggled] = React.useState<{ page: string | null; id: string | null } | null>(null)
   const page = current?.id ?? null
   const openId = toggled && toggled.page === page ? toggled.id : page
   const toggle = (id: string) => setToggled({ page, id: openId === id ? null : id })
   /** Searching opens every matching module and keeps only the pages that match */
-  const matchGroup = (label: string, subs: SubNav[]) => (!q || label.toLowerCase().includes(q) ? subs : subs.filter((s) => s.label.toLowerCase().includes(q)))
+  const matchGroup = (label: string, subs: SubNav[]): SubNav[] => (!q || label.toLowerCase().includes(q) ? subs : subs.map((s) => (s.children ? { ...s, children: s.label.toLowerCase().includes(q) ? s.children : matchGroup("", s.children) } : s)).filter((s) => (s.children ? s.children.length > 0 : s.label.toLowerCase().includes(q))))
   const hit = (label: string) => !q || label.toLowerCase().includes(q)
   const group = (id: string, label: string, icon: LucideIcon, subs: SubNav[]) => {
     const shown = matchGroup(label, subs)
     if (!shown.length) return null
-    return <NavGroup key={id} id={id} label={label} icon={icon} subs={shown} open={!!q || openId === id} onToggle={toggle} activeHref={current?.href ?? null} onNavigate={onNavigate} />
+    return <NavGroup key={id} id={id} label={label} icon={icon} subs={shown} open={!!q || openId === id} onToggle={toggle} activeHref={current?.href ?? null} onNavigate={onNavigate} searching={!!q} />
   }
 
   const entry = (e: NavEntry): React.ReactNode => {
@@ -114,6 +141,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     if (e === "salesgroup") return group("salesgroup", SALES_NAV.label, SALES_NAV.icon, sales)
     if (e === "purchase") return group("purchase", PURCHASE_NAV.label, PURCHASE_NAV.icon, purchase)
     if (e === "users") return group("users", USER_NAV.label, USER_NAV.icon, users)
+    if (e in hrGroups) { const g = hrGroups[e as keyof typeof hrGroups]; return group(e, g.label, g.icon, hrSubs(e as keyof typeof hrGroups)) }
     if (e === "plan")
       return can("tenant.billing.view") && hit("Plan & billing") ? (
         <NavLink key={e} href="/app/billing" active={pathname.startsWith("/app/billing")} onClick={onNavigate}>

@@ -133,19 +133,19 @@ export const ROLES: RoleDef[] = [
   {
     key: 'hr_manager', name: 'HR Manager', layer: 'tenant', roleType: 'user', requiredModules: ['hr'],
     description: 'Employee records, attendance, leave, shifts, recruitment',
-    grants: [['hr.employee.*', 'all'], ['hr.attendance.*', 'all'], ['hr.leave.*', 'all'], ['hr.shift.*', 'all'], ['hr.payslip.view', 'all'], ['tasks.approval.*', 'all'], ['reports.report.view', 'all']],
+    grants: [['hr.employee.*', 'all'], ['hr.attendance.*', 'all'], ['hr.leave.*', 'all'], ['hr.shift.*', 'all'], ['hr.payslip.view', 'all'], ['hr.setup.*', 'all'], ['hr.career.*', 'all'], ['hr.workplace.*', 'all'], ['hr.performance.*', 'all'], ['hr.training.*', 'all'], ['hr.recruitment.*', 'all'], ['tasks.approval.*', 'all'], ['reports.report.view', 'all']],
     fieldAccess: [{ entity: 'employee', field: 'salary', access: 'write' }, { entity: 'employee', field: 'bank_account', access: 'write' }],
   },
   {
     key: 'payroll_manager', name: 'Payroll Manager', layer: 'tenant', roleType: 'user', requiredModules: ['hr'],
     description: 'Salary structures, payroll runs, payslips; can see salaries',
-    grants: [['hr.payroll.*', 'all'], ['hr.payslip.*', 'all'], ['hr.employee.view', 'all'], ['hr.attendance.view', 'all'], ['hr.leave.view', 'all']],
+    grants: [['hr.payroll.*', 'all'], ['hr.payslip.*', 'all'], ['hr.employee.view', 'all'], ['hr.attendance.view', 'all'], ['hr.leave.view', 'all'], ['hr.setup.view', 'all'], ['finance.expense.view', 'all']],
     fieldAccess: [{ entity: 'employee', field: 'salary', access: 'write' }, { entity: 'employee', field: 'bank_account', access: 'write' }],
   },
   {
     key: 'employee', name: 'Employee (Self-service)', layer: 'tenant', roleType: 'employee', requiredModules: ['hr'],
     description: 'Own profile, attendance, leave requests, payslips only',
-    grants: [['hr.employee.view', 'own'], ['hr.attendance.view', 'own'], ['hr.attendance.create', 'own'], ['hr.leave.view', 'own'], ['hr.leave.create', 'own'], ['hr.payslip.view', 'own'], ['tasks.task.view', 'own'], ['tasks.task.edit', 'own'], ['automation.notification.view', 'own']],
+    grants: [['hr.employee.view', 'own'], ['hr.attendance.view', 'own'], ['hr.attendance.create', 'own'], ['hr.leave.view', 'own'], ['hr.leave.create', 'own'], ['hr.payslip.view', 'own'], ['hr.workplace.view', 'own'], ['hr.performance.view', 'own'], ['hr.training.view', 'own'], ['tasks.task.view', 'own'], ['tasks.task.edit', 'own'], ['automation.notification.view', 'own']],
   },
   {
     key: 'front_desk', name: 'Front Desk / Receptionist', layer: 'tenant', roleType: 'counter', requiredModules: ['bookings'],

@@ -99,10 +99,16 @@ export const PERMISSION_CATALOG: Record<PermissionModule, ResourceDef[]> = {
   hr: [
     { resource: 'employee', label: 'Employees', actions: CRUDX },
     { resource: 'attendance', label: 'Attendance', actions: ['view', 'create', 'edit', 'approve'] },
-    { resource: 'leave', label: 'Leave', actions: ['view', 'create', 'approve'] },
+    { resource: 'leave', label: 'Leave', actions: ['view', 'create', 'edit', 'approve'] },
     { resource: 'shift', label: 'Shifts', actions: CRUD },
     { resource: 'payroll', label: 'Payroll runs', actions: ['view', 'create', 'approve', 'export'] },
     { resource: 'payslip', label: 'Payslips', actions: ['view'] },
+    { resource: 'setup', label: 'HR setup', actions: ['view', 'edit'] },
+    { resource: 'career', label: 'Promotions, transfers, awards, warnings, exits', actions: ['view', 'create', 'edit', 'delete', 'approve'] },
+    { resource: 'workplace', label: 'Announcements, events, documents', actions: CRUD },
+    { resource: 'performance', label: 'Reviews and goals', actions: CRUD },
+    { resource: 'training', label: 'Training', actions: CRUD },
+    { resource: 'recruitment', label: 'Jobs, candidates, interviews', actions: CRUD },
   ],
   tasks: [
     { resource: 'task', label: 'Tasks', actions: CRUD },

@@ -160,14 +160,28 @@ export interface ListQuery {
 }
 export type ListLoader<T> = (query: ListQuery) => Promise<Page<T>>
 
-/** For short lists the API returns whole: search and pages happen in the browser. */
-export function localList<T>(get: (params: Record<string, string>) => Promise<T[]>, match: (row: T, q: string) => boolean): ListLoader<T> {
+/** For short lists the API returns whole: search and pages happen in the browser.
+ *  With `filter`, `get` returns every row and the choices (status tabs, filters) are applied here,
+ *  so `counts` and `meta` (summary cards) come from the same single request. */
+export function localList<T>(
+  get: (params: Record<string, string>) => Promise<T[]>,
+  match: (row: T, q: string) => boolean,
+  opts: { filter?: (row: T, params: Record<string, string>) => boolean; counts?: (rows: T[]) => Record<string, number>; meta?: (rows: T[]) => Record<string, unknown> } = {}
+): ListLoader<T> {
   return async ({ params, limit, cursor }) => {
     const q = (params.q ?? "").toLowerCase()
-    const all = (await get(params)).filter((r) => !q || match(r, q))
+    const rows = await get(params)
+    const all = rows.filter((r) => (!opts.filter || opts.filter(r, params)) && (!q || match(r, q)))
     const start = Number(cursor ?? 0)
-    return { data: all.slice(start, start + limit), nextCursor: start + limit < all.length ? String(start + limit) : null, total: all.length }
+    return { ...(opts.meta?.(rows) ?? {}), ...(opts.counts ? { counts: opts.counts(rows) } : {}), data: all.slice(start, start + limit), nextCursor: start + limit < all.length ? String(start + limit) : null, total: all.length }
   }
+}
+
+/** Counts for status tabs: { all, [status]: n } */
+export function countBy<T>(rows: T[], key: (row: T) => string | string[] | null | undefined): Record<string, number> {
+  const out: Record<string, number> = { all: rows.length }
+  for (const r of rows) for (const k of [key(r)].flat()) if (k) out[k] = (out[k] ?? 0) + 1
+  return out
 }
 
 /** 1 2 3 … 9: the first, the last and the ones around where you are */
@@ -200,6 +214,8 @@ export function DataList<T extends { id: string }>({
   defaultFilters,
   noSearch,
   summary,
+  top,
+  tabs,
 }: {
   /** Stable id for stored preferences, e.g. "invoices" */
   id: string
@@ -233,6 +249,10 @@ export function DataList<T extends { id: string }>({
   noSearch?: boolean
   /** A figure from the response, shown beside the search box */
   summary?: (response: Record<string, unknown>) => React.ReactNode
+  /** Shown above the table from the same response, e.g. summary cards */
+  top?: (response: Record<string, unknown>) => React.ReactNode
+  /** Show the presets as tabs with counts above the table (counts from the response or countsPath) */
+  tabs?: boolean
 }) {
   const router = useRouter()
   const { me } = useAuth()
@@ -425,8 +445,9 @@ export function DataList<T extends { id: string }>({
     }
   }
 
+  const countData = (state.raw.counts as Record<string, number> | undefined) ?? counts.data
   const cardsView = prefs.view === "cards"
-  const hasPanel = presets.length > 1 || filters.length > 0
+  const hasPanel = (presets.length > 1 && !tabs) || filters.length > 0
   const hideable = columns.filter((c) => c.hideable !== false)
   const viewButton = (on: boolean) => cn("grid size-8 place-items-center rounded-[10px] text-muted-foreground transition-colors [&_svg]:size-4", on && "bg-primary text-primary-foreground")
 
@@ -459,7 +480,24 @@ export function DataList<T extends { id: string }>({
         </div>
       </div>
 
+      {top && state.key !== null && top(state.raw)}
+
       <div className="ui-surface ui-rise min-w-0 overflow-hidden">
+        {tabs && presets.length > 1 && (
+          <div className="flex gap-1 overflow-x-auto border-b px-3 pt-2" role="tablist" aria-label={presetLabel}>
+            {presets.map((p) => {
+              const n = p.countKey && countData ? countData[p.countKey] ?? 0 : undefined
+              const on = p.key === preset
+              return (
+                <button key={p.key} type="button" role="tab" aria-selected={on} onClick={() => { setPreset(p.key); setDraft((d) => ({ ...d, preset: p.key })) }}
+                  className={cn("-mb-px flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors", on ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>
+                  {p.label}
+                  {n !== undefined && <span className={cn("rounded-full px-1.5 py-px text-[11px] tabular-nums", on ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground")}>{formatNumber(n)}</span>}
+                </button>
+              )
+            })}
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2 p-4">
           {!noSearch && <SearchInput value={search} onChange={setSearch} placeholder={searchPlaceholder} className="w-full sm:w-80" />}
           {summary?.(state.raw)}
@@ -497,7 +535,7 @@ export function DataList<T extends { id: string }>({
 
         {panelOpen && (
           <div className="flex flex-wrap items-end gap-3 border-t bg-muted/30 p-4">
-            {presets.length > 1 && (
+            {presets.length > 1 && !tabs && (
               <label className="grid w-full gap-1.5 text-sm font-medium sm:w-56">
                 {presetLabel}
                 <SearchSelect
@@ -505,7 +543,7 @@ export function DataList<T extends { id: string }>({
                   onChange={(v) => setDraft({ ...draft, preset: v })}
                   aria-label={presetLabel}
                   options={presets.map((p) => {
-                    const n = p.countKey && counts.data ? counts.data[p.countKey] : undefined
+                    const n = p.countKey && countData ? countData[p.countKey] : undefined
                     return { value: p.key, label: n === undefined ? p.label : `${p.label} (${formatNumber(n)})` }
                   })}
                 />
