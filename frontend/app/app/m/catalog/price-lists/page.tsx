@@ -2,13 +2,15 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Plus, Tags, Trash2 } from "lucide-react"
+import { IndianRupee, ListChecks, Pencil, Plus, Tags, Trash2, Users } from "lucide-react"
+import { SummaryCards } from "@/components/summary-cards"
+import { Pill } from "@/components/page-parts"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState, MoneyInput, SearchInput, Spinner } from "@/components/common"
-import { DataList, localList } from "@/components/data-list"
+import { DataList, remoteList } from "@/components/data-list"
 import { Field, FormError } from "@/components/form"
 import { NumberStepper } from "@/components/number-stepper"
 import { api, ApiError, errorMessage } from "@/lib/api"
@@ -25,6 +27,9 @@ interface PriceList {
   discountBp: number
   itemCount: number
   customerCount: number
+  customers?: string[]
+  sold30Paise?: number
+  createdAt?: string
 }
 interface Item {
   id: string
@@ -113,15 +118,25 @@ export default function PriceListsPage() {
     <>
       <DataList<PriceList>
         id="price-lists"
-        load={localList(async () => (await api.get<{ data: PriceList[] }>("/price-lists")).data, (l, q) => l.name.toLowerCase().includes(q))}
+        load={remoteList(() => api.get<{ data: PriceList[]; sums: Record<string, number> }>("/price-lists"), (l, q) => `${l.name} ${(l.customers ?? []).join(" ")}`.toLowerCase().includes(q))}
+        top={(res) => {
+          const s = (res.sums ?? {}) as Record<string, number>
+          return <SummaryCards items={[
+            { label: "Price lists", value: s.lists ?? 0, hint: "Wholesale, retail and others", color: "blue", icon: Tags },
+            { label: "Customers on a list", value: s.customers ?? 0, hint: "Their new bills use the list", color: "violet", icon: Users },
+            { label: "Exact prices", value: s.prices ?? 0, hint: "Items with their own rate", color: "amber", icon: ListChecks },
+            { label: "Sold on lists", value: formatPaise(s.sold30 ?? 0), hint: "Last 30 days, to these customers", color: "emerald", icon: IndianRupee },
+          ]} />
+        }}
         params={{ v: String(version) }}
         header={{ title: "Price lists", description: "Wholesale, retail or any other rates. Choose a list on the customer, and their new bills use it.", primary: add || undefined }}
         columns={[
-          { key: "name", header: "Name", hideable: false, sort: (l) => l.name, cell: (l) => <span className="font-medium">{l.name}</span> },
+          { key: "name", header: "Name", hideable: false, sort: (l) => l.name, cell: (l) => <span className="flex items-center gap-2.5"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary"><Tags className="size-4" /></span><span className="font-medium">{l.name}</span>{l.discountBp > 0 && <Pill color="emerald">{l.discountBp / 100}% off</Pill>}</span> },
           { key: "discount", header: "Discount", align: "right", sort: (l) => l.discountBp, cell: (l) => `${l.discountBp / 100}%` },
           { key: "items", header: "Exact prices", align: "right", sort: (l) => l.itemCount, cell: (l) => l.itemCount },
-          { key: "customers", header: "Customers", align: "right", sort: (l) => l.customerCount, cell: (l) => l.customerCount },
-          ...(can("catalog.price_list.delete") ? [{ key: "actions", header: "Actions", hideable: false, cell: (l: PriceList) => <Button variant="ghost" size="icon-sm" className="text-destructive" aria-label={`Delete ${l.name}`} onClick={(e) => { e.stopPropagation(); setRemoving(l) }}><Trash2 /></Button> }] : []),
+          { key: "customers", header: "Customers", sort: (l) => l.customerCount, cell: (l) => <span className="text-sm"><span className="font-medium tabular-nums">{l.customerCount}</span>{!!l.customers?.length && <span className="block max-w-72 truncate text-xs text-muted-foreground" title={l.customers.join(", ")}>{l.customers.join(", ")}{l.customerCount > l.customers.length ? ` +${l.customerCount - l.customers.length}` : ""}</span>}</span> },
+          { key: "sold", header: "Sold (30 days)", align: "right", sort: (l) => l.sold30Paise ?? 0, cell: (l) => <span className="tabular-nums">{l.sold30Paise ? formatPaise(l.sold30Paise) : "—"}</span> },
+          ...(can("catalog.price_list.edit") || can("catalog.price_list.delete") ? [{ key: "actions", header: "Actions", hideable: false, cell: (l: PriceList) => <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>{can("catalog.price_list.edit") && <Button variant="ghost" size="icon-sm" title="Edit prices" aria-label={`Edit ${l.name}`} onClick={() => setEditing(l)}><Pencil /></Button>}{can("catalog.price_list.delete") && <Button variant="ghost" size="icon-sm" className="text-destructive" title="Delete" aria-label={`Delete ${l.name}`} onClick={() => setRemoving(l)}><Trash2 /></Button>}</span> }] : []),
         ]}
         searchPlaceholder="Search price lists"
         rowClick={can("catalog.price_list.edit") ? setEditing : undefined}

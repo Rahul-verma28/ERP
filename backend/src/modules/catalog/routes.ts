@@ -5,7 +5,8 @@ import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
 import { GST_RATES_BP, todayIST } from '../../kernel/gst';
-import { IdParam, ListQuery, Paise, assertRecordLimit, assertVersion, canWriteField, markOnboarding, page, pageArgs, stripHidden } from '../../kernel/query';
+import { IdParam, ListQuery, Paise, assertRecordLimit, assertVersion, canWriteField, markOnboarding, stripHidden } from '../../kernel/query';
+import { listItems, listPriceLists } from './lists';
 import { validate } from '../../middleware/request';
 import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { validateCustom } from '../config/service';
@@ -76,6 +77,8 @@ const ItemList = ListQuery.extend({
   /** Tracked items at or below their low-stock level */
   low: z.enum(['true']).optional(),
   withTotal: z.enum(['1']).optional(),
+  /** out = tracked and none left */
+  stock: z.enum(['out']).optional(),
 });
 
 async function serialize(ctx: TenantCtx, rows: Record<string, unknown>[]) {
@@ -98,24 +101,15 @@ async function checkCategory(categoryId?: string | null) {
 }
 
 router.get('/items', requirePermission('catalog.item.view'), validate(ItemList, 'query'), tx(async (req, res) => {
-  const q = req.query as unknown as z.infer<typeof ItemList>;
-  const here = q.locationId ? (await db().stockBalance.findMany({ where: { locationId: q.locationId, quantity: { not: 0 } }, select: { itemId: true } })).map((b) => b.itemId) : undefined;
-  let low: string[] | undefined;
-  if (q.low) {
-    const watched = await db().item.findMany({ where: { trackStock: true, reorderLevel: { not: null } }, select: { id: true, reorderLevel: true } });
-    const stock = await stockByItem(req.ctx!.tenantId, watched.map((w) => w.id));
-    low = watched.filter((w) => (stock.get(w.id) ?? 0) <= Number(w.reorderLevel)).map((w) => w.id);
-  }
-  const where: Prisma.ItemWhereInput = {
-    AND: [here ? { id: { in: here } } : {}, low ? { id: { in: low } } : {}],
-    type: q.type,
-    categoryId: q.categoryId,
-    isActive: q.active === 'all' ? undefined : q.active === 'true',
-    ...(q.q ? { OR: [{ name: { contains: q.q, mode: 'insensitive' } }, { sku: { contains: q.q, mode: 'insensitive' } }, { hsnSac: { startsWith: q.q } }, { barcode: q.q }] } : {}),
-  };
-  const [rows, total] = await Promise.all([db().item.findMany({ where, ...pageArgs(q) }), q.withTotal ? db().item.count({ where }) : Promise.resolve(undefined)]);
-  const p = page(rows, q.limit);
-  res.json({ ...p, total, data: await serialize(req.ctx!, p.data) });
+  // One round trip: items, stock, sales and purchase history, and the tab counts and card totals
+  const r = await listItems(req.ctx!, req.query as unknown as z.infer<typeof ItemList>);
+  // Cost and what follows from it show only where the role may see the cost price
+  let data = await stripHidden(req.ctx!, 'item', r.data, HIDDEN);
+  data = await stripHidden(req.ctx!, 'item', data, { cost_price: 'lastCostPaise' });
+  data = await stripHidden(req.ctx!, 'item', data, { cost_price: 'marginBp' });
+  data = await stripHidden(req.ctx!, 'item', data, { cost_price: 'stockValuePaise' });
+  const costHidden = data.length > 0 && !('lastCostPaise' in data[0]);
+  res.json({ ...r, data, sums: costHidden ? { ...r.sums, stockValue: null } : r.sums });
 }));
 
 router.get('/items/:id', requirePermission('catalog.item.view'), validate(IdParam, 'params'), tx(async (req, res) => {
@@ -359,11 +353,8 @@ export async function importItems(ctx: Pick<TenantCtx, 'tenantId' | 'userId'>, i
 
 const PriceListInput = z.object({ name: z.string().trim().min(2, 'Use at least 2 characters').max(80), discountBp: z.number().int().min(0).max(10_000).default(0) });
 
-router.get('/price-lists', requirePermission('catalog.price_list.view'), tx(async (_req, res) => {
-  const rows = await db().priceList.findMany({ orderBy: { name: 'asc' }, include: { _count: { select: { items: true } } } });
-  const customers = await db().contact.groupBy({ by: ['priceListId'], where: { priceListId: { not: null } }, _count: true });
-  const counts = new Map(customers.map((c) => [c.priceListId, c._count]));
-  res.json({ data: rows.map(({ _count, ...r }) => ({ ...r, itemCount: _count.items, customerCount: counts.get(r.id) ?? 0 })) });
+router.get('/price-lists', requirePermission('catalog.price_list.view'), tx(async (req, res) => {
+  res.json(await listPriceLists(req.ctx!));
 }));
 router.post('/price-lists', requirePermission('catalog.price_list.create'), validate(PriceListInput), tx(async (req, res) => {
   const list = await db().priceList.create({ data: { ...req.body, tenantId: req.ctx!.tenantId } });

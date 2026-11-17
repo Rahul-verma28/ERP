@@ -29,6 +29,20 @@ export interface Item {
   attributes?: Record<string, string>
   custom: Record<string, unknown>
   version: number
+  /** From the list */
+  category?: string | null
+  low?: boolean
+  out?: boolean
+  stockValuePaise?: number
+  soldQty?: number
+  soldValuePaise?: number
+  soldQty30?: number
+  lastSoldOn?: string | null
+  boughtQty?: number
+  lastBoughtOn?: string | null
+  lastCostPaise?: number | null
+  marginBp?: number | null
+  priceListCount?: number
 }
 
 export interface Category {

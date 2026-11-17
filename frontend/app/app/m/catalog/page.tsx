@@ -3,7 +3,8 @@
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { Archive, ArchiveRestore, ArrowLeftRight, Barcode, Copy, Eye, History, Package, Pencil, Plus, ShoppingCart, SlidersHorizontal, Tag, Trash2 } from "lucide-react"
+import { AlarmClock, Archive, ArchiveRestore, ArrowLeftRight, Barcode, CircleSlash, Copy, Eye, History, IndianRupee, Package, Pencil, Plus, ShoppingCart, SlidersHorizontal, Tag, Trash2, TrendingUp } from "lucide-react"
+import { SummaryCards } from "@/components/summary-cards"
 import { ActionMenu } from "@/components/page-parts"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -13,17 +14,23 @@ import { DataList, HeaderLink, type Column, type ViewPreset } from "@/components
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { categoryColour, type Category, type Item } from "@/lib/catalog"
-import { formatPaise } from "@/lib/format"
+import { formatDate, formatPaise } from "@/lib/format"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
 
 const PRESETS: ViewPreset[] = [
-  { key: "all", label: "All", params: {} },
-  { key: "product", label: "Products", params: { type: "product" } },
-  { key: "service", label: "Services", params: { type: "service" } },
-  { key: "low", label: "Low stock", params: { low: "true" } },
-  { key: "archived", label: "Archived", params: { active: "false" } },
+  { key: "all", label: "All", params: {}, countKey: "all" },
+  { key: "product", label: "Products", params: { type: "product" }, countKey: "product" },
+  { key: "service", label: "Services", params: { type: "service" }, countKey: "service" },
+  { key: "low", label: "Low stock", params: { low: "true" }, countKey: "low" },
+  { key: "out", label: "Out of stock", params: { stock: "out" }, countKey: "out" },
+  { key: "archived", label: "Archived", params: { active: "false" }, countKey: "archived" },
 ]
+const ago = (iso: string | null | undefined) => {
+  if (!iso) return null
+  const days = Math.round((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  return days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`
+}
 
 const iconLink = buttonVariants({ variant: "ghost", size: "icon-sm" })
 
@@ -39,7 +46,7 @@ export default function ItemsPage() {
   const showStock = can("inventory.stock.view")
   const canAddStock = can("inventory.receipt.create")
   const places = useApi<{ data: { id: string; name: string; isActive: boolean }[] }>(showStock ? "/stock-locations" : null).data?.data.filter((w) => w.isActive) ?? []
-  const nameOf = (id: string | null) => categories.data?.data.find((c) => c.id === id)?.name
+  const nameOf = (r: Item) => r.category ?? categories.data?.data.find((c) => c.id === r.categoryId)?.name
   async function setActive(r: Item, active: boolean) {
     try {
       await api.patch(`/items/${r.id}`, { isActive: active, version: r.version })
@@ -61,20 +68,21 @@ export default function ItemsPage() {
           </span>
           <span className="min-w-0">
             <span className="block font-medium">{r.name}{!r.isActive && <Badge variant="outline" className="ml-2">Archived</Badge>}</span>
-            <span className="flex items-center gap-1 text-xs text-muted-foreground"><Tag className="size-3" aria-hidden />{r.sku || "No SKU"}{r.tracking === "batch" ? " · Batch" : r.tracking === "serial" ? " · Serial" : ""}</span>
+            <span className="flex items-center gap-1 text-xs text-muted-foreground"><Tag className="size-3" aria-hidden />{r.sku || "No SKU"}{r.tracking === "batch" ? " · Batch" : r.tracking === "serial" ? " · Serial" : ""}{r.hsnSac ? ` · HSN ${r.hsnSac}` : ""}</span>
           </span>
         </span>
       ),
     },
     { key: "sale", header: "Sale price", sort: (r) => r.pricePaise, csv: (r) => r.pricePaise / 100, cell: (r) => <span className="font-medium text-emerald-700 tabular-nums dark:text-emerald-300">{formatPaise(r.pricePaise)}</span> },
-    ...(showCost ? [{ key: "cost", header: "Purchase price", sort: (r: Item) => r.costPricePaise ?? 0, csv: (r: Item) => (r.costPricePaise ?? 0) / 100, cell: (r: Item) => <span className="font-medium text-amber-700 tabular-nums dark:text-amber-300">{r.costPricePaise != null ? formatPaise(r.costPricePaise) : "—"}</span> }] : []),
-    { key: "category", header: "Category", csv: (r) => nameOf(r.categoryId) ?? "", cell: (r) => { const n = nameOf(r.categoryId); return n ? <Badge variant="outline" className={cn("border-transparent", categoryColour(n))}>{n}</Badge> : "—" } },
+    ...(showCost ? [{ key: "cost", header: "Purchase price", sort: (r: Item) => r.costPricePaise ?? 0, csv: (r: Item) => (r.costPricePaise ?? 0) / 100, cell: (r: Item) => <span className="font-medium text-amber-700 tabular-nums dark:text-amber-300">{r.costPricePaise != null ? formatPaise(r.costPricePaise) : "—"}{r.marginBp != null && <span className={cn("block text-[11px] font-normal", r.marginBp < 0 ? "text-destructive" : "text-muted-foreground")}>{(r.marginBp / 100).toFixed(1)}% margin</span>}</span> }] : []),
+    { key: "gst", header: "GST", defaultHidden: true, csv: (r) => r.gstRateBp / 100, cell: (r) => <Badge variant="outline">{r.gstRateBp / 100}%</Badge> },
+    { key: "category", header: "Category", csv: (r) => nameOf(r) ?? "", cell: (r) => { const n = nameOf(r); return n ? <Badge variant="outline" className={cn("border-transparent", categoryColour(n))}>{n}</Badge> : "—" } },
     { key: "unit", header: "Unit", csv: (r) => r.unit, cell: (r) => <Badge variant="outline">{r.unit}</Badge> },
     ...(showStock ? [{
       key: "qty", header: "Quantity", sort: (r: Item) => r.stockQty ?? 0, csv: (r: Item) => r.stockQty ?? "",
       cell: (r: Item) => {
         if (r.type !== "product") return "—"
-        const qty = <span className={cn("inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-medium tabular-nums", (r.stockQty ?? 0) < 0 && "text-destructive")}><ShoppingCart className="size-3" aria-hidden />{r.stockQty ?? 0}</span>
+        const qty = <span className={cn("inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-medium tabular-nums", (r.stockQty ?? 0) <= 0 ? "border-rose-200 text-destructive" : r.low && "border-amber-300 text-amber-700 dark:text-amber-300")} title={r.low ? "At or under the low-stock level" : undefined}><ShoppingCart className="size-3" aria-hidden />{r.stockQty ?? 0}</span>
         return r.reservedQty ? <span className="inline-flex items-center gap-1">{qty}<span className="text-xs text-muted-foreground">{r.reservedQty} held</span></span> : qty
       },
     }] : []),
@@ -82,6 +90,12 @@ export default function ItemsPage() {
       key: "warehouse", header: "Warehouse", csv: (r: Item) => (r.warehouses ?? []).map((w) => `${w.name}: ${w.quantity}`).join("; "),
       cell: (r: Item) => (r.warehouses?.length ? <span className="flex flex-wrap gap-1">{r.warehouses.map((w) => <Badge key={w.id} variant="outline">{w.name} · {w.quantity}</Badge>)}</span> : "—"),
     }] : []),
+    { key: "sold", header: "Sold (30 days)", align: "right", sort: (r) => r.soldQty30 ?? 0, csv: (r) => r.soldQty30 ?? 0, cell: (r) => <span className="tabular-nums">{r.soldQty30 ? `${r.soldQty30} ${r.unit}` : <span className="text-muted-foreground">—</span>}{r.lastSoldOn && <span className="block text-[11px] text-muted-foreground">Last {ago(r.lastSoldOn)}</span>}</span> },
+    { key: "soldAll", header: "Sold (all time)", align: "right", defaultHidden: true, sort: (r) => r.soldValuePaise ?? 0, csv: (r) => (r.soldValuePaise ?? 0) / 100, cell: (r) => <span className="tabular-nums">{r.soldValuePaise ? formatPaise(r.soldValuePaise) : "—"}<span className="block text-[11px] text-muted-foreground">{r.soldQty ?? 0} {r.unit}</span></span> },
+    ...(showCost ? [{ key: "lastCost", header: "Last bought", defaultHidden: true, sort: (r: Item) => r.lastBoughtOn ?? "", csv: (r: Item) => (r.lastCostPaise ?? 0) / 100, cell: (r: Item) => (r.lastBoughtOn ? <span className="text-sm tabular-nums">{r.lastCostPaise != null ? formatPaise(r.lastCostPaise) : "—"}<span className="block text-[11px] text-muted-foreground">{formatDate(r.lastBoughtOn)}</span></span> : <span className="text-muted-foreground">Never</span>) }] : []),
+    ...(showCost && showStock ? [{ key: "value", header: "Stock value", align: "right" as const, defaultHidden: true, sort: (r: Item) => r.stockValuePaise ?? 0, csv: (r: Item) => (r.stockValuePaise ?? 0) / 100, cell: (r: Item) => <span className="tabular-nums">{r.stockValuePaise ? formatPaise(r.stockValuePaise) : "—"}</span> }] : []),
+    { key: "lists", header: "Price lists", align: "right", defaultHidden: true, csv: (r) => r.priceListCount ?? 0, cell: (r) => <span className="tabular-nums">{r.priceListCount || "—"}</span> },
+    { key: "barcode", header: "Barcode", defaultHidden: true, csv: (r) => r.barcode ?? "", cell: (r) => <span className="font-mono text-xs">{r.barcode ?? "—"}</span> },
     { key: "type", header: "Type", csv: (r) => r.type, cell: (r) => <Badge variant="outline" className="capitalize">{r.type}</Badge> },
     {
       key: "actions", header: "Actions", hideable: false,
@@ -122,6 +136,20 @@ export default function ItemsPage() {
         searchPlaceholder="Search name, SKU, HSN or barcode"
         presets={PRESETS}
         presetLabel="Show"
+        tabs
+        top={(res) => {
+          const c = (res.counts ?? {}) as Record<string, number>
+          const m = (res.sums ?? {}) as Record<string, number | null>
+          return <SummaryCards items={[
+            { label: title, value: c.all ?? 0, hint: `${c.product ?? 0} products · ${c.service ?? 0} services · ${m.categories ?? 0} categories`, color: "blue", icon: Package },
+            ...(showStock && m.stockValue != null ? [{ label: "Stock value", value: formatPaise(m.stockValue ?? 0), hint: `At cost · ${formatPaise(m.saleValue ?? 0)} at sale price`, color: "emerald", icon: IndianRupee }] : showStock ? [{ label: "Stock at sale price", value: formatPaise(m.saleValue ?? 0), hint: "What it would sell for", color: "emerald", icon: IndianRupee }] : []),
+            ...(showStock ? [
+              { label: "Low stock", value: c.low ?? 0, hint: "At or under the low-stock level", color: "amber", icon: AlarmClock, href: "/app/m/purchase/reorder" },
+              { label: "Out of stock", value: c.out ?? 0, hint: "Tracked, none left", color: "rose", icon: CircleSlash },
+            ] : []),
+            { label: "Selling", value: m.sold30 ?? 0, hint: `Sold in the last 30 days · ${m.neverSold ?? 0} never sold`, color: "violet", icon: TrendingUp },
+          ]} />
+        }}
         filters={[
           ...(categories.data?.data.length ? [{ key: "categoryId", label: "Category", options: categories.data.data.map((c) => ({ value: c.id, label: c.name })) }] : []),
           ...(places.length ? [{ key: "locationId", label: "Warehouse", options: places.map((w) => ({ value: w.id, label: w.name })) }] : []),
