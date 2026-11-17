@@ -14,6 +14,10 @@ export interface StockLocation {
   email: string | null
   valuePaise: number
   itemsInStock: number
+  /** From the list */
+  units?: number
+  moves30?: number
+  lastMoveOn?: string | null
 }
 
 export type Tracking = "none" | "batch" | "serial"
@@ -41,6 +45,15 @@ export interface StockRow {
   averagePaise: number
   reorderLevel: number | null
   low: boolean
+  /** From the list */
+  barcode?: string | null
+  category?: string | null
+  hsnSac?: string | null
+  imageUrl?: string | null
+  pricePaise?: number
+  costPricePaise?: number | null
+  lastInOn?: string | null
+  lastOutOn?: string | null
 }
 
 export type EntryKind = "opening" | "stock_in" | "adjustment" | "transfer" | "count"
@@ -77,6 +90,8 @@ export interface StockEntry {
   createdAt: string
   receivedAt: string | null
   lineCount?: number
+  units?: number
+  createdByName?: string | null
   lines: {
     itemId: string
     name: string

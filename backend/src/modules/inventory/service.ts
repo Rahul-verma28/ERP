@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { bundle, userNames, userPart, type Row } from '../../kernel/bundle';
 import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
@@ -43,22 +44,36 @@ export const LocationCreate = LocationInput.extend({
 });
 
 export async function listLocations(ctx: TenantCtx) {
-  let [rows, sums, items] = await Promise.all([
-    db().stockLocation.findMany({ where: { tenantId: ctx.tenantId }, orderBy: [{ isActive: 'desc' }, { isDefault: 'desc' }, { name: 'asc' }] }),
-    db().stockBalance.groupBy({ by: ['locationId'], where: { tenantId: ctx.tenantId }, _sum: { valuePaise: true } }),
-    db().stockBalance.groupBy({ by: ['locationId'], where: { tenantId: ctx.tenantId, quantity: { not: 0 } }, _count: { _all: true } }),
-  ]);
+  const t = ctx.tenantId;
+  // One round trip: the warehouses, what each holds, and how busy each was in the last 30 days
+  const read = () => bundle({
+    rows: Prisma.sql`select * from stock_locations where tenant_id = ${t}::uuid order by is_active desc, is_default desc, name`,
+    held: Prisma.sql`select location_id, sum(value_paise) as value_paise, count(*) filter (where quantity <> 0)::int as items, sum(quantity) as units from stock_balances where tenant_id = ${t}::uuid group by location_id`,
+    moves: Prisma.sql`select location_id, count(*)::int as moves, max(move_date) as last_move_on from stock_moves where tenant_id = ${t}::uuid and move_date >= ${todayIST()}::date - 30 group by location_id`,
+  });
+  let b = await read();
   // A business with no default warehouse gets one; the usual case needs no extra trip
-  if (!rows.some((l) => l.isDefault && l.isActive)) {
+  if (!b.rows.some((l) => l.isDefault && l.isActive)) {
     await defaultLocation(ctx);
-    rows = await db().stockLocation.findMany({ where: { tenantId: ctx.tenantId }, orderBy: [{ isActive: 'desc' }, { isDefault: 'desc' }, { name: 'asc' }] });
+    b = await read();
   }
+  const held = new Map(b.held.map((h) => [h.locationId as string, h]));
+  const moves = new Map(b.moves.map((m) => [m.locationId as string, m]));
+  const data = b.rows.map((l) => ({
+    ...l,
+    id: l.id as string,
+    isActive: l.isActive as boolean,
+    valuePaise: (held.get(l.id)?.valuePaise as bigint | undefined) ?? 0n,
+    itemsInStock: (held.get(l.id)?.items as number | undefined) ?? 0,
+    units: Number(held.get(l.id)?.units ?? 0),
+    moves30: (moves.get(l.id)?.moves as number | undefined) ?? 0,
+    lastMoveOn: moves.get(l.id)?.lastMoveOn ?? null,
+  }));
+  const active = data.filter((l) => l.isActive);
   return {
-    data: rows.map((l) => ({
-      ...l,
-      valuePaise: sums.find((s) => s.locationId === l.id)?._sum.valuePaise ?? 0n,
-      itemsInStock: items.find((s) => s.locationId === l.id)?._count._all ?? 0,
-    })),
+    data,
+    counts: { all: data.length, active: active.length, closed: data.length - active.length },
+    sums: { valuePaise: data.reduce((a, l) => a + l.valuePaise, 0n), items: data.reduce((a, l) => a + l.itemsInStock, 0), moves30: data.reduce((a, l) => a + l.moves30, 0) },
   };
 }
 
@@ -101,6 +116,8 @@ export const StockQuery = z.object({
   q: z.string().trim().max(100).optional(),
   locationId: z.string().uuid().optional(),
   low: z.enum(['true', 'false']).optional(),
+  /** in = some in stock, low = at or under the low-stock level, out = none left */
+  show: z.enum(['in', 'low', 'out']).optional(),
   /** Stock and value as they stood at the end of this day */
   date: DateStr.optional(),
 });
@@ -121,49 +138,58 @@ export async function reservedByItem(tenantId: string) {
   return new Map(rows.map((r) => [r.item_id, fromMilli(milli(r.reserved))]));
 }
 
-async function expiredByItem(tenantId: string, locationId?: string) {
-  const rows = await db().$queryRaw<{ item_id: string; qty: Prisma.Decimal }[]>`
-    SELECT b.item_id, SUM(bb.quantity) AS qty FROM stock_batch_balances bb JOIN stock_batches b ON b.id = bb.batch_id
-    WHERE bb.tenant_id = ${tenantId}::uuid AND bb.quantity > 0 AND b.expiry_date < ${dateOnly(todayIST())}
-      AND (${locationId ?? null}::uuid IS NULL OR bb.location_id = ${locationId ?? null}::uuid)
-    GROUP BY b.item_id`;
-  return new Map(rows.map((r) => [r.item_id, fromMilli(milli(r.qty))]));
-}
-
-async function inTransitByItem(tenantId: string) {
-  const entries = await db().stockEntry.findMany({ where: { tenantId, kind: 'transfer', status: 'in_transit' }, select: { lines: true } });
-  const out = new Map<string, number>();
-  for (const e of entries) for (const l of e.lines as { itemId: string; baseQuantity?: number; quantity: number }[]) out.set(l.itemId, (out.get(l.itemId) ?? 0) + (l.baseQuantity ?? l.quantity));
-  return out;
-}
-
-/** Every tracked item with stock, value, held for orders, expired, on the way, and its low-stock flag. */
+/** Every tracked item with stock, value, held for orders, expired, on the way, and its low-stock flag.
+ *  Today's stock comes in one round trip, with the counts and totals for the tabs and cards. */
 export async function stockSummary(ctx: TenantCtx, query: z.infer<typeof StockQuery>) {
-  const items = await db().item.findMany({
-    where: { tenantId: ctx.tenantId, trackStock: true, ...(query.q ? { OR: [{ name: { contains: query.q, mode: 'insensitive' } }, { sku: { contains: query.q, mode: 'insensitive' } }, { barcode: query.q }] } : {}) },
-    select: { id: true, name: true, sku: true, unit: true, reorderLevel: true, isActive: true, tracking: true, altUnit: true, altFactor: true },
-    orderBy: { name: 'asc' },
+  if (query.date) return stockAsOn(ctx, query);
+  const t = ctx.tenantId;
+  const loc = query.locationId ?? null;
+  const b = await bundle({
+    items: Prisma.sql`
+      select i.id, i.name, i.sku, i.barcode, i.unit, i.reorder_level, i.is_active, i.tracking, i.alt_unit, i.alt_factor, i.price_paise, i.cost_price_paise, i.hsn_sac, i.image_url, c.name as category
+      from items i left join item_categories c on c.id = i.category_id
+      where i.tenant_id = ${t}::uuid and i.track_stock order by i.name`,
+    bal: Prisma.sql`select item_id, location_id, quantity, value_paise from stock_balances where tenant_id = ${t}::uuid`,
+    places: Prisma.sql`select id, name from stock_locations where tenant_id = ${t}::uuid`,
+    reserved: Prisma.sql`
+      select ol.item_id, sum(greatest(ol.quantity - coalesce(d.done, 0), 0)) as reserved
+      from sales_document_lines ol
+      join sales_documents o on o.id = ol.document_id
+      left join (
+        select dl.source_line_id, sum(dl.quantity) as done from sales_document_lines dl join sales_documents dd on dd.id = dl.document_id
+        where dd.tenant_id = ${t}::uuid and dd.kind in ('invoice', 'delivery_challan') and dd.status <> 'cancelled' and dl.source_line_id is not null
+        group by dl.source_line_id
+      ) d on d.source_line_id = ol.id
+      where o.tenant_id = ${t}::uuid and o.kind = 'sales_order' and o.status in ('open', 'part_invoiced') and ol.item_id is not null
+      group by ol.item_id`,
+    expired: Prisma.sql`
+      select b.item_id, sum(bb.quantity) as qty from stock_batch_balances bb join stock_batches b on b.id = bb.batch_id
+      where bb.tenant_id = ${t}::uuid and bb.quantity > 0 and b.expiry_date < ${todayIST()}::date
+        and (${loc}::uuid is null or bb.location_id = ${loc}::uuid)
+      group by b.item_id`,
+    transit: Prisma.sql`select lines from stock_entries where tenant_id = ${t}::uuid and kind = 'transfer' and status = 'in_transit'`,
+    moves: Prisma.sql`select item_id, max(move_date) filter (where quantity > 0) as last_in_on, max(move_date) filter (where quantity < 0) as last_out_on from stock_moves where tenant_id = ${t}::uuid group by item_id`,
   });
-  const ids = items.map((i) => i.id);
-  let qtyBy: Map<string, bigint>;
-  let valueBy: Map<string, bigint>;
-  if (query.date) {
-    // As it stood: the ledger summed up to that day
-    const rows = await db().stockMove.groupBy({ by: ['itemId'], where: { tenantId: ctx.tenantId, itemId: { in: ids }, moveDate: { lte: dateOnly(query.date) }, ...(query.locationId ? { locationId: query.locationId } : {}) }, _sum: { quantity: true, valuePaise: true } });
-    qtyBy = new Map(rows.map((r) => [r.itemId, milli(r._sum.quantity ?? 0)]));
-    valueBy = new Map(rows.map((r) => [r.itemId, r._sum.valuePaise ?? 0n]));
-  } else {
-    const rows = await db().stockBalance.findMany({ where: { tenantId: ctx.tenantId, itemId: { in: ids }, ...(query.locationId ? { locationId: query.locationId } : {}) } });
-    qtyBy = new Map();
-    valueBy = new Map();
-    for (const b of rows) {
-      qtyBy.set(b.itemId, (qtyBy.get(b.itemId) ?? 0n) + milli(b.quantity));
-      valueBy.set(b.itemId, (valueBy.get(b.itemId) ?? 0n) + b.valuePaise);
-    }
+  const name = new Map(b.places.map((p) => [p.id as string, p.name as string]));
+  const qtyBy = new Map<string, bigint>();
+  const valueBy = new Map<string, bigint>();
+  const places = new Map<string, { id: string; name: string; quantity: number }[]>();
+  for (const r of b.bal) {
+    const q = milli(r.quantity);
+    if (q !== 0n) places.set(r.itemId, [...(places.get(r.itemId) ?? []), { id: r.locationId, name: name.get(r.locationId) ?? 'Warehouse', quantity: fromMilli(q) }]);
+    if (loc && r.locationId !== loc) continue;
+    qtyBy.set(r.itemId, (qtyBy.get(r.itemId) ?? 0n) + q);
+    valueBy.set(r.itemId, (valueBy.get(r.itemId) ?? 0n) + (r.valuePaise as bigint));
   }
-  const [reserved, expired, transit] = query.date ? [new Map<string, number>(), new Map<string, number>(), new Map<string, number>()] : await Promise.all([reservedByItem(ctx.tenantId), expiredByItem(ctx.tenantId, query.locationId), inTransitByItem(ctx.tenantId)]);
-  const places = query.date ? new Map<string, { id: string; name: string; quantity: number }[]>() : await stockByWarehouse(ctx.tenantId, ids);
-  const rows = items.map((i) => {
+  for (const list of places.values()) list.sort((a, c) => c.quantity - a.quantity);
+  const reserved = new Map(b.reserved.map((r) => [r.itemId as string, fromMilli(milli(r.reserved))]));
+  const expired = new Map(b.expired.map((r) => [r.itemId as string, fromMilli(milli(r.qty))]));
+  const transit = new Map<string, number>();
+  for (const e of b.transit) for (const l of e.lines as { itemId: string; baseQuantity?: number; quantity: number }[]) transit.set(l.itemId, (transit.get(l.itemId) ?? 0) + (l.baseQuantity ?? l.quantity));
+  const moved = new Map(b.moves.map((m) => [m.itemId as string, m]));
+  const text = query.q?.toLowerCase();
+
+  const all = b.items.map((i) => {
     const qty = qtyBy.get(i.id) ?? 0n;
     const value = valueBy.get(i.id) ?? 0n;
     const reorder = i.reorderLevel === null ? null : fromMilli(milli(i.reorderLevel));
@@ -171,14 +197,47 @@ export async function stockSummary(ctx: TenantCtx, query: z.infer<typeof StockQu
     const gone = expired.get(i.id) ?? 0;
     const available = fromMilli(qty) - held - gone;
     return {
-      id: i.id, name: i.name, sku: i.sku, unit: i.unit, isActive: i.isActive, tracking: i.tracking, altUnit: i.altUnit, altFactor: i.altFactor === null ? null : Number(i.altFactor),
+      id: i.id as string, name: i.name as string, sku: i.sku as string | null, barcode: i.barcode as string | null, unit: i.unit as string, isActive: i.isActive as boolean, tracking: i.tracking as string,
+      altUnit: i.altUnit as string | null, altFactor: i.altFactor === null ? null : Number(i.altFactor),
+      category: i.category as string | null, hsnSac: i.hsnSac as string | null, imageUrl: i.imageUrl as string | null, pricePaise: i.pricePaise as bigint, costPricePaise: (i.costPricePaise as bigint | null) ?? null,
       warehouses: places.get(i.id) ?? [],
       quantity: fromMilli(qty), reserved: held, expired: gone, available, inTransit: transit.get(i.id) ?? 0,
       valuePaise: value, averagePaise: qty > 0n ? (value * 1000n) / qty : 0n, reorderLevel: reorder, low: reorder !== null && available <= reorder,
+      lastInOn: (moved.get(i.id)?.lastInOn as Date | undefined) ?? null, lastOutOn: (moved.get(i.id)?.lastOutOn as Date | undefined) ?? null,
     };
   });
-  const data = query.low === 'true' ? rows.filter((r) => r.low) : rows;
-  return { data, nextCursor: null, total: data.length, totals: { valuePaise: rows.reduce((s, r) => s + r.valuePaise, 0n), low: rows.filter((r) => r.low).length } };
+  const rows = all.filter((r) => !text || r.name.toLowerCase().includes(text) || (r.sku ?? '').toLowerCase().includes(text) || r.barcode === query.q);
+  const counts = { all: rows.length, in: rows.filter((r) => r.quantity > 0).length, low: rows.filter((r) => r.low).length, out: rows.filter((r) => r.quantity <= 0).length };
+  const data = rows.filter((r) => (query.low === 'true' || query.show === 'low' ? r.low : query.show === 'in' ? r.quantity > 0 : query.show === 'out' ? r.quantity <= 0 : true));
+  const totals = {
+    valuePaise: rows.reduce((a, r) => a + r.valuePaise, 0n), low: counts.low, out: counts.out,
+    reserved: rows.filter((r) => r.reserved > 0).length, expired: rows.filter((r) => r.expired > 0).length, inTransit: rows.filter((r) => r.inTransit > 0).length,
+    salesValuePaise: rows.reduce((a, r) => a + (r.quantity > 0 ? BigInt(Math.round(r.quantity * Number(r.pricePaise))) : 0n), 0n),
+  };
+  return { data, nextCursor: null, total: data.length, counts, totals };
+}
+
+/** Stock and value as they stood at the end of a day: the ledger summed up to it */
+async function stockAsOn(ctx: TenantCtx, query: z.infer<typeof StockQuery>) {
+  const items = await db().item.findMany({
+    where: { tenantId: ctx.tenantId, trackStock: true, ...(query.q ? { OR: [{ name: { contains: query.q, mode: 'insensitive' } }, { sku: { contains: query.q, mode: 'insensitive' } }, { barcode: query.q }] } : {}) },
+    select: { id: true, name: true, sku: true, unit: true, reorderLevel: true, isActive: true, tracking: true, altUnit: true, altFactor: true },
+    orderBy: { name: 'asc' },
+  });
+  const rows = await db().stockMove.groupBy({ by: ['itemId'], where: { tenantId: ctx.tenantId, itemId: { in: items.map((i) => i.id) }, moveDate: { lte: dateOnly(query.date!) }, ...(query.locationId ? { locationId: query.locationId } : {}) }, _sum: { quantity: true, valuePaise: true } });
+  const qtyBy = new Map(rows.map((r) => [r.itemId, milli(r._sum.quantity ?? 0)]));
+  const valueBy = new Map(rows.map((r) => [r.itemId, r._sum.valuePaise ?? 0n]));
+  const data = items.map((i) => {
+    const qty = qtyBy.get(i.id) ?? 0n;
+    const value = valueBy.get(i.id) ?? 0n;
+    const reorder = i.reorderLevel === null ? null : fromMilli(milli(i.reorderLevel));
+    return {
+      id: i.id, name: i.name, sku: i.sku, unit: i.unit, isActive: i.isActive, tracking: i.tracking, altUnit: i.altUnit, altFactor: i.altFactor === null ? null : Number(i.altFactor),
+      warehouses: [], quantity: fromMilli(qty), reserved: 0, expired: 0, available: fromMilli(qty), inTransit: 0,
+      valuePaise: value, averagePaise: qty > 0n ? (value * 1000n) / qty : 0n, reorderLevel: reorder, low: reorder !== null && fromMilli(qty) <= reorder,
+    };
+  }).filter((r) => query.low !== 'true' || r.low);
+  return { data, nextCursor: null, total: data.length, totals: { valuePaise: data.reduce((a, r) => a + r.valuePaise, 0n), low: data.filter((r) => r.low).length } };
 }
 
 /** In stock and held for orders, per item, all warehouses together (for the item list and bill picker). */
@@ -541,21 +600,41 @@ export async function getEntry(ctx: TenantCtx, id: string) {
 export const EntryList = z.object({ locationId: z.string().uuid().optional(), kind: z.string().max(20).optional(), notKind: z.string().max(20).optional(), status: z.string().max(12).optional(), q: z.string().trim().max(100).optional(), limit: z.coerce.number().int().min(1).max(200).default(50), cursor: z.string().uuid().optional() });
 
 export async function listEntries(ctx: TenantCtx, query: z.infer<typeof EntryList>) {
-  const rows = await db().stockEntry.findMany({
-    where: {
-      tenantId: ctx.tenantId, ...(query.locationId ? { AND: [{ OR: [{ locationId: query.locationId }, { toLocationId: query.locationId }] }] } : {}), ...(query.kind ? { kind: query.kind } : query.notKind ? { kind: { not: query.notKind } } : {}), ...(query.status ? { status: query.status } : {}),
-      ...(query.q ? { OR: [{ party: { contains: query.q, mode: 'insensitive' } }, { reference: { contains: query.q, mode: 'insensitive' } }, { note: { contains: query.q, mode: 'insensitive' } }] } : {}),
-    },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    take: query.limit + 1,
-    ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+  const t = ctx.tenantId;
+  const b = await bundle({
+    rows: Prisma.sql`
+      select * from stock_entries where tenant_id = ${t}::uuid
+        ${query.kind === 'transfer' ? Prisma.sql`and kind = 'transfer'` : query.notKind ? Prisma.sql`and kind <> ${query.notKind}` : Prisma.empty}
+        ${query.locationId ? Prisma.sql`and (location_id = ${query.locationId}::uuid or to_location_id = ${query.locationId}::uuid)` : Prisma.empty}
+      order by created_at desc, id desc limit 3000`,
+    places: Prisma.sql`select id, name from stock_locations where tenant_id = ${t}::uuid`,
+    ...userPart(t),
   });
-  const locs = await db().stockLocation.findMany({ where: { tenantId: ctx.tenantId }, select: { id: true, name: true } });
-  const page = rows.slice(0, query.limit);
-  return {
-    data: page.map((e) => ({ ...e, location: locs.find((l) => l.id === e.locationId)?.name ?? '—', toLocation: locs.find((l) => l.id === e.toLocationId)?.name ?? null, lineCount: Array.isArray(e.lines) ? e.lines.length : 0 })),
-    nextCursor: rows.length > query.limit ? page[page.length - 1].id : null,
-  };
+  const place = new Map(b.places.map((p) => [p.id as string, p.name as string]));
+  const user = userNames(b);
+  const month = todayIST().slice(0, 7);
+  type L = { name?: string; quantity?: number; baseQuantity?: number };
+  const scope: (Row & { id: string; kind: string; status: string; valuePaise: bigint; toLocation: string | null; units: number })[] = b.rows.map((e) => {
+    const lines = (Array.isArray(e.lines) ? e.lines : []) as L[];
+    return {
+      ...e,
+      id: e.id as string, kind: e.kind as string, status: e.status as string, valuePaise: e.valuePaise as bigint,
+      location: place.get(e.locationId) ?? '—', toLocation: e.toLocationId ? place.get(e.toLocationId) ?? null : null,
+      lineCount: lines.length, units: lines.reduce((a, l) => a + Number(l.baseQuantity ?? l.quantity ?? 0), 0),
+      createdByName: e.createdBy ? user.get(e.createdBy) ?? null : null,
+    };
+  });
+  const counts: Record<string, number> = { all: scope.length };
+  for (const e of scope) { counts[e.kind] = (counts[e.kind] ?? 0) + 1; counts[e.status] = (counts[e.status] ?? 0) + 1; }
+  const thisMonth = scope.filter((e) => (e.entryDate as Date).toISOString().slice(0, 7) === month);
+  const sums = { valuePaise: scope.reduce((a, e) => a + e.valuePaise, 0n), month: thisMonth.length, monthValuePaise: thisMonth.reduce((a, e) => a + e.valuePaise, 0n), units: scope.reduce((a, e) => a + e.units, 0) };
+  const text = query.q?.toLowerCase();
+  const rows = scope.filter((e) =>
+    (!query.kind || query.kind === 'transfer' || e.kind === query.kind) && (!query.status || e.status === query.status)
+    && (!text || [e.party, e.reference, e.note, e.location, e.toLocation, ...((e.lines ?? []) as L[]).map((l) => l.name)].some((v) => typeof v === 'string' && v.toLowerCase().includes(text))));
+  const start = query.cursor ? rows.findIndex((r) => r.id === query.cursor) + 1 : 0;
+  const data = rows.slice(start, start + query.limit);
+  return { data, nextCursor: start + query.limit < rows.length ? data[data.length - 1]?.id ?? null : null, total: rows.length, counts, sums };
 }
 
 // ---------------------------------------------------------------- import helpers
