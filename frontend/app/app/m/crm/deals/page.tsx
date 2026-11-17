@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { Handshake, KanbanSquare, List, Pencil, Plus, Trophy } from "lucide-react"
+import { AlarmClock, CalendarClock, Handshake, KanbanSquare, List, Pencil, Percent, Plus, Trophy } from "lucide-react"
+import { SummaryCards } from "@/components/summary-cards"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
 import { EmptyState, SearchInput } from "@/components/common"
@@ -87,6 +88,12 @@ function DealBoard({ pipelineId, version, actions, onAdd, today }: { pipelineId:
   )
 }
 
+const ago = (iso: string | null | undefined) => {
+  if (!iso) return null
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  return days <= 0 ? "Today" : days === 1 ? "Yesterday" : `${days} days ago`
+}
+
 export default function DealsPage() {
   const router = useRouter()
   const { can, me } = useAuth()
@@ -110,13 +117,15 @@ export default function DealsPage() {
   const columns: Column<Deal>[] = [
     { key: "title", header: "Deal", hideable: false, sort: (d) => d.title.toLowerCase(), csv: (d) => d.title, cell: (d) => <span className="grid max-w-72 gap-1"><span className="font-medium">{d.title}</span><LabelChips labels={d.labels} /></span> },
     { key: "customer", header: "Customer", sort: (d) => (d.contact?.companyName || d.contact?.name || "").toLowerCase(), csv: (d) => d.contact?.companyName || d.contact?.name, cell: (d) => <span className="flex items-center gap-2"><Avatar name={d.contact?.companyName || d.contact?.name || "?"} className="size-8 text-[11px]" /><span className="min-w-0"><span className="block">{d.contact?.companyName || d.contact?.name}</span><span className="text-xs text-muted-foreground">{d.contact?.type === "lead" ? "Lead" : d.contact?.phone ?? ""}</span></span></span> },
-    { key: "value", header: "Value", align: "right", sort: (d) => d.valuePaise, csv: (d) => (d.valuePaise / 100).toFixed(2), cell: (d) => <span className="font-semibold tabular-nums">{formatPaise(d.valuePaise)}</span> },
+    { key: "value", header: "Value", align: "right", sort: (d) => d.valuePaise, csv: (d) => (d.valuePaise / 100).toFixed(2), cell: (d) => <span className="font-semibold tabular-nums">{formatPaise(d.valuePaise)}{d.status === "open" && d.stage?.probability != null && <span className="block text-[11px] font-normal text-muted-foreground">{d.stage.probability}% · {formatPaise(d.weightedPaise ?? 0)}</span>}</span> },
     { key: "stage", header: "Stage", sort: (d) => d.stage?.position ?? 99, csv: (d) => d.stage?.name, cell: (d) => (d.status === "open" ? <StagePill stage={d.stage} /> : <DealStatus deal={d} />) },
     {
       key: "close", header: "Expected close", sort: (d) => d.expectedCloseOn ?? "9999", csv: (d) => d.expectedCloseOn?.slice(0, 10) ?? "",
       cell: (d) => { if (!d.expectedCloseOn) return <span className="text-muted-foreground">—</span>; const due = dueLabel(d.expectedCloseOn, today); return <span className={cn(d.status === "open" && due?.late && "font-medium text-destructive")}>{formatDate(d.expectedCloseOn)}{d.status === "open" && due?.late && <span className="block text-xs">{due.text}</span>}</span> },
     },
-    { key: "tasks", header: "Tasks", csv: (d) => `${d.tasks.done}/${d.tasks.total}`, cell: (d) => <TaskBar tasks={d.tasks} /> },
+    { key: "tasks", header: "Tasks", csv: (d) => `${d.tasks.done}/${d.tasks.total}`, cell: (d) => <span className="grid gap-0.5"><TaskBar tasks={d.tasks} />{!!d.lateTasks && <span className="text-[11px] font-medium text-destructive">{d.lateTasks} late</span>}</span> },
+    { key: "activity", header: "Last activity", sort: (d) => d.lastActivityAt ?? "", csv: (d) => d.lastActivityAt?.slice(0, 10) ?? "", cell: (d) => (d.lastActivityAt ? <span className="text-sm">{ago(d.lastActivityAt)}</span> : <span className="text-muted-foreground">None yet</span>) },
+    { key: "age", header: "Age", align: "right", defaultHidden: true, sort: (d) => d.ageDays ?? 0, csv: (d) => d.ageDays ?? 0, cell: (d) => <span className="tabular-nums">{d.ageDays ?? 0} days</span> },
     { key: "owner", header: "Owner", csv: (d) => d.owner?.name ?? "", cell: (d) => d.owner?.name ?? <span className="text-muted-foreground">Unassigned</span> },
     { key: "status", header: "Status", defaultHidden: true, csv: (d) => d.status, cell: (d) => <DealStatus deal={d} /> },
     { key: "source", header: "Source", defaultHidden: true, csv: (d) => d.source ?? "", cell: (d) => d.source ?? "—" },
@@ -133,13 +142,13 @@ export default function DealsPage() {
     },
   ]
   const presets: ViewPreset[] = [
-    { key: "open", label: "Open", params: { status: "open" } },
-    { key: "mine", label: "My deals", params: { status: "open", ownerId: me?.user?.id ?? "" } },
-    { key: "closing", label: "Closing in 30 days", params: { due: "closing" } },
-    { key: "late", label: "Past close date", params: { due: "late" } },
-    { key: "won", label: "Won", params: { status: "won" } },
-    { key: "lost", label: "Lost", params: { status: "lost" } },
-    { key: "all", label: "All", params: {} },
+    { key: "open", label: "Open", params: { status: "open" }, countKey: "open" },
+    { key: "mine", label: "My deals", params: { status: "open", ownerId: me?.user?.id ?? "" }, countKey: "mine" },
+    { key: "closing", label: "Closing in 30 days", params: { due: "closing" }, countKey: "closing" },
+    { key: "late", label: "Past close date", params: { due: "late" }, countKey: "late" },
+    { key: "won", label: "Won", params: { status: "won" }, countKey: "won" },
+    { key: "lost", label: "Lost", params: { status: "lost" }, countKey: "lost" },
+    { key: "all", label: "All", params: {}, countKey: "all" },
   ]
   const add = can("crm.deal.create") ? <Button className="h-10 rounded-xl px-4 font-semibold" onClick={() => setAdding({})}><Plus /> New deal</Button> : undefined
   const toolbar = (
@@ -168,6 +177,18 @@ export default function DealsPage() {
           columns={columns}
           searchPlaceholder="Search deal, customer or mobile"
           presets={presets}
+          tabs
+          top={(res) => {
+            const c = (res.counts ?? {}) as Record<string, number>
+            const m = (res.sums ?? {}) as Record<string, number>
+            return <SummaryCards items={[
+              { label: "Open pipeline", value: formatPaise(m.open ?? 0), hint: `${c.open ?? 0} deals · ${formatPaise(m.weighted ?? 0)} weighted`, color: "blue", icon: Handshake },
+              { label: "Closing in 30 days", value: formatPaise(m.closing ?? 0), hint: `${c.closing ?? 0} deals`, color: "amber", icon: CalendarClock },
+              { label: "Past close date", value: c.late ?? 0, hint: "Open deals that should have closed", color: "rose", icon: AlarmClock },
+              { label: "Won this month", value: formatPaise(m.wonMonth ?? 0), hint: `${m.wonMonthCount ?? 0} deals · ${formatPaise(m.won ?? 0)} all time`, color: "emerald", icon: Trophy },
+              { label: "Win rate", value: `${m.winPct ?? 0}%`, hint: `${c.won ?? 0} won · ${c.lost ?? 0} lost · avg ${formatPaise(m.avgWon ?? 0)}`, color: "violet", icon: Percent },
+            ]} />
+          }}
           presetLabel="Show"
           filters={[{ key: "stageId", label: "Stage", options: pipeline.dealStages.map((s) => ({ value: s.id, label: s.name })) }]}
           rowHref={(d) => `/app/m/crm/deals/${d.id}`}

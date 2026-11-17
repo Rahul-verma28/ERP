@@ -32,6 +32,12 @@ export interface Lead {
   tasks: { done: number; total: number }
   notes: string | null
   custom?: Record<string, unknown>
+  /** From the list */
+  lateTasks?: number
+  lastActivityAt?: string | null
+  ageDays?: number
+  dealCount?: number
+  dealValuePaise?: number
   createdAt: string
   updatedAt: string
   version: number
@@ -57,6 +63,12 @@ export interface Deal {
   owner: { id: string; name: string } | null
   tasks: { done: number; total: number }
   closedAt: string | null
+  /** From the list */
+  lateTasks?: number
+  lastActivityAt?: string | null
+  ageDays?: number
+  weightedPaise?: number
+  late?: boolean
   createdAt: string
   version: number
 }

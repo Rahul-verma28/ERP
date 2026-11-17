@@ -18,6 +18,7 @@ import { customerBalances, setOpeningBalance } from '../billing/ledger';
 import * as crm from './pipeline';
 import { DateStr } from '../../kernel/query';
 import { listCustomers } from '../billing/lists';
+import * as crmLists from './lists';
 import { dateOnly, todayIST } from '../../kernel/gst';
 
 // CRM basic (CRM-01..04): customers, leads → convert, timeline, CSV import with de-duplication.
@@ -129,6 +130,8 @@ function registerContactRoutes(kind: Kind, base: string) {
     const q = req.query as unknown as z.infer<typeof ContactList>;
     // Customers: one round trip with what each bought, paid and owes, and the tab counts
     if (kind === 'customer') return res.json(await listCustomers(req.ctx!, q, (await getRolePermissions(req.ctx!.roleId)).has('billing.dues.view')));
+    // Leads: one round trip with stage, owner, tasks, last activity, and the tab counts
+    return res.json(await crmLists.listLeads(req.ctx!, q as unknown as crmLists.LeadQuery));
     const where: Prisma.ContactWhereInput = {
       AND: [
         { type: kind },
@@ -349,19 +352,7 @@ router.delete('/activities/:id', validate(IdParam, 'params'), requirePermission(
 
 /** Follow-ups due for the current user (dashboard + reminders) */
 router.get('/follow-ups', requirePermission('crm.activity.view'), tx(async (req, res) => {
-  const rows = await db().activity.findMany({
-    where: { type: { in: ['follow_up', 'task'] }, completedAt: req.query.done === 'true' ? { not: null } : null, AND: [scopeWhere(req.ctx!, { owner: ['assigneeId', 'createdBy'] })] },
-    orderBy: { dueAt: 'asc' },
-    take: 300,
-  });
-  const [contacts, deals, names] = await Promise.all([
-    db().contact.findMany({ where: { id: { in: rows.map((r) => r.contactId) } }, select: { id: true, name: true, phone: true, type: true } }),
-    db().deal.findMany({ where: { id: { in: rows.map((r) => r.dealId).filter(Boolean) as string[] } }, select: { id: true, title: true } }),
-    crm.userNames(rows.map((r) => r.assigneeId)),
-  ]);
-  const byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
-  const dealOf = Object.fromEntries(deals.map((d) => [d.id, d]));
-  res.json({ data: rows.map((r) => ({ ...r, contact: byId[r.contactId] ?? null, deal: r.dealId ? dealOf[r.dealId] ?? null : null, assigneeName: r.assigneeId ? names.get(r.assigneeId) ?? null : null })) });
+  res.json(await crmLists.listFollowUps(req.ctx!, req.query.done === 'true'));
 }));
 
 // ── Leads: filters, board, actions ──
@@ -431,7 +422,7 @@ router.put('/leads/:id/products', validate(IdParam, 'params'), requirePermission
 
 // ── Deals ──
 router.get('/deals', requirePermission('crm.deal.view'), validate(crm.DealList, 'query'), tx(async (req, res) => {
-  res.json(await crm.listDeals(req.ctx!, req.query as unknown as z.infer<typeof crm.DealList>));
+  res.json(await crmLists.listDeals(req.ctx!, req.query as unknown as z.infer<typeof crm.DealList>));
 }));
 router.get('/deals/:id', validate(IdParam, 'params'), requirePermission('crm.deal.view'), tx(async (req, res) => {
   res.json(await crm.getDeal(req.ctx!, String(req.params.id)));

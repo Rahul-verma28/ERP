@@ -4,7 +4,8 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { KanbanSquare, List, Pencil, Plus, Settings2, Upload, Users } from "lucide-react"
+import { AlarmClock, CalendarClock, KanbanSquare, List, Pencil, Plus, Settings2, Sparkles, Trophy, Upload, Users } from "lucide-react"
+import { SummaryCards } from "@/components/summary-cards"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { PageHeader } from "@/components/app-shell"
@@ -136,6 +137,12 @@ function LeadBoard({ pipelineId, version, actions, onAdd, today }: { pipelineId:
   )
 }
 
+const ago = (iso: string | null | undefined) => {
+  if (!iso) return null
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000)
+  return days <= 0 ? "Today" : days === 1 ? "Yesterday" : `${days} days ago`
+}
+
 export default function LeadsPage() {
   const router = useRouter()
   const { can, me, term } = useAuth()
@@ -184,7 +191,11 @@ export default function LeadsPage() {
     },
     { key: "value", header: "Value", align: "right", sort: (l) => l.valuePaise ?? 0, csv: (l) => ((l.valuePaise ?? 0) / 100).toFixed(2), cell: (l) => <span className="font-medium tabular-nums">{l.valuePaise ? formatPaise(l.valuePaise) : "—"}</span> },
     { key: "followup", header: "Follow up", sort: (l) => l.followUpOn ?? "9999", csv: (l) => l.followUpOn?.slice(0, 10) ?? "", cell: (l) => <FollowUp date={l.followUpOn} today={today} /> },
-    { key: "tasks", header: "Tasks", csv: (l) => `${l.tasks.done}/${l.tasks.total}`, cell: (l) => <TaskBar tasks={l.tasks} /> },
+    { key: "tasks", header: "Tasks", csv: (l) => `${l.tasks.done}/${l.tasks.total}`, cell: (l) => <span className="grid gap-0.5"><TaskBar tasks={l.tasks} />{!!l.lateTasks && <span className="text-[11px] font-medium text-destructive">{l.lateTasks} late</span>}</span> },
+    { key: "activity", header: "Last activity", sort: (l) => l.lastActivityAt ?? "", csv: (l) => l.lastActivityAt?.slice(0, 10) ?? "", cell: (l) => (l.lastActivityAt ? <span className="text-sm">{ago(l.lastActivityAt)}</span> : <span className="text-muted-foreground">None yet</span>) },
+    { key: "age", header: "Age", align: "right", defaultHidden: true, sort: (l) => l.ageDays ?? 0, csv: (l) => l.ageDays ?? 0, cell: (l) => <span className="tabular-nums">{l.ageDays ?? 0} days</span> },
+    { key: "deals", header: "Deals", align: "right", defaultHidden: true, sort: (l) => l.dealValuePaise ?? 0, csv: (l) => l.dealCount ?? 0, cell: (l) => (l.dealCount ? <span className="tabular-nums">{l.dealCount}<span className="block text-[11px] text-muted-foreground">{formatPaise(l.dealValuePaise ?? 0)}</span></span> : "—") },
+    { key: "email", header: "Email", defaultHidden: true, csv: (l) => l.email ?? "", cell: (l) => l.email ?? "—" },
     { key: "owner", header: "Assigned to", csv: (l) => l.owner?.name ?? "", cell: (l) => (l.owner ? <span className="text-sm">{l.owner.name}</span> : <span className="text-muted-foreground">Unassigned</span>) },
     { key: "source", header: "Source", defaultHidden: true, csv: (l) => l.leadSource ?? "", cell: (l) => l.leadSource ?? "—" },
     { key: "phone", header: "Mobile", defaultHidden: true, csv: (l) => l.phone ?? "", cell: (l) => <span className="tabular-nums">{l.phone ?? "—"}</span> },
@@ -202,13 +213,13 @@ export default function LeadsPage() {
   ]
 
   const presets: ViewPreset[] = [
-    { key: "open", label: "Open", params: { status: "open" } },
-    { key: "mine", label: "My leads", params: { status: "open", ownerId: me?.user?.id ?? "" } },
-    { key: "today", label: "Follow up today", params: { status: "open", followUp: "today" } },
-    { key: "overdue", label: "Follow-up missed", params: { status: "open", followUp: "overdue" } },
-    { key: "nofollow", label: "No follow-up", params: { status: "open", followUp: "none" } },
-    { key: "converted", label: "Converted", params: { status: "converted" } },
-    { key: "lost", label: "Lost", params: { status: "lost" } },
+    { key: "open", label: "Open", params: { status: "open" }, countKey: "open" },
+    { key: "mine", label: "My leads", params: { status: "open", ownerId: me?.user?.id ?? "" }, countKey: "mine" },
+    { key: "today", label: "Follow up today", params: { status: "open", followUp: "today" }, countKey: "today" },
+    { key: "overdue", label: "Follow-up missed", params: { status: "open", followUp: "overdue" }, countKey: "overdue" },
+    { key: "nofollow", label: "No follow-up", params: { status: "open", followUp: "none" }, countKey: "nofollow" },
+    { key: "converted", label: "Converted", params: { status: "converted" }, countKey: "converted" },
+    { key: "lost", label: "Lost", params: { status: "lost" }, countKey: "lost" },
   ]
   const add = can("crm.lead.create") ? <Button className="h-10 rounded-xl px-4 font-semibold" onClick={() => setDialog({ kind: "new" })}><Plus /> New lead</Button> : undefined
   const toolbar = (
@@ -247,6 +258,18 @@ export default function LeadsPage() {
           searchPlaceholder="Search name, company, mobile, email"
           presets={presets}
           presetLabel="Show"
+          tabs
+          top={(res) => {
+            const c = (res.counts ?? {}) as Record<string, number>
+            const m = (res.sums ?? {}) as Record<string, number>
+            return <SummaryCards items={[
+              { label: `Open ${leads.toLowerCase()}`, value: c.open ?? 0, hint: `${formatPaise(m.openValue ?? 0)} expected · ${c.mine ?? 0} yours`, color: "blue", icon: Users },
+              { label: "New this month", value: m.newThisMonth ?? 0, hint: `${m.convertedThisMonth ?? 0} converted this month`, color: "violet", icon: Sparkles },
+              { label: "Follow up today", value: c.today ?? 0, hint: `${c.nofollow ?? 0} have no follow-up date`, color: "amber", icon: CalendarClock },
+              { label: "Follow-up missed", value: c.overdue ?? 0, hint: `${m.lateTasks ?? 0} tasks late`, color: "rose", icon: AlarmClock },
+              { label: "Converted", value: `${m.conversionPct ?? 0}%`, hint: `${c.converted ?? 0} converted · ${c.lost ?? 0} lost`, color: "emerald", icon: Trophy },
+            ]} />
+          }}
           filters={[
             { key: "stageId", label: "Stage", options: stages.map((s) => ({ value: s.id, label: s.name })) },
             { key: "source", label: "Source", options: setup.sources.map((s) => ({ value: s.name, label: s.name })) },

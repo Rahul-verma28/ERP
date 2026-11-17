@@ -34,6 +34,10 @@ export async function ensureSetup(ctx: Pick<TenantCtx, 'tenantId'>) {
     await placeLooseLeads(ctx.tenantId, pipeline.id);
     return pipeline;
   }
+  // Several requests can ask at once on a new business; only the first makes the defaults
+  await db().$queryRaw`select 1 as ok from pg_advisory_xact_lock(hashtext(${`crm-setup:${ctx.tenantId}`}))`;
+  const made = await db().crmPipeline.findFirst({ where: { tenantId: ctx.tenantId }, orderBy: [{ isDefault: 'desc' }, { position: 'asc' }] });
+  if (made) return made;
   const created = await db().crmPipeline.create({ data: { tenantId: ctx.tenantId, name: 'Sales', isDefault: true } });
   await db().crmStage.createMany({
     data: [

@@ -3,7 +3,8 @@
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { CalendarClock, Check, MessageCircle, Phone } from "lucide-react"
+import { AlarmClock, CalendarClock, CalendarDays, Check, CheckCheck, ListTodo, MessageCircle, Phone, UserCheck } from "lucide-react"
+import { SummaryCards } from "@/components/summary-cards"
 import { buttonVariants } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
 import { EmptyState, Spinner } from "@/components/common"
@@ -45,7 +46,7 @@ const ORDER = ["Late", "Today", "Tomorrow", "This week", "Later"]
 export default function TasksPage() {
   const { can } = useAuth()
   const [done, setDone] = React.useState(false)
-  const { data, reload } = useApi<{ data: Row[] }>(`/follow-ups${done ? "?done=true" : ""}`)
+  const { data, reload } = useApi<{ data: Row[]; counts?: Record<string, number> }>(`/follow-ups${done ? "?done=true" : ""}`)
   const [now] = React.useState(() => Date.now())
   if (!can("crm.activity.view")) return <PageHeader title="Tasks" description="You don't have access to tasks. Ask your admin." />
 
@@ -66,9 +67,18 @@ export default function TasksPage() {
   return (
     <div className="grid gap-5">
       <PageHeader title="Tasks and follow-ups" description="Everything promised to leads, customers and deals. Add them from a lead or deal page." />
+      {data?.counts && (
+        <SummaryCards items={[
+          { label: "Pending", value: data.counts.open ?? 0, hint: `${data.counts.mine ?? 0} assigned to you`, color: "blue", icon: ListTodo },
+          { label: "Late", value: data.counts.overdue ?? 0, hint: "Past their due date", color: "rose", icon: AlarmClock },
+          { label: "Due today", value: data.counts.today ?? 0, hint: "Call, visit or send today", color: "amber", icon: CalendarClock },
+          { label: "Next 7 days", value: data.counts.week ?? 0, hint: "Coming up this week", color: "violet", icon: CalendarDays },
+          { label: "Done this week", value: data.counts.doneThisWeek ?? 0, hint: `${data.counts.done ?? 0} done in all`, color: "emerald", icon: CheckCheck },
+        ]} />
+      )}
       <div className="flex w-fit gap-1 rounded-xl border p-1 text-sm" role="tablist">
-        <button role="tab" aria-selected={!done} onClick={() => setDone(false)} className={cn("rounded-lg px-3 py-1.5 font-medium text-muted-foreground", !done && "bg-primary text-primary-foreground")}>Pending</button>
-        <button role="tab" aria-selected={done} onClick={() => setDone(true)} className={cn("rounded-lg px-3 py-1.5 font-medium text-muted-foreground", done && "bg-primary text-primary-foreground")}>Done</button>
+        <button role="tab" aria-selected={!done} onClick={() => setDone(false)} className={cn("rounded-lg px-3 py-1.5 font-medium text-muted-foreground", !done && "bg-primary text-primary-foreground")}>Pending{data?.counts && <span className="ml-1.5 tabular-nums opacity-80">{data.counts.open}</span>}</button>
+        <button role="tab" aria-selected={done} onClick={() => setDone(true)} className={cn("rounded-lg px-3 py-1.5 font-medium text-muted-foreground", done && "bg-primary text-primary-foreground")}>Done{data?.counts && <span className="ml-1.5 tabular-nums opacity-80">{data.counts.done}</span>}</button>
       </div>
       {!data ? <div className="grid place-items-center py-24"><Spinner /></div> : rows.length === 0 ? (
         <EmptyState icon={CalendarClock} title={done ? "Nothing finished yet" : "Nothing pending"} description="Add a task or follow-up from a lead or deal so the next step is never forgotten." />
@@ -85,7 +95,7 @@ export default function TasksPage() {
                     <p className="text-xs text-muted-foreground">
                       {r.type === "follow_up" ? "Follow-up" : "Task"} · {r.contact && <Link href={r.contact.type === "customer" ? `/app/m/crm/${r.contact.id}` : `/app/m/crm/${r.contact.id}`} className="font-medium text-foreground hover:underline">{r.contact.name}</Link>}
                       {r.deal && <> · <Link href={`/app/m/crm/deals/${r.deal.id}`} className="hover:underline">{r.deal.title}</Link></>}
-                      {r.assigneeName ? ` · ${r.assigneeName}` : ""}
+                      {r.assigneeName ? <> · <UserCheck className="inline size-3" aria-hidden /> {r.assigneeName}</> : ""}
                     </p>
                   </div>
                   <span className={cn("text-sm tabular-nums", !r.completedAt && g === "Late" ? "font-semibold text-destructive" : "text-muted-foreground")}>{formatDateTime(r.dueAt)}</span>
