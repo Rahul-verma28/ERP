@@ -4,7 +4,8 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import Link from "next/link"
-import { Copy, Eye, Pencil, Plus, Receipt, Repeat, Trash2 } from "lucide-react"
+import { AlarmClock, Banknote, CalendarDays, Copy, Eye, Landmark, PieChart, Pencil, Plus, Receipt, Repeat, Trash2, Wallet } from "lucide-react"
+import { SummaryCards } from "@/components/summary-cards"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
@@ -17,6 +18,8 @@ import { useAuth } from "@/lib/auth"
 import { useSharedApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useFinAccounts, type Expense, type Recurring } from "@/lib/finance"
+
+const vsLast = (now: number, before: number) => (before ? `${now >= before ? "▲" : "▼"} ${Math.abs(Math.round(((now - before) / before) * 100))}% vs last month (${formatPaise(before)})` : "Nothing last month")
 
 // Expenses: money spent to run the business. GST bills are marked, so their GST can be claimed back.
 
@@ -36,9 +39,12 @@ export default function ExpensesPage() {
     { key: "number", header: "Expense no.", hideable: false, sort: (r) => r.number ?? "", csv: (r) => r.number ?? "", cell: (r) => <span className="inline-flex w-fit rounded-lg border px-2 py-0.5 font-mono text-xs font-medium text-primary">{r.number ?? "—"}</span> },
     { key: "date", header: "Date", sort: (r) => r.paidOn, csv: (r) => r.paidOn.slice(0, 10), cell: (r) => formatDate(r.paidOn) },
     { key: "category", header: "Category", sort: (r) => r.category, csv: (r) => r.category, cell: (r) => <span className="font-medium">{r.category}</span> },
-    { key: "payee", header: "Paid to", csv: (r) => r.payee ?? "", cell: (r) => <span>{r.payee ?? "—"}{r.notes && <span className="block max-w-56 truncate text-xs text-muted-foreground">{r.notes}</span>}</span> },
-    { key: "account", header: "Paid from", csv: (r) => r.account ?? "", cell: (r) => r.account ?? "—" },
+    { key: "payee", header: "Paid to", csv: (r) => r.payee ?? "", cell: (r) => <span>{r.payee ?? "—"}{(r.vendorGstin || r.notes) && <span className="block max-w-56 truncate text-xs text-muted-foreground">{r.vendorGstin ? <span className="font-mono">{r.vendorGstin}</span> : r.notes}</span>}</span> },
+    { key: "account", header: "Paid from", csv: (r) => r.account ?? "", cell: (r) => (r.account ? <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">{r.accountKind === "cash" ? <Banknote className="size-3.5" /> : <Landmark className="size-3.5" />}{r.account}</span> : "—") },
+    { key: "method", header: "Paid by", defaultHidden: true, csv: (r) => r.method, cell: (r) => <span className="capitalize">{r.method}</span> },
     { key: "gst", header: "GST bill", csv: (r) => (r.gstPaise ? (r.gstPaise / 100).toFixed(2) : ""), cell: (r) => (r.gstPaise ? <span className="grid gap-0.5"><Pill color="blue">{(r.gstRateBp ?? 0) / 100}% GST</Pill><span className="text-xs text-muted-foreground tabular-nums">{formatPaise(r.gstPaise)} to claim</span></span> : <span className="text-muted-foreground">—</span>) },
+    { key: "photo", header: "Bill photo", defaultHidden: true, csv: (r) => (r.receiptUrl ? "Yes" : ""), cell: (r) => (r.receiptUrl ? <a href={r.receiptUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-sm font-medium text-primary hover:underline">Open</a> : <span className="text-muted-foreground">—</span>) },
+    { key: "createdBy", header: "Entered by", defaultHidden: true, csv: (r) => r.createdByName ?? "", cell: (r) => <span className="text-sm">{r.createdByName ?? "—"}<span className="block text-[11px] text-muted-foreground">{formatDate(r.createdAt)}</span></span> },
     { key: "ref", header: "Reference", defaultHidden: true, csv: (r) => r.reference ?? r.billNo ?? "", cell: (r) => <span className="font-mono text-xs">{r.billNo ?? r.reference ?? "—"}</span> },
     { key: "amount", header: "Amount", align: "right", sort: (r) => r.amountPaise, csv: (r) => (r.amountPaise / 100).toFixed(2), cell: (r) => <span className="font-semibold tabular-nums">{formatPaise(r.amountPaise)}</span> },
     {
@@ -81,7 +87,22 @@ export default function ExpensesPage() {
         columns={columns}
         searchPlaceholder="Search number, paid to, bill no. or note"
         presetLabel="Show"
-        presets={[{ key: "all", label: "All", params: {} }, { key: "gst", label: "With GST bill", params: { gst: "true" } }, { key: "nogst", label: "Without GST bill", params: { gst: "false" } }]}
+        presets={[{ key: "all", label: "All", params: {}, countKey: "all" }, { key: "gst", label: "With GST bill", params: { gst: "true" }, countKey: "gst" }, { key: "nogst", label: "Without GST bill", params: { gst: "false" }, countKey: "nogst" }]}
+        tabs
+        top={(res) => {
+          const s = (res.sums ?? {}) as Record<string, number | string | null>
+          const n = (k: string) => Number(s[k] ?? 0)
+          const c = (res.counts ?? {}) as Record<string, number>
+          return <SummaryCards items={[
+            { label: "Spent", value: formatPaise(n("total")), hint: `${c.all ?? 0} expenses as filtered`, color: "blue", icon: Wallet },
+            { label: "This month", value: formatPaise(n("month")), hint: vsLast(n("month"), n("lastMonth")), color: "violet", icon: CalendarDays },
+            { label: "GST to claim", value: formatPaise(n("gst")), hint: `${c.gst ?? 0} GST bills`, color: "emerald", icon: Receipt },
+            { label: "Top category", value: (s.topCategory as string | null) ?? "—", hint: s.topCategory ? `${formatPaise(n("topCategoryPaise"))} of ${n("categories")} categories` : "No expenses yet", color: "amber", icon: PieChart },
+            n("budget")
+              ? { label: "Monthly budget", value: `${Math.round((n("month") / n("budget")) * 100)}% used`, hint: `${formatPaise(n("month"))} of ${formatPaise(n("budget"))}`, color: n("month") > n("budget") ? "rose" : "slate", icon: AlarmClock, href: "/app/m/finance/reports?tab=budget" }
+              : { label: "Paid in cash", value: formatPaise(n("cash")), hint: "Set budgets in Finance settings", color: "slate", icon: Banknote, href: "/app/m/finance/settings" },
+          ]} />
+        }}
         filters={[
           periodFilter(me?.tenant?.fyStartMonth ?? 4, "Period"),
           { key: "category", label: "Category", options: (categories.data?.data ?? []).map((c) => ({ value: c.name, label: c.name })) },

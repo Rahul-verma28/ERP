@@ -2,11 +2,12 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Archive, ArchiveRestore, ArrowRightLeft, BookOpen, Pencil, Plus, Star, Wallet } from "lucide-react"
+import { Archive, ArchiveRestore, ArrowRightLeft, BookOpen, Pencil, Plus, Star, Wallet, ArrowDownLeft, ArrowUpRight, Banknote, Landmark } from "lucide-react"
+import { SummaryCards } from "@/components/summary-cards"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
-import { DataList, localList, type Column } from "@/components/data-list"
+import { DataList, countBy, localList, type Column } from "@/components/data-list"
 import { ActionMenu, Pill } from "@/components/page-parts"
 import { FinanceTabs } from "@/components/finance/sub-tabs"
 import { AccountDialog, TransferDialog } from "@/components/finance/forms"
@@ -50,6 +51,7 @@ export default function AccountsPage() {
     { key: "bank", header: "Bank", csv: (a) => a.bankName ?? "", cell: (a) => (a.bankName ? <span>{a.bankName}<span className="block font-mono text-xs text-muted-foreground">{[masked(a.accountNo), a.ifsc].filter(Boolean).join(" · ")}</span></span> : "—") },
     { key: "in", header: "In this month", align: "right", csv: (a) => a.inThisMonthPaise / 100, cell: (a) => <span className="text-emerald-700 tabular-nums dark:text-emerald-300">{formatPaise(a.inThisMonthPaise)}</span> },
     { key: "out", header: "Out this month", align: "right", csv: (a) => a.outThisMonthPaise / 100, cell: (a) => <span className="text-rose-700 tabular-nums dark:text-rose-300">{formatPaise(a.outThisMonthPaise)}</span> },
+    { key: "entries", header: "Entries", align: "right", defaultHidden: true, sort: (a) => a.entries ?? 0, csv: (a) => a.entries ?? 0, cell: (a) => <span className="tabular-nums">{a.entries ?? 0}</span> },
     { key: "balance", header: "Balance", align: "right", sort: (a) => a.balancePaise, csv: (a) => a.balancePaise / 100, cell: (a) => <span className={cn("font-semibold tabular-nums", a.balancePaise < 0 && "text-destructive")}>{formatPaise(a.balancePaise)}</span> },
     { key: "status", header: "Status", csv: (a) => (a.isActive ? "Open" : "Closed"), cell: (a) => <Pill color={a.isActive ? "emerald" : "slate"} dot>{a.isActive ? "Open" : "Closed"}</Pill> },
     {
@@ -75,12 +77,32 @@ export default function AccountsPage() {
       <FinanceTabs group="cash" active="accounts" />
       <DataList<FinAccount>
         id="fin-accounts"
-        load={localList(async () => (await api.get<{ data: FinAccount[] }>("/finance/accounts")).data, (a, q) => `${a.name} ${a.bankName ?? ""}`.toLowerCase().includes(q))}
+        load={localList(async () => (await api.get<{ data: FinAccount[] }>("/finance/accounts")).data, (a, q) => `${a.name} ${a.bankName ?? ""} ${a.upiId ?? ""}`.toLowerCase().includes(q), {
+          filter: (a, p) => (p.show === "closed" ? !a.isActive : p.show === "open" ? a.isActive : true),
+          counts: (rows) => countBy(rows, (a) => (a.isActive ? "open" : "closed")),
+          meta: (rows) => {
+            const sum = (xs: FinAccount[], k: "balancePaise" | "inThisMonthPaise" | "outThisMonthPaise") => xs.reduce((n, a) => n + a[k], 0)
+            const cash = rows.filter((a) => a.kind === "cash")
+            return { sums: { total: sum(rows, "balancePaise"), cash: sum(cash, "balancePaise"), other: sum(rows, "balancePaise") - sum(cash, "balancePaise"), in: sum(rows, "inThisMonthPaise"), out: sum(rows, "outThisMonthPaise"), accounts: rows.filter((a) => a.isActive).length } }
+          },
+        })}
+        presetLabel="Show"
+        presets={[{ key: "open", label: "Open", params: { show: "open" }, countKey: "open" }, { key: "closed", label: "Closed", params: { show: "closed" }, countKey: "closed" }, { key: "all", label: "All", params: {}, countKey: "all" }]}
+        tabs
+        top={(res) => {
+          const s = (res.sums ?? {}) as Record<string, number>
+          return <SummaryCards items={[
+            { label: "Total balance", value: formatPaise(s.total ?? 0), hint: `${s.accounts ?? 0} open accounts`, color: "blue", icon: Wallet },
+            { label: "Cash in hand", value: formatPaise(s.cash ?? 0), hint: "All cash accounts", color: "amber", icon: Banknote },
+            { label: "In bank, UPI and cards", value: formatPaise(s.other ?? 0), hint: "Everything not cash", color: "violet", icon: Landmark },
+            { label: "In this month", value: formatPaise(s.in ?? 0), hint: "Payments, income, transfers in", color: "emerald", icon: ArrowDownLeft },
+            { label: "Out this month", value: formatPaise(s.out ?? 0), hint: "Expenses, payments, transfers out", color: "rose", icon: ArrowUpRight },
+          ]} />
+        }}
         params={{ v: String(version) }}
         header={{ title: "Cash & Bank", description: "Every account money sits in. Customer payments, supplier payments, expenses and transfers move these balances.", primary: add, actions: can("finance.expense.create") ? <Button variant="outline" className="h-10 rounded-xl" onClick={() => setMoving("")}><ArrowRightLeft /> Move money</Button> : undefined }}
         columns={columns}
         searchPlaceholder="Search account or bank"
-        summary={(r) => { const rows = (r.data as FinAccount[] | undefined) ?? []; return <span className="text-sm text-muted-foreground">Total <strong className="text-foreground tabular-nums">{formatPaise(rows.reduce((s, a) => s + a.balancePaise, 0))}</strong></span> }}
         rowHref={(a) => `/app/m/finance/accounts/${a.id}`}
         exportName="accounts"
         emptyState={<EmptyState icon={Wallet} title="No accounts yet" action={add} />}

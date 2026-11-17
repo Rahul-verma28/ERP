@@ -3,11 +3,12 @@
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { ArrowRight, ArrowRightLeft, Plus, Trash2 } from "lucide-react"
+import { ArrowDownToLine, ArrowRight, ArrowRightLeft, ArrowUpFromLine, CalendarDays, Plus, Receipt, Trash2 } from "lucide-react"
+import { SummaryCards } from "@/components/summary-cards"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
-import { DataList, localList, periodFilter, type Column } from "@/components/data-list"
+import { DataList, remoteList, periodFilter, type Column } from "@/components/data-list"
 import { ActionMenu } from "@/components/page-parts"
 import { FinanceTabs } from "@/components/finance/sub-tabs"
 import { TransferDialog } from "@/components/finance/forms"
@@ -35,6 +36,7 @@ export default function TransfersPage() {
       cell: (r) => <span className="flex flex-wrap items-center gap-1.5 font-medium"><Link href={`/app/m/finance/accounts/${r.fromAccountId}`} onClick={(e) => e.stopPropagation()} className="hover:underline">{r.fromAccount}</Link><ArrowRight className="size-3.5 text-muted-foreground" /><Link href={`/app/m/finance/accounts/${r.toAccountId}`} onClick={(e) => e.stopPropagation()} className="hover:underline">{r.toAccount}</Link></span>,
     },
     { key: "ref", header: "Reference", csv: (r) => r.reference ?? "", cell: (r) => <span>{r.reference ? <span className="font-mono text-xs">{r.reference}</span> : "—"}{r.notes && <span className="block max-w-56 truncate text-xs text-muted-foreground">{r.notes}</span>}</span> },
+    { key: "createdBy", header: "Entered by", defaultHidden: true, csv: (r) => r.createdByName ?? "", cell: (r) => r.createdByName ?? "—" },
     { key: "charges", header: "Charges", align: "right", csv: (r) => (r.chargesPaise / 100).toFixed(2), cell: (r) => (r.chargesPaise ? <span className="text-amber-700 tabular-nums dark:text-amber-300">{formatPaise(r.chargesPaise)}</span> : <span className="text-muted-foreground">—</span>) },
     { key: "amount", header: "Amount", align: "right", sort: (r) => r.amountPaise, csv: (r) => (r.amountPaise / 100).toFixed(2), cell: (r) => <span className="font-semibold tabular-nums">{formatPaise(r.amountPaise)}</span> },
     {
@@ -43,6 +45,7 @@ export default function TransfersPage() {
         <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
           <ActionMenu label={`More actions for ${r.number}`} items={[
             { label: `Open ${r.fromAccount}`, icon: ArrowRightLeft, href: `/app/m/finance/accounts/${r.fromAccountId}` },
+            { label: `Open ${r.toAccount}`, icon: ArrowRightLeft, href: `/app/m/finance/accounts/${r.toAccountId}` },
             "-",
             can("finance.expense.delete") && { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(r) },
           ]} />
@@ -57,10 +60,20 @@ export default function TransfersPage() {
       <FinanceTabs group="cash" active="transfers" />
       <DataList<Transfer>
         id="fin-transfers"
-        load={localList(async (p) => {
+        load={remoteList(async (p) => {
           const qs = new URLSearchParams(Object.entries({ from: p.from, to: p.to, accountId: p.accountId }).filter(([, v]) => v) as [string, string][]).toString()
-          return (await api.get<{ data: Transfer[] }>(`/finance/transfers${qs ? `?${qs}` : ""}`)).data
+          return api.get<{ data: Transfer[]; sums: Record<string, number> }>(`/finance/transfers${qs ? `?${qs}` : ""}`)
         }, (r, q) => `${r.number} ${r.fromAccount} ${r.toAccount} ${r.reference ?? ""} ${r.notes ?? ""}`.toLowerCase().includes(q))}
+        top={(res) => {
+          const s = (res.sums ?? {}) as Record<string, number>
+          return <SummaryCards items={[
+            { label: "Money moved", value: formatPaise(s.total ?? 0), hint: `${s.count ?? 0} transfers as filtered`, color: "blue", icon: ArrowRightLeft },
+            { label: "This month", value: formatPaise(s.month ?? 0), hint: `${s.monthCount ?? 0} transfers`, color: "violet", icon: CalendarDays },
+            { label: "Cash put in bank", value: formatPaise(s.deposited ?? 0), hint: "Cash → bank", color: "emerald", icon: ArrowDownToLine },
+            { label: "Cash taken out", value: formatPaise(s.withdrawn ?? 0), hint: "Bank → cash", color: "amber", icon: ArrowUpFromLine },
+            { label: "Bank charges", value: formatPaise(s.charges ?? 0), hint: "Counted as an expense", color: "rose", icon: Receipt },
+          ]} />
+        }}
         params={{ v: String(version) }}
         header={{ title: "Transfers", description: "Money moved between your own accounts — cash deposited in bank, bank to UPI, card bill paid. Not income, not an expense.", primary: add }}
         columns={columns}

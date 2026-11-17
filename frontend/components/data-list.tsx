@@ -177,6 +177,18 @@ export function localList<T>(
   }
 }
 
+/** Like localList, for an endpoint that returns { data, ...totals }: the rows are searched and paged
+ *  here, and the rest of the response (counts, sums) is kept for top and summary. */
+export function remoteList<T>(get: (params: Record<string, string>) => Promise<{ data: T[] } & Record<string, unknown>>, match: (row: T, q: string) => boolean): ListLoader<T> {
+  return async ({ params, limit, cursor }) => {
+    const q = (params.q ?? "").toLowerCase()
+    const res = await get(params)
+    const all = res.data.filter((r) => !q || match(r, q))
+    const start = Number(cursor ?? 0)
+    return { ...res, data: all.slice(start, start + limit), nextCursor: start + limit < all.length ? String(start + limit) : null, total: all.length }
+  }
+}
+
 /** Counts for status tabs: { all, [status]: n } */
 export function countBy<T>(rows: T[], key: (row: T) => string | string[] | null | undefined): Record<string, number> {
   const out: Record<string, number> = { all: rows.length }

@@ -2,11 +2,12 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Pencil, Plus, Trash2, TrendingUp } from "lucide-react"
+import { Pencil, Plus, Trash2, TrendingUp, CalendarDays, PieChart, Wallet } from "lucide-react"
+import { SummaryCards } from "@/components/summary-cards"
 import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
-import { DataList, localList, periodFilter, type Column } from "@/components/data-list"
+import { DataList, remoteList, periodFilter, type Column } from "@/components/data-list"
 import { ActionMenu } from "@/components/page-parts"
 import { FinanceTabs } from "@/components/finance/sub-tabs"
 import { IncomeDialog } from "@/components/finance/forms"
@@ -17,6 +18,8 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { useFinAccounts, type Income } from "@/lib/finance"
 
 // Other income: money in that is not a sale, like interest, rent received or scrap sold.
+
+const vsLast = (now: number, before: number) => (before ? `${now >= before ? "▲" : "▼"} ${Math.abs(Math.round(((now - before) / before) * 100))}% vs last month (${formatPaise(before)})` : "Nothing last month")
 
 export default function IncomePage() {
   const { can, me } = useAuth()
@@ -34,6 +37,7 @@ export default function IncomePage() {
     { key: "category", header: "Category", sort: (r) => r.category, csv: (r) => r.category, cell: (r) => <span className="font-medium">{r.category}</span> },
     { key: "payer", header: "Received from", csv: (r) => r.payer ?? "", cell: (r) => <span>{r.payer ?? "—"}{r.notes && <span className="block max-w-56 truncate text-xs text-muted-foreground">{r.notes}</span>}</span> },
     { key: "account", header: "Received in", csv: (r) => r.account ?? "", cell: (r) => r.account ?? "—" },
+    { key: "createdBy", header: "Entered by", defaultHidden: true, csv: (r) => r.createdByName ?? "", cell: (r) => r.createdByName ?? "—" },
     { key: "ref", header: "Reference", defaultHidden: true, csv: (r) => r.reference ?? "", cell: (r) => <span className="font-mono text-xs">{r.reference ?? "—"}</span> },
     { key: "amount", header: "Amount", align: "right", sort: (r) => r.amountPaise, csv: (r) => (r.amountPaise / 100).toFixed(2), cell: (r) => <span className="font-semibold text-emerald-700 tabular-nums dark:text-emerald-300">{formatPaise(r.amountPaise)}</span> },
     {
@@ -57,10 +61,20 @@ export default function IncomePage() {
       <FinanceTabs group="expenses" active="income" />
       <DataList<Income>
         id="incomes"
-        load={localList(async (p) => {
+        load={remoteList(async (p) => {
           const qs = new URLSearchParams(Object.entries({ from: p.from, to: p.to, category: p.category, accountId: p.accountId }).filter(([, v]) => v) as [string, string][]).toString()
-          return (await api.get<{ data: Income[] }>(`/incomes${qs ? `?${qs}` : ""}`)).data
+          return api.get<{ data: Income[]; sums: Record<string, number | string | null> }>(`/incomes${qs ? `?${qs}` : ""}`)
         }, (r, q) => `${r.number} ${r.payer ?? ""} ${r.category} ${r.reference ?? ""} ${r.notes ?? ""}`.toLowerCase().includes(q))}
+        top={(res) => {
+          const s = (res.sums ?? {}) as Record<string, number | string | null>
+          const n = (k: string) => Number(s[k] ?? 0)
+          return <SummaryCards items={[
+            { label: "Other income", value: formatPaise(n("total")), hint: `${n("count")} entries as filtered`, color: "emerald", icon: TrendingUp },
+            { label: "This month", value: formatPaise(n("month")), hint: vsLast(n("month"), n("lastMonth")), color: "violet", icon: CalendarDays },
+            { label: "Top category", value: (s.topCategory as string | null) ?? "—", hint: s.topCategory ? `${formatPaise(n("topCategoryPaise"))} of ${n("categories")} categories` : "Nothing yet", color: "amber", icon: PieChart },
+            { label: "Entries this month", value: n("monthCount"), hint: "Interest, rent, scrap, commission", color: "blue", icon: Wallet },
+          ]} />
+        }}
         params={{ v: String(version) }}
         header={{
           title: "Other income",
@@ -75,7 +89,6 @@ export default function IncomePage() {
           { key: "category", label: "Category", options: (categories.data?.data ?? []).map((c) => ({ value: c.name, label: c.name })) },
           { key: "accountId", label: "Received in", options: (accounts.data?.data ?? []).map((a) => ({ value: a.id, label: a.name })) },
         ]}
-        summary={(r) => { const rows = (r.data as Income[] | undefined) ?? []; return rows.length ? <span className="text-sm text-muted-foreground">This page <strong className="text-foreground tabular-nums">{formatPaise(rows.reduce((s, i) => s + i.amountPaise, 0))}</strong></span> : null }}
         rowClick={(r) => can("finance.expense.edit") && setEditing(r)}
         exportName="other-income"
         emptyState={<EmptyState icon={TrendingUp} title="No other income yet" description="Bank interest, rent received or scrap sold go here." action={add} />}

@@ -2,11 +2,12 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../../kernel/db';
 import { notFound } from '../../kernel/errors';
-import { DateStr, IdParam, inScope, scopeWhere } from '../../kernel/query';
+import { DateStr, IdParam, inScope } from '../../kernel/query';
 import { validate } from '../../middleware/request';
 import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { audit } from '../audit/service';
 import * as fin from './service';
+import * as lists from './lists';
 import * as books from './books';
 import * as rec from './recurring';
 
@@ -59,8 +60,8 @@ router.delete('/finance/categories/:id', requirePermission('finance.expense.dele
 }));
 
 // ── Expenses ──
-router.get('/expenses', VIEW, validate(fin.ExpenseList, 'query'), tx(async (req, res) => {
-  res.json(await fin.listExpenses(req.ctx!, req.query as unknown as z.infer<typeof fin.ExpenseList>, scopeWhere(req.ctx!, SCOPE)));
+router.get('/expenses', VIEW, validate(lists.ExpenseList, 'query'), tx(async (req, res) => {
+  res.json(await lists.listExpenses(req.ctx!, req.query as unknown as z.infer<typeof lists.ExpenseList>));
 }));
 router.get('/expenses/:id', VIEW, validate(IdParam, 'params'), tx(async (req, res) => {
   const e = await db().expense.findUnique({ where: { id: String(req.params.id) } });
@@ -87,16 +88,8 @@ router.delete('/expenses/:id', requirePermission('finance.expense.delete'), vali
 }));
 
 // ── Other income ──
-router.get('/incomes', VIEW, validate(z.object({ from: DateStr.optional(), to: DateStr.optional(), category: z.string().max(60).optional(), accountId: z.string().uuid().optional() }), 'query'), tx(async (req, res) => {
-  const q = req.query as { from?: string; to?: string; category?: string; accountId?: string };
-  const r = await fin.routing(req.ctx!);
-  const rows = await db().income.findMany({
-    where: { AND: [{ tenantId: req.ctx!.tenantId }, q.category ? { category: q.category } : {}, q.accountId ? { accountId: q.accountId } : {}, q.from || q.to ? { receivedOn: { gte: q.from ? new Date(q.from) : undefined, lte: q.to ? new Date(q.to) : undefined } } : {}] },
-    orderBy: [{ receivedOn: 'desc' }, { id: 'desc' }],
-    take: 1000,
-  });
-  const name = new Map(r.all.map((a) => [a.id, a.name]));
-  res.json({ data: rows.map((i) => ({ ...i, account: name.get(i.accountId) ?? null })) });
+router.get('/incomes', VIEW, validate(lists.IncomeList, 'query'), tx(async (req, res) => {
+  res.json(await lists.listIncomes(req.ctx!, req.query as z.infer<typeof lists.IncomeList>));
 }));
 router.post('/incomes', requirePermission('finance.expense.create'), validate(fin.IncomeInput), tx(async (req, res) => {
   res.status(201).json(await fin.createIncome(req.ctx!, req.body));
@@ -115,7 +108,7 @@ router.delete('/incomes/:id', requirePermission('finance.expense.delete'), valid
 
 // ── Transfers ──
 router.get('/finance/transfers', VIEW, validate(z.object({ from: DateStr.optional(), to: DateStr.optional(), accountId: z.string().uuid().optional() }), 'query'), tx(async (req, res) => {
-  res.json(await fin.listTransfers(req.ctx!, req.query as { from?: string; to?: string; accountId?: string }));
+  res.json(await lists.listTransfers(req.ctx!, req.query as { from?: string; to?: string; accountId?: string }));
 }));
 router.post('/finance/transfers', requirePermission('finance.expense.create'), validate(fin.TransferInput), tx(async (req, res) => {
   res.status(201).json(await fin.createTransfer(req.ctx!, req.body));

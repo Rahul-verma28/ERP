@@ -49,6 +49,9 @@ export interface Expense {
   gstPaise: number | null
   createdAt: string
   version: number
+  /** From the list */
+  accountKind?: string | null
+  createdByName?: string | null
 }
 
 export interface Income {
@@ -63,6 +66,8 @@ export interface Income {
   reference: string | null
   notes: string | null
   version: number
+  createdAt?: string
+  createdByName?: string | null
 }
 
 export interface Transfer {
@@ -77,6 +82,10 @@ export interface Transfer {
   chargesPaise: number
   reference: string | null
   notes: string | null
+  fromKind?: string | null
+  toKind?: string | null
+  createdAt?: string
+  createdByName?: string | null
 }
 
 export const KIND_LABEL: Record<AccountKind, string> = { cash: "Cash", bank: "Bank account", wallet: "UPI / wallet", card: "Credit card" }

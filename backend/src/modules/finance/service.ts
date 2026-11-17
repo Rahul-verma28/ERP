@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import type { Prisma } from '@prisma/client';
 import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
@@ -29,6 +28,11 @@ const METHOD_OF: Record<AccountKind, 'cash' | 'bank' | 'upi' | 'card'> = { cash:
 export async function ensureFinance(ctx: Pick<TenantCtx, 'tenantId'>) {
   const existing = await db().finAccount.findMany({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'asc' } });
   if (existing.length) return existing;
+  // A page asks several things at once; only the first request may make the defaults. The lock
+  // holds the others until it commits, then they find the accounts and make nothing.
+  await db().$queryRaw`select 1 as ok from pg_advisory_xact_lock(hashtext(${`fin-setup:${ctx.tenantId}`}))`;
+  const made = await db().finAccount.findMany({ where: { tenantId: ctx.tenantId }, orderBy: { createdAt: 'asc' } });
+  if (made.length) return made;
   const t = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { preferences: true } });
   const pay = withDefaults(t.preferences).payments;
   await db().finAccount.createMany({
@@ -345,39 +349,6 @@ export async function updateExpense(ctx: TenantCtx, id: string, b: z.infer<typeo
   return db().expense.update({ where: { id }, data: { ...data, number, version: { increment: 1 } } });
 }
 
-export const ExpenseList = z.object({
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-  cursor: z.string().uuid().optional(),
-  q: z.string().trim().max(100).optional(),
-  from: DateStr.optional(),
-  to: DateStr.optional(),
-  category: z.string().max(60).optional(),
-  accountId: z.string().uuid().optional(),
-  gst: z.enum(['true', 'false']).optional(),
-});
-
-export async function listExpenses(ctx: TenantCtx, q: z.infer<typeof ExpenseList>, scope: Prisma.ExpenseWhereInput) {
-  const r = await routing(ctx);
-  const where: Prisma.ExpenseWhereInput = {
-    AND: [
-      { tenantId: ctx.tenantId }, scope,
-      q.category ? { category: q.category } : {},
-      q.gst === 'true' ? { gstPaise: { not: null } } : q.gst === 'false' ? { gstPaise: null } : {},
-      q.accountId ? (q.accountId === r.cashId ? { OR: [{ accountId: q.accountId }, { accountId: null, method: 'cash' }] } : q.accountId === r.bankId ? { OR: [{ accountId: q.accountId }, { accountId: null, method: { not: 'cash' } }] } : { accountId: q.accountId }) : {},
-      q.from || q.to ? { paidOn: { gte: q.from ? dateOnly(q.from) : undefined, lte: q.to ? dateOnly(q.to) : undefined } } : {},
-      q.q ? { OR: [{ payee: { contains: q.q, mode: 'insensitive' } }, { notes: { contains: q.q, mode: 'insensitive' } }, { number: { contains: q.q, mode: 'insensitive' } }, { billNo: { contains: q.q, mode: 'insensitive' } }, { reference: { contains: q.q, mode: 'insensitive' } }] } : {},
-    ],
-  };
-  const [rows, sum, gst] = await Promise.all([
-    db().expense.findMany({ where, take: q.limit + 1, orderBy: [{ paidOn: 'desc' }, { id: 'desc' }], ...(q.cursor ? { cursor: { id: q.cursor }, skip: 1 } : {}) }),
-    db().expense.aggregate({ where, _sum: { amountPaise: true } }),
-    db().expense.aggregate({ where, _sum: { gstPaise: true } }),
-  ]);
-  const accName = new Map(r.all.map((a) => [a.id, a.name]));
-  const data = rows.slice(0, q.limit).map((e) => ({ ...e, accountId: r.idFor(e.accountId, e.method), account: accName.get(r.idFor(e.accountId, e.method)) ?? null }));
-  return { data, nextCursor: rows.length > q.limit ? data[data.length - 1].id : null, totalPaise: sum._sum.amountPaise ?? 0n, gstPaise: gst._sum.gstPaise ?? 0n };
-}
-
 // ── Other income ──
 
 export const IncomeInput = z.object({
@@ -442,16 +413,6 @@ export async function createTransfer(ctx: TenantCtx, b: z.infer<typeof TransferI
   return t;
 }
 
-export async function listTransfers(ctx: TenantCtx, q: { from?: string; to?: string; accountId?: string }) {
-  const r = await routing(ctx);
-  const rows = await db().finTransfer.findMany({
-    where: { AND: [{ tenantId: ctx.tenantId }, q.accountId ? { OR: [{ fromAccountId: q.accountId }, { toAccountId: q.accountId }] } : {}, q.from || q.to ? { transferOn: { gte: q.from ? dateOnly(q.from) : undefined, lte: q.to ? dateOnly(q.to) : undefined } } : {}] },
-    orderBy: [{ transferOn: 'desc' }, { id: 'desc' }],
-    take: 500,
-  });
-  const name = new Map(r.all.map((a) => [a.id, a.name]));
-  return { data: rows.map((t) => ({ ...t, fromAccount: name.get(t.fromAccountId) ?? '—', toAccount: name.get(t.toAccountId) ?? '—' })) };
-}
 
 // ── Reports ──
 
