@@ -86,6 +86,20 @@ export const MODULE_SUBS: Partial<Record<ModuleKey, SubNav[]>> = {
     { label: "Stock Entries", href: "/app/m/inventory/entries", permission: "inventory.stock.view" },
     { label: "Reports", href: "/app/m/inventory/reports", permission: "inventory.stock.view" },
   ],
+  tasks: [
+    { label: "Tasks", href: "/app/m/tasks", permission: "tasks.task.view" },
+    { label: "Projects", href: "/app/m/tasks/projects", permission: "tasks.task.view" },
+    { label: "Timesheet", href: "/app/m/tasks/timesheet", permission: "tasks.task.view" },
+    { label: "Approvals", href: "/app/m/tasks/approvals", permission: "tasks.approval.view" },
+  ],
+  bookings: [
+    { label: "Calendar", href: "/app/m/bookings", permission: "bookings.appointment.view" },
+    { label: "Appointments", href: "/app/m/bookings/list", permission: "bookings.appointment.view" },
+    { label: "Services", href: "/app/m/bookings/services", permission: "bookings.appointment.view" },
+    { label: "Staff & Hours", href: "/app/m/bookings/staff", permission: "bookings.appointment.view" },
+    { label: "Rooms & Resources", href: "/app/m/bookings/resources", permission: "bookings.appointment.view" },
+    { label: "Online Booking", href: "/app/m/bookings/online", permission: "bookings.resource.edit" },
+  ],
 }
 
 /**

@@ -9,7 +9,7 @@ import billingRoutes, { publicBilling } from '../modules/billing/routes';
 import financeRoutes from '../modules/finance/routes';
 import hrRoutes from '../modules/hr/routes';
 import taskRoutes from '../modules/tasks/routes';
-import bookingRoutes from '../modules/bookings/routes';
+import bookingRoutes, { publicBookings } from '../modules/bookings/routes';
 import reportRoutes from '../modules/reports/routes';
 import inventoryRoutes from '../modules/inventory/routes';
 import purchaseRoutes from '../modules/purchase/routes';
@@ -34,6 +34,7 @@ router.use('/me', meHandler);
 router.use('/account', accountRoutes); // My account: every business
 router.use('/console', consoleRoutes); // AHEAD team workspace; before the tenant routers
 router.use('/', publicBilling); // public share links, before any authenticated router
+router.use('/', publicBookings); // the online booking page, no login
 router.use('/', publicPayments); // gateway webhooks (+ dev test gateway), signed, no login
 router.use('/', tenantPayments); // what the client owes AHEAD
 router.use('/', tenancyRoutes);

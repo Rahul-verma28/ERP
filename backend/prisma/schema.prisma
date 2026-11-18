@@ -1581,6 +1581,16 @@ model Task {
   dueAt       DateTime?    @map("due_at") @db.Timestamptz
   assigneeId  String?      @map("assignee_id") @db.Uuid
   contactId   String?      @map("contact_id") @db.Uuid
+  projectId   String?      @map("project_id") @db.Uuid
+  labels      String[]     @default([])
+  startOn     DateTime?    @map("start_on") @db.Date
+  estimateMin Int?         @map("estimate_min")
+  /// [{ id, text, done }]
+  checklist   Json         @default("[]")
+  /// Order on the board within a status
+  position    Int          @default(0)
+  /// none | daily | weekly | monthly: when done, the next one is made
+  repeat      String       @default("none") @db.VarChar(10)
   createdBy   String?      @map("created_by") @db.Uuid
   completedAt DateTime?    @map("completed_at") @db.Timestamptz
   createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz
@@ -1590,7 +1600,82 @@ model Task {
   @@index([tenantId, status, dueAt])
   @@index([tenantId, assigneeId])
   @@index([tenantId, parentId])
+  @@index([tenantId, projectId])
   @@map("tasks")
+}
+
+/// A piece of work with its own tasks, team, dates and budget
+model TaskProject {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  name            String
+  code            String?   @db.VarChar(12)
+  description     String?
+  contactId       String?   @map("contact_id") @db.Uuid
+  ownerId         String?   @map("owner_id") @db.Uuid
+  memberIds       String[]  @default([]) @map("member_ids") @db.Uuid
+  /// planning | active | on_hold | completed | cancelled
+  status          String    @default("active") @db.VarChar(12)
+  startOn         DateTime? @map("start_on") @db.Date
+  dueOn           DateTime? @map("due_on") @db.Date
+  budgetPaise     BigInt?   @map("budget_paise")
+  billable        Boolean   @default(false)
+  hourlyRatePaise BigInt?   @map("hourly_rate_paise")
+  color           String    @default("blue") @db.VarChar(12)
+  createdBy       String?   @map("created_by") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  version         Int       @default(1)
+
+  @@unique([tenantId, name])
+  @@map("task_projects")
+}
+
+/// Time spent, on a task or a project
+model TaskTime {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  taskId    String?  @map("task_id") @db.Uuid
+  projectId String?  @map("project_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  workDate  DateTime @map("work_date") @db.Date
+  minutes   Int
+  note      String?
+  billable  Boolean  @default(false)
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, workDate])
+  @@index([tenantId, taskId])
+  @@map("task_times")
+}
+
+/// Someone asks, a named person approves or rejects (spend, discount, purchase, leave, other)
+model ApprovalRequest {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  number        String    @db.VarChar(20)
+  title         String
+  kind          String    @default("other") @db.VarChar(20)
+  amountPaise   BigInt?   @map("amount_paise")
+  details       String?
+  attachmentUrl String?   @map("attachment_url")
+  requestedBy   String    @map("requested_by") @db.Uuid
+  approverId    String    @map("approver_id") @db.Uuid
+  /// pending | approved | rejected | withdrawn
+  status        String    @default("pending") @db.VarChar(10)
+  needBy        DateTime? @map("need_by") @db.Date
+  decidedAt     DateTime? @map("decided_at") @db.Timestamptz
+  decisionNote  String?   @map("decision_note")
+  taskId        String?   @map("task_id") @db.Uuid
+  projectId     String?   @map("project_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  version       Int       @default(1)
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@map("approval_requests")
 }
 
 model TaskEvent {
@@ -1623,6 +1708,17 @@ model Appointment {
   status    AppointmentStatus @default(scheduled)
   notes     String?
   invoiceId String?           @map("invoice_id") @db.Uuid
+  resourceId   String?        @map("resource_id") @db.Uuid
+  /// walk_in | phone | whatsapp | online
+  source       String         @default("walk_in") @db.VarChar(12)
+  /// Online bookings by someone not yet a customer
+  guestName    String?        @map("guest_name")
+  guestPhone   String?        @map("guest_phone") @db.VarChar(15)
+  pricePaise   BigInt?        @map("price_paise")
+  cancelReason String?        @map("cancel_reason")
+  confirmedAt  DateTime?      @map("confirmed_at") @db.Timestamptz
+  checkedInAt  DateTime?      @map("checked_in_at") @db.Timestamptz
+  remindedAt   DateTime?      @map("reminded_at") @db.Timestamptz
   createdBy String?           @map("created_by") @db.Uuid
   createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime          @updatedAt @map("updated_at") @db.Timestamptz
@@ -1631,6 +1727,89 @@ model Appointment {
   @@index([tenantId, startAt])
   @@index([tenantId, staffId, startAt])
   @@map("appointments")
+}
+
+/// How a service item is booked: length, gap after, who can do it, room needed, online or not
+model BookingService {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  itemId       String   @map("item_id") @db.Uuid
+  durationMin  Int      @default(30) @map("duration_min")
+  bufferMin    Int      @default(0) @map("buffer_min")
+  color        String   @default("blue") @db.VarChar(12)
+  /// Empty = anyone can do it
+  staffIds     String[] @default([]) @map("staff_ids") @db.Uuid
+  /// room | chair | equipment: a free one of this kind is needed
+  resourceKind String?  @map("resource_kind") @db.VarChar(12)
+  online       Boolean  @default(true)
+  isActive     Boolean  @default(true) @map("is_active")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  version      Int      @default(1)
+
+  @@unique([tenantId, itemId])
+  @@map("booking_services")
+}
+
+/// A room, chair or machine an appointment uses
+model BookingResource {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  kind      String   @default("room") @db.VarChar(12)
+  capacity  Int      @default(1)
+  color     String   @default("slate") @db.VarChar(12)
+  notes     String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  version   Int      @default(1)
+
+  @@unique([tenantId, name])
+  @@map("booking_resources")
+}
+
+/// Working hours: weekday (0 = Sunday) and minutes from midnight
+model StaffHours {
+  id       String @id @default(uuid(7)) @db.Uuid
+  tenantId String @map("tenant_id") @db.Uuid
+  userId   String @map("user_id") @db.Uuid
+  weekday  Int    @db.SmallInt
+  startMin Int    @map("start_min")
+  endMin   Int    @map("end_min")
+
+  @@index([tenantId, userId])
+  @@map("staff_hours")
+}
+
+model StaffTimeOff {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  fromAt    DateTime @map("from_at") @db.Timestamptz
+  toAt      DateTime @map("to_at") @db.Timestamptz
+  reason    String?
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, fromAt])
+  @@map("staff_time_off")
+}
+
+/// The online booking page: on or off, its link, and how slots are offered
+model BookingSettings {
+  tenantId     String   @id @map("tenant_id") @db.Uuid
+  enabled      Boolean  @default(false)
+  slug         String   @unique @db.VarChar(40)
+  title        String
+  intro        String?
+  slotStepMin  Int      @default(30) @map("slot_step_min")
+  leadMin      Int      @default(60) @map("lead_min")
+  maxDaysAhead Int      @default(30) @map("max_days_ahead")
+  autoConfirm  Boolean  @default(false) @map("auto_confirm")
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("booking_settings")
 }
 
 // ── Phase 2: account security (platform tables) ──
