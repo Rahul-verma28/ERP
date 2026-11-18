@@ -30,6 +30,7 @@ export const HISTORY_KINDS = {
   account: { entities: ['fin_ledger', 'fin_transfer'], permission: 'finance.expense.view' },
   project: { entities: ['task_project'], permission: 'tasks.task.view' },
   approval: { entities: ['approval_request'], permission: 'tasks.approval.view' },
+  ticket: { entities: ['support_ticket'], permission: 'support.ticket.view' },
 } as const;
 export type HistoryKind = keyof typeof HISTORY_KINDS;
 

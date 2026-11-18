@@ -2972,3 +2972,100 @@ model HrRecord {
   @@index([refId])
   @@map("hr_records")
 }
+
+/// Customer Service setup: categories, SLA hours per priority, warranty, the public request form
+model SupportSettings {
+  tenantId       String   @id @map("tenant_id") @db.Uuid
+  formEnabled    Boolean  @default(false) @map("form_enabled")
+  slug           String?  @unique @db.VarChar(40)
+  title          String   @default("Raise a request")
+  intro          String?
+  categories     Json     @default("[]")
+  sla            Json     @default("{}")
+  warrantyMonths Int      @default(12) @map("warranty_months")
+  autoAssign     String   @default("none") @map("auto_assign") @db.VarChar(12)
+  lastAssignedId String?  @map("last_assigned_id") @db.Uuid
+  askRating      Boolean  @default(true) @map("ask_rating")
+  autoCloseDays  Int      @default(7) @map("auto_close_days")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("support_settings")
+}
+
+/// A complaint or request from a customer, with its SLA timers and rating
+model SupportTicket {
+  id               String           @id @default(uuid(7)) @db.Uuid
+  tenantId         String           @map("tenant_id") @db.Uuid
+  number           String           @db.VarChar(20)
+  subject          String
+  description      String?
+  contactId        String?          @map("contact_id") @db.Uuid
+  guestName        String?          @map("guest_name")
+  guestPhone       String?          @map("guest_phone") @db.VarChar(15)
+  guestEmail       String?          @map("guest_email")
+  channel          String           @default("phone") @db.VarChar(12)
+  category         String           @default("other") @db.VarChar(30)
+  priority         String           @default("medium") @db.VarChar(8)
+  status           String           @default("new") @db.VarChar(12)
+  assigneeId       String?          @map("assignee_id") @db.Uuid
+  labels           String[]         @default([])
+  invoiceId        String?          @map("invoice_id") @db.Uuid
+  itemId           String?          @map("item_id") @db.Uuid
+  serial           String?          @db.VarChar(60)
+  firstResponseDue DateTime?        @map("first_response_due") @db.Timestamptz
+  resolveDue       DateTime?        @map("resolve_due") @db.Timestamptz
+  firstResponseAt  DateTime?        @map("first_response_at") @db.Timestamptz
+  resolvedAt       DateTime?        @map("resolved_at") @db.Timestamptz
+  closedAt         DateTime?        @map("closed_at") @db.Timestamptz
+  reopened         Int              @default(0)
+  rating           Int?             @db.SmallInt
+  feedback         String?
+  publicToken      String           @unique @map("public_token") @db.VarChar(40)
+  createdBy        String?          @map("created_by") @db.Uuid
+  createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt        DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  version          Int              @default(1)
+  messages         SupportMessage[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+  @@index([tenantId, contactId])
+  @@map("support_tickets")
+}
+
+/// One entry in a ticket conversation: a reply to the customer, an internal note, the customer message, or an event
+model SupportMessage {
+  id         String        @id @default(uuid(7)) @db.Uuid
+  tenantId   String        @map("tenant_id") @db.Uuid
+  ticketId   String        @map("ticket_id") @db.Uuid
+  kind       String        @db.VarChar(10)
+  body       String?
+  authorId   String?       @map("author_id") @db.Uuid
+  authorName String?       @map("author_name")
+  meta       Json?
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  ticket     SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("support_messages")
+}
+
+/// Knowledge base: help articles and saved replies
+model KbArticle {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  title     String
+  body      String
+  category  String?  @db.VarChar(30)
+  tags      String[] @default([])
+  kind      String   @default("article") @db.VarChar(8)
+  published Boolean  @default(true)
+  uses      Int      @default(0)
+  createdBy String?  @map("created_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  version   Int      @default(1)
+
+  @@index([tenantId, kind])
+  @@map("kb_articles")
+}

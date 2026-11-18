@@ -31,7 +31,7 @@ export function useTabParam<K extends string>(keys: readonly K[], fallback: K) {
 
 export type HistoryKind =
   | "item" | "price_list" | "customer" | "supplier" | "lead" | "deal" | "sales_doc" | "quotation" | "payment" | "purchase" | "supplier_payment"
-  | "stock_entry" | "warehouse" | "employee" | "payroll" | "expense" | "income" | "journal" | "account" | "project" | "approval"
+  | "stock_entry" | "warehouse" | "employee" | "payroll" | "expense" | "income" | "journal" | "account" | "project" | "approval" | "ticket"
 
 interface Entry { id: string; at: string; action: string; other: string | null; by: string; details: { key: string; value: unknown; was?: unknown }[] }
 

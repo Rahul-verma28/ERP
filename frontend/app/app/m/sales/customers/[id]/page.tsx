@@ -25,13 +25,15 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { stateName } from "@contracts/validation"
 import { cn } from "@/lib/utils"
 import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
+import { TicketDialog } from "@/components/support/forms"
+import { PRIORITY as TICKET_PRIORITY, STATUS as TICKET_STATUS, type TicketRow } from "@/lib/support"
 
 // One customer: what they owe, the ledger of invoices, payments and returns, and their details.
 // Laid out like a supplier in Purchase, so staff learn it once.
 
 type Dialog = "edit" | "opening" | "opening-payment" | "delete" | "deal" | null
-type Tab = "ledger" | "invoices" | "payments" | "deals" | "details" | "history"
-const TAB_KEYS: Tab[] = ["ledger", "invoices", "payments", "deals", "details", "history"]
+type Tab = "ledger" | "invoices" | "payments" | "deals" | "tickets" | "details" | "history"
+const TAB_KEYS: Tab[] = ["ledger", "invoices", "payments", "deals", "tickets", "details", "history"]
 interface InvoiceRow { id: string; number: string | null; status: string; issueDate: string; dueDate: string | null; totalPaise: number; paidPaise: number }
 interface PaymentRow { id: string; number: string; paidOn: string; method: string; amountPaise: number; reversed: boolean; appliedTo: { number: string | null }[] }
 const STATUS_LABEL: Record<string, string> = { draft: "Draft", issued: "Unpaid", partially_paid: "Partly paid", paid: "Paid", cancelled: "Cancelled" }
@@ -48,6 +50,7 @@ function CustomerPage() {
   const contact = useApi<Contact & { owner: { name: string } | null }>(`/contacts/${id}?view=summary`)
   const dues = can("billing.dues.view")
   const [tab, setTab] = useTabParam<Tab>(TAB_KEYS, dues ? "ledger" : "details")
+  const [newTicket, setNewTicket] = React.useState(false)
   const priceLists = useApi<{ data: { id: string; name: string }[] }>(can("catalog.price_list.view") ? "/price-lists" : null)
   const c = contact.data
 
@@ -161,12 +164,33 @@ function CustomerPage() {
         { key: "invoices", label: "Invoices", hidden: !can("billing.invoice.view") },
         { key: "payments", label: "Payments", hidden: !can("billing.payment.view") },
         { key: "deals", label: "Deals", hidden: !can("crm.deal.view") },
+        { key: "tickets", label: "Tickets", hidden: !can("support.ticket.view") },
         { key: "details", label: "Details" }, { key: "history", label: "History" }]} />
       {tab === "history" && c && (
         <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
           <RecordHistory kind="customer" id={c.id} refText={c.name} created={{ at: c.createdAt }} />
           <AboutCard id={c.id} createdAt={c.createdAt} updatedAt={"updatedAt" in c ? (c as { updatedAt?: string }).updatedAt : null} className="h-fit" />
         </div>
+      )}
+      {newTicket && c && <TicketDialog defaults={{ contact: { id: c.id, name: c.name, companyName: c.companyName, phone: c.phone } }} onClose={() => setNewTicket(false)} onSaved={(t) => router.push(`/app/m/support/${t.id}`)} />}
+      {tab === "tickets" && c && (
+        <DataList<TicketRow>
+          id="customer-tickets"
+          path="/support/tickets"
+          params={{ view: "all", contactId: c.id }}
+          header={{ title: "Tickets", description: "Complaints and requests from this customer.", primary: can("support.ticket.create") ? <Button onClick={() => setNewTicket(true)}>New ticket</Button> : undefined }}
+          columns={[
+            { key: "number", header: "Ticket", hideable: false, sort: (t) => t.number, csv: (t) => t.number, cell: (t) => <span><span className="font-mono text-xs font-semibold text-primary">{t.number}</span><span className="block font-medium">{t.subject}</span></span> },
+            { key: "status", header: "Status", csv: (t) => TICKET_STATUS[t.status].label, cell: (t) => <Pill color={TICKET_STATUS[t.status].color}>{TICKET_STATUS[t.status].label}</Pill> },
+            { key: "priority", header: "Priority", csv: (t) => TICKET_PRIORITY[t.priority].label, cell: (t) => <Pill color={TICKET_PRIORITY[t.priority].color} dot>{TICKET_PRIORITY[t.priority].label}</Pill> },
+            { key: "assignee", header: "Handled by", csv: (t) => t.assignee?.name ?? "", cell: (t) => t.assignee?.name ?? <span className="text-muted-foreground">Not assigned</span> },
+            { key: "created", header: "Raised", sort: (t) => t.createdAt, csv: (t) => t.createdAt.slice(0, 10), cell: (t) => formatDate(t.createdAt) },
+          ]}
+          searchPlaceholder="Search number or subject"
+          rowHref={(t) => `/app/m/support/${t.id}`}
+          exportName="customer-tickets"
+          emptyState={<EmptyState icon={MessageSquare} title="No tickets from this customer" />}
+        />
       )}
       <div className="min-w-0">
         {tab === "ledger" && ledger}

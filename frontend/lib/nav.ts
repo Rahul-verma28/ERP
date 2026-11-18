@@ -93,6 +93,12 @@ export const MODULE_SUBS: Partial<Record<ModuleKey, SubNav[]>> = {
     { label: "Approvals", href: "/app/m/tasks/approvals", permission: "tasks.approval.view" },
     { label: "Reports", href: "/app/m/tasks/reports", permission: "tasks.task.view" },
   ],
+  support: [
+    { label: "Tickets", href: "/app/m/support", permission: "support.ticket.view" },
+    { label: "Knowledge base", href: "/app/m/support/knowledge", permission: "support.kb.view" },
+    { label: "Reports", href: "/app/m/support/reports", permission: "support.ticket.view" },
+    { label: "Setup", href: "/app/m/support/setup", permission: "support.sla.edit" },
+  ],
   bookings: [
     { label: "Calendar", href: "/app/m/bookings", permission: "bookings.appointment.view" },
     { label: "Appointments", href: "/app/m/bookings/list", permission: "bookings.appointment.view" },
