@@ -24,18 +24,20 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { stateName } from "@contracts/validation"
 import { cn } from "@/lib/utils"
+import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
 
 // One customer: what they owe, the ledger of invoices, payments and returns, and their details.
 // Laid out like a supplier in Purchase, so staff learn it once.
 
 type Dialog = "edit" | "opening" | "opening-payment" | "delete" | "deal" | null
-type Tab = "ledger" | "invoices" | "payments" | "deals" | "details"
+type Tab = "ledger" | "invoices" | "payments" | "deals" | "details" | "history"
+const TAB_KEYS: Tab[] = ["ledger", "invoices", "payments", "deals", "details", "history"]
 interface InvoiceRow { id: string; number: string | null; status: string; issueDate: string; dueDate: string | null; totalPaise: number; paidPaise: number }
 interface PaymentRow { id: string; number: string; paidOn: string; method: string; amountPaise: number; reversed: boolean; appliedTo: { number: string | null }[] }
 const STATUS_LABEL: Record<string, string> = { draft: "Draft", issued: "Unpaid", partially_paid: "Partly paid", paid: "Paid", cancelled: "Cancelled" }
 const STATUS_TONE: Record<string, string> = { draft: "slate", issued: "orange", partially_paid: "amber", paid: "emerald", cancelled: "slate" }
 
-export default function CustomerPage() {
+function CustomerPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const { can, me } = useAuth()
@@ -45,7 +47,7 @@ export default function CustomerPage() {
   const [opening, setOpening] = React.useState<Ledger["openingBalance"]>(null)
   const contact = useApi<Contact & { owner: { name: string } | null }>(`/contacts/${id}?view=summary`)
   const dues = can("billing.dues.view")
-  const [tab, setTab] = React.useState<Tab>(dues ? "ledger" : "details")
+  const [tab, setTab] = useTabParam<Tab>(TAB_KEYS, dues ? "ledger" : "details")
   const priceLists = useApi<{ data: { id: string; name: string }[] }>(can("catalog.price_list.view") ? "/price-lists" : null)
   const c = contact.data
 
@@ -159,8 +161,13 @@ export default function CustomerPage() {
         { key: "invoices", label: "Invoices", hidden: !can("billing.invoice.view") },
         { key: "payments", label: "Payments", hidden: !can("billing.payment.view") },
         { key: "deals", label: "Deals", hidden: !can("crm.deal.view") },
-        { key: "details", label: "Details" },
-      ]} />
+        { key: "details", label: "Details" }, { key: "history", label: "History" }]} />
+      {tab === "history" && c && (
+        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+          <RecordHistory kind="customer" id={c.id} refText={c.name} created={{ at: c.createdAt }} />
+          <AboutCard id={c.id} createdAt={c.createdAt} updatedAt={"updatedAt" in c ? (c as { updatedAt?: string }).updatedAt : null} className="h-fit" />
+        </div>
+      )}
       <div className="min-w-0">
         {tab === "ledger" && ledger}
         {tab === "invoices" && (
@@ -265,4 +272,8 @@ function CustomerDeals({ contactId }: { contactId: string }) {
       </ul>
     </Section>
   )
+}
+
+export default function Page() {
+  return <React.Suspense><CustomerPage /></React.Suspense>
 }

@@ -1,6 +1,7 @@
 // Inventory types shared by the stock pages.
 
 export interface StockLocation {
+  createdAt?: string
   id: string
   name: string
   isDefault: boolean

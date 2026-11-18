@@ -19,16 +19,18 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { ENTRY_LABEL, qty, type StockEntry, type StockLocation, type StockRow } from "@/lib/inventory"
 import { cn } from "@/lib/utils"
 import { PageError, PageLoading } from "@/components/page-states"
+import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
 
 // One warehouse: where it is, what is in it, and every entry that moved stock in or out by hand.
 
-type Tab = "stock" | "entries" | "details"
+type Tab = "stock" | "entries" | "details" | "history"
+const TAB_KEYS: Tab[] = ["stock", "entries", "details", "history"]
 
-export default function WarehousePage() {
+function WarehousePage() {
   const { id } = useParams<{ id: string }>()
   const { can } = useAuth()
   const list = useApi<{ data: StockLocation[] }>("/stock-locations")
-  const [tab, setTab] = React.useState<Tab>("stock")
+  const [tab, setTab] = useTabParam<Tab>(TAB_KEYS, "stock")
   const [editing, setEditing] = React.useState(false)
   const [stock, setStock] = React.useState<{ kind: "add" | "adjust" | "move"; row: StockRow | null } | null>(null)
   const [version, setVersion] = React.useState(0)
@@ -104,7 +106,13 @@ export default function WarehousePage() {
         { label: "In-charge", value: w.contactPerson || "—", hint: w.phone ?? undefined },
         { label: "State", value: w.stateCode ? stateName(w.stateCode) : "Not set", accent: w.stateCode ? undefined : "text-destructive" },
       ]} />
-      <Tabs<Tab> value={tab} onChange={setTab} tabs={[{ key: "stock", label: "Stock here", count: w.itemsInStock }, { key: "entries", label: "Entries" }, { key: "details", label: "Details" }]} />
+      <Tabs<Tab> value={tab} onChange={setTab} tabs={[{ key: "stock", label: "Stock here", count: w.itemsInStock }, { key: "entries", label: "Entries" }, { key: "details", label: "Details" }, { key: "history", label: "History" }]} />
+      {tab === "history" && (
+        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+          <RecordHistory kind="warehouse" id={w.id} refText={w.name} created={{ at: w.createdAt }} />
+          <AboutCard id={w.id} createdAt={w.createdAt} updatedAt={"updatedAt" in w ? (w as { updatedAt?: string }).updatedAt : null} className="h-fit" />
+        </div>
+      )}
       {tab === "stock" && (
         <DataList<StockRow>
           id="warehouse-stock"
@@ -142,4 +150,8 @@ export default function WarehousePage() {
       {stock && <StockDialog kind={stock.kind} item={target} locationId={w.id} onClose={() => setStock(null)} onDone={() => { setStock(null); setVersion((v) => v + 1); void list.reload() }} />}
     </div>
   )
+}
+
+export default function Page() {
+  return <React.Suspense><WarehousePage /></React.Suspense>
 }

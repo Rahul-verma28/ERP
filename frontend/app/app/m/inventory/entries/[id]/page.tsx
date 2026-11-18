@@ -12,6 +12,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { ENTRY_LABEL, REASONS, qty, type StockEntry } from "@/lib/inventory"
 import { PageError, PageLoading } from "@/components/page-states"
+import { AboutCard, RecordHistory } from "@/components/record-kit"
 
 export default function StockEntryPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = React.use(params)
@@ -107,6 +108,10 @@ export default function StockEntryPage({ params }: { params: Promise<{ id: strin
           </table>
         </div>
       </Section>
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px] print:hidden">
+        <RecordHistory kind="stock_entry" id={e.id} refText={(e as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).number ?? null} created={{ at: (e as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).createdAt }} />
+        <AboutCard id={e.id} createdAt={(e as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).createdAt} updatedAt={(e as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).updatedAt} className="h-fit" />
+      </div>
     </div>
   )
 }

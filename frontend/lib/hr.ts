@@ -9,6 +9,8 @@ export const EMPLOYMENT_LABEL: Record<EmploymentType, string> = { full_time: "Fu
 export const EMP_STATUS: Record<string, { label: string; color: string }> = { active: { label: "Active", color: "emerald" }, on_notice: { label: "On notice", color: "amber" }, exited: { label: "Left", color: "slate" } }
 
 export interface Employee {
+  createdAt?: string
+  updatedAt?: string
   id: string
   code: string
   name: string

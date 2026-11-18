@@ -6,7 +6,7 @@ import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
 import { GST_RATES_BP, todayIST } from '../../kernel/gst';
 import { IdParam, ListQuery, Paise, assertRecordLimit, assertVersion, canWriteField, markOnboarding, stripHidden } from '../../kernel/query';
-import { listItems, listPriceLists } from './lists';
+import { listItems, listPriceLists, getPriceList } from './lists';
 import { validate } from '../../middleware/request';
 import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { validateCustom } from '../config/service';
@@ -355,6 +355,9 @@ const PriceListInput = z.object({ name: z.string().trim().min(2, 'Use at least 2
 
 router.get('/price-lists', requirePermission('catalog.price_list.view'), tx(async (req, res) => {
   res.json(await listPriceLists(req.ctx!));
+}));
+router.get('/price-lists/:id', requirePermission('catalog.price_list.view'), validate(IdParam, 'params'), tx(async (req, res) => {
+  res.json(await getPriceList(req.ctx!, String(req.params.id)));
 }));
 router.post('/price-lists', requirePermission('catalog.price_list.create'), validate(PriceListInput), tx(async (req, res) => {
   const list = await db().priceList.create({ data: { ...req.body, tenantId: req.ctx!.tenantId } });

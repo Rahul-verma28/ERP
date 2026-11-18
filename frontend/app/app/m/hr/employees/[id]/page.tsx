@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useParams, useRouter, useSearchParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { CalendarDays, ChevronLeft, ChevronRight, Eye, IndianRupee, LogOut, Pencil, RotateCcw, Trash2 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -19,10 +19,12 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { ACTION_STATUS, ATT, EMP_STATUS, EMPLOYMENT_LABEL, LEAVE_STATUS, monthLabel, RUN_STATUS, type Employee, type HrAction, type LeaveApp, type Payslip } from "@/lib/hr"
 import { cn } from "@/lib/utils"
+import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
 
 // One employee: profile, salary, attendance, leave, payslips and career history.
 
-type Tab = "overview" | "salary" | "attendance" | "leave" | "payslips" | "career"
+type Tab = "overview" | "salary" | "attendance" | "leave" | "payslips" | "career" | "history"
+const TAB_KEYS: Tab[] = ["overview", "salary", "attendance", "leave", "payslips", "career", "history"]
 interface Month { days: string[]; data: { id: string; cells: string[]; totals: Record<string, number> }[] }
 interface Balance { types: { id: string; name: string; code: string; color: string; paid: boolean; daysPerYear: number }[]; data: { leave: { typeId: string; allowed: number; used: number; pending: number; left: number | null }[] }[] }
 
@@ -141,10 +143,9 @@ export default function EmployeePage() {
 function EmployeeView() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const search = useSearchParams()
   const { can } = useAuth()
   const { data: e, error, reload } = useApi<Employee>(`/hr/employees/${id}`)
-  const [tab, setTab] = React.useState<Tab>((search.get("tab") as Tab) || "overview")
+  const [tab, setTab] = useTabParam<Tab>(TAB_KEYS, "overview")
   const [open, setOpen] = React.useState<"salary" | "exit" | "delete" | null>(null)
   if (error) return <PageError error={error} onRetry={() => void reload()} />
   if (!e) return <PageLoading />
@@ -188,8 +189,13 @@ function EmployeeView() {
         { key: "attendance", label: "Attendance" },
         { key: "leave", label: "Leave" },
         { key: "payslips", label: "Payslips", hidden: !can("hr.payslip.view") },
-        { key: "career", label: "Career", hidden: !can("hr.career.view") },
-      ]} />
+        { key: "career", label: "Career", hidden: !can("hr.career.view") }, { key: "history", label: "History" }]} />
+      {tab === "history" && (
+        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+          <RecordHistory kind="employee" id={e.id} refText={e.name} created={{ at: e.createdAt }} />
+          <AboutCard id={e.id} createdAt={e.createdAt} updatedAt={"updatedAt" in e ? (e as { updatedAt?: string }).updatedAt : null} className="h-fit" />
+        </div>
+      )}
 
       {tab === "overview" && <EmployeeOverview e={e} />}
 

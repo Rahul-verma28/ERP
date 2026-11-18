@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeft, Check, CheckSquare, FileText, MessageCircle, Pencil, Phone, RotateCcw, Trophy, XCircle } from "lucide-react"
+import { CalendarClock, Check, CheckSquare, FileText, IndianRupee, ListChecks, MessageCircle, Pencil, Percent, Phone, RotateCcw, Trophy, XCircle } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/common"
 import { ACTIVITY_META, ActivityDialog, LabelChips, ProductsEditor, StagePill } from "@/components/crm/dialogs"
@@ -18,6 +18,8 @@ import { dueLabel, tone, useCrmSetup, waLink, type Activity, type CrmProduct, ty
 import { formatDate, formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { PageError, PageLoading } from "@/components/page-states"
+import { BackLink, DetailHeader, DetailList, Section, StatGrid, Tabs } from "@/components/page-parts"
+import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
 
 // One deal: where it stands in the pipeline, what was said and is to be done, what is being sold,
 // and the quotations and invoices made for it.
@@ -27,17 +29,18 @@ interface Detail extends Deal {
   products: CrmProduct[]
   documents: { id: string; kind: string; number: string | null; status: string; issueDate: string; totalPaise: number }[]
 }
-type Tab = "overview" | "activity" | "tasks" | "products" | "documents"
+type Tab = "overview" | "activity" | "tasks" | "products" | "documents" | "history"
+const TABS: Tab[] = ["overview", "activity", "tasks", "products", "documents", "history"]
 const DOC_LABEL: Record<string, string> = { quotation: "Quotation", invoice: "Invoice", sales_order: "Sales order" }
 const docHref = (d: { id: string; kind: string }) => (d.kind === "quotation" ? `/app/m/sales/${d.id}` : d.kind === "sales_order" ? `/app/m/sales/orders/${d.id}` : `/app/m/billing/${d.id}`)
 
-export default function DealPage() {
+function DealPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const { can } = useAuth()
   const setup = useCrmSetup().data
   const { data, setData, error, reload } = useApi<Detail>(`/deals/${id}`)
-  const [tab, setTab] = React.useState<Tab>("overview")
+  const [tab, setTab] = useTabParam<Tab>(TABS, "overview")
   const [logging, setLogging] = React.useState<keyof typeof ACTIVITY_META | null>(null)
   const [removing, setRemoving] = React.useState<Activity | null>(null)
   const today = todayInIndia()
@@ -66,22 +69,18 @@ export default function DealPage() {
     }
   }
 
-  const tabs: [Tab, string, number | null][] = [["overview", "Overview", null], ["activity", "Activity", timeline.length], ["tasks", "Tasks", openTasks], ["products", "Products", deal.products.length], ["documents", "Quotations & invoices", deal.documents.length]]
-  const card = (label: string, value: React.ReactNode, hint?: React.ReactNode, accent?: string) => (
-    <div className="ui-surface grid gap-1 p-4"><p className="text-xs text-muted-foreground">{label}</p><p className={cn("text-lg font-semibold tabular-nums", accent)}>{value}</p>{hint && <p className="text-xs text-muted-foreground">{hint}</p>}</div>
-  )
 
   return (
     <div className="grid gap-5">
-      <Link href="/app/m/crm/deals" className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> Deals</Link>
+      <BackLink href="/app/m/crm/deals">Deals</BackLink>
 
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold tracking-tight">{deal.title} {open ? <StagePill stage={deal.stage} /> : <DealStatus deal={deal} />}</h1>
-          <p className="text-sm text-muted-foreground">With <Link href={contactHref} className="font-medium text-foreground hover:underline">{who}</Link>{deal.contact?.type === "lead" ? " (lead)" : ""} · {formatPaise(deal.valuePaise)}</p>
-          <div className="mt-1"><LabelChips labels={deal.labels} max={6} /></div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <DetailHeader
+        title={deal.title}
+        icon={Trophy}
+        pills={open ? <StagePill stage={deal.stage} /> : <DealStatus deal={deal} />}
+        subtitle={<>With <Link href={contactHref} className="font-medium text-foreground hover:underline">{who}</Link>{deal.contact?.type === "lead" ? " (lead)" : ""} · {formatPaise(deal.valuePaise)}</>}
+        extra={<LabelChips labels={deal.labels} max={6} />}
+        actions={<>
           {deal.contact?.phone && <a href={`tel:${deal.contact.phone}`} className={buttonVariants({ variant: "outline" })} onClick={() => setTimeout(() => setLogging("call"), 600)}><Phone /> Call</a>}
           {deal.contact?.phone && <a href={waLink(deal.contact.phone, `Hello ${deal.contact.name},`)} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline" }), "text-emerald-700 dark:text-emerald-300")}><MessageCircle /> WhatsApp</a>}
           {can("crm.activity.create") && <Button variant="outline" onClick={() => setLogging("note")}><Pencil /> Log activity</Button>}
@@ -90,8 +89,8 @@ export default function DealPage() {
           {open && can("crm.deal.edit") && <Button className="bg-emerald-600 text-white hover:bg-emerald-700" onClick={() => actions.act("won", deal)}><Trophy /> Won</Button>}
           {!open && can("crm.deal.edit") && <Button variant="outline" onClick={() => void actions.reopen(deal)}><RotateCcw /> Reopen</Button>}
           <DealMenu deal={deal} actions={actions} view={false} />
-        </div>
-      </header>
+        </>}
+      />
 
       {stages.length > 0 && (
         <ol className="flex w-full overflow-x-auto rounded-2xl border bg-card p-1 text-sm" aria-label="Stages">
@@ -111,35 +110,35 @@ export default function DealPage() {
         </ol>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {card("Value", formatPaise(deal.valuePaise), deal.products.length ? `From ${deal.products.length} product${deal.products.length === 1 ? "" : "s"}` : "Before GST")}
-        {card("Expected close", deal.expectedCloseOn ? formatDate(deal.expectedCloseOn) : "Not set", open ? due?.text : deal.closedAt ? `Closed ${formatDate(deal.closedAt)}` : undefined, open && due?.late ? "text-destructive" : undefined)}
-        {card("Chance of winning", open ? `${deal.stage?.probability ?? 0}%` : deal.status === "won" ? "Won" : "Lost", open ? `Likely ${formatPaise(Math.round((deal.valuePaise * (deal.stage?.probability ?? 0)) / 100))}` : undefined)}
-        {card("Open tasks", openTasks, `${tasks.length} in all`)}
-      </div>
+      <StatGrid items={[
+        { label: "Value", value: formatPaise(deal.valuePaise), hint: deal.products.length ? `From ${deal.products.length} product${deal.products.length === 1 ? "" : "s"}` : "Before GST", icon: IndianRupee, color: "emerald" },
+        { label: "Expected close", value: deal.expectedCloseOn ? formatDate(deal.expectedCloseOn) : "Not set", hint: open ? due?.text : deal.closedAt ? `Closed ${formatDate(deal.closedAt)}` : undefined, accent: open && due?.late ? "text-destructive" : undefined, icon: CalendarClock, color: open && due?.late ? "rose" : "blue" },
+        { label: "Chance of winning", value: open ? `${deal.stage?.probability ?? 0}%` : deal.status === "won" ? "Won" : "Lost", hint: open ? `Likely ${formatPaise(Math.round((deal.valuePaise * (deal.stage?.probability ?? 0)) / 100))}` : undefined, icon: Percent, color: "violet" },
+        { label: "Open tasks", value: openTasks, hint: `${tasks.length} in all`, icon: ListChecks, color: "amber" },
+      ]} />
 
-      <div className="flex flex-wrap gap-1 border-b" role="tablist">
-        {tabs.map(([k, label, n]) => (
-          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={cn("-mb-px flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium", tab === k ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>
-            {label}{n ? <span className="rounded-full bg-muted px-1.5 text-xs tabular-nums">{n}</span> : null}
-          </button>
-        ))}
-      </div>
+      <Tabs<Tab> value={tab} onChange={setTab} tabs={[
+        { key: "overview", label: "Overview" },
+        { key: "activity", label: "Activity", count: timeline.length },
+        { key: "tasks", label: "Tasks", count: openTasks },
+        { key: "products", label: "Products", count: deal.products.length },
+        { key: "documents", label: "Quotations & invoices", count: deal.documents.length },
+        { key: "history", label: "History" },
+      ]} />
 
       {tab === "overview" && (
         <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
-          <section className="ui-surface p-5">
-            <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Details</h2>{can("crm.deal.edit") && <Button size="sm" variant="ghost" onClick={() => actions.act("edit", deal)}><Pencil /> Edit</Button>}</div>
-            <dl className="grid gap-3 text-sm sm:grid-cols-2">
-              {[["Customer", who], ["Mobile", deal.contact?.phone], ["Owner", deal.owner?.name ?? "Unassigned"], ["Source", deal.source], ["Pipeline", setup?.pipelines.find((p) => p.id === deal.pipelineId)?.name], ["Added", formatDate(deal.createdAt)]].map(([k, v]) => <div key={k}><dt className="text-xs text-muted-foreground">{k}</dt><dd className="font-medium">{v || "—"}</dd></div>)}
-            </dl>
-            {deal.notes && <div className="mt-4 rounded-2xl bg-muted/60 p-3 text-sm whitespace-pre-wrap">{deal.notes}</div>}
-            {deal.leadId && <p className="mt-4 text-xs text-muted-foreground">Made from a lead. <Link href={`/app/m/crm/${deal.leadId}`} className="underline">See the lead&apos;s history</Link></p>}
-          </section>
-          <section className="ui-surface p-5">
-            <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Latest activity</h2><Button size="sm" variant="ghost" onClick={() => setTab("activity")}>See all</Button></div>
+          <div className="grid content-start gap-5">
+            <Section title="Details" action={can("crm.deal.edit") && <Button size="sm" variant="ghost" onClick={() => actions.act("edit", deal)}><Pencil /> Edit</Button>}>
+              <DetailList items={[["Customer", who], ["Mobile", deal.contact?.phone], ["Owner", deal.owner?.name ?? "Unassigned"], ["Source", deal.source], ["Pipeline", setup?.pipelines.find((p) => p.id === deal.pipelineId)?.name], ["Added", formatDate(deal.createdAt)]]} />
+              {deal.notes && <div className="mt-4 rounded-2xl bg-muted/60 p-3 text-sm whitespace-pre-wrap">{deal.notes}</div>}
+              {deal.leadId && <p className="mt-4 text-xs text-muted-foreground">Made from a lead. <Link href={`/app/m/crm/${deal.leadId}`} className="underline">See the lead&apos;s history</Link></p>}
+            </Section>
+            <AboutCard id={deal.id} createdAt={deal.createdAt} />
+          </div>
+          <Section title="Latest activity" action={<Button size="sm" variant="ghost" onClick={() => setTab("activity")}>See all</Button>}>
             <Timeline items={timeline.slice(0, 4)} />
-          </section>
+          </Section>
         </div>
       )}
       {tab === "activity" && (
@@ -177,9 +176,15 @@ export default function DealPage() {
         </section>
       )}
 
+      {tab === "history" && <RecordHistory kind="deal" id={deal.id} refText={deal.title} created={{ at: deal.createdAt }} />}
+
       {logging && <ActivityDialog contactId={deal.contactId} dealId={deal.id} who={who} initialType={logging} onClose={() => setLogging(null)} onSaved={() => { setLogging(null); void reload() }} />}
       <ConfirmDialog open={!!removing} onOpenChange={(o) => !o && setRemoving(null)} destructive title="Delete this entry?" confirmLabel="Delete" onConfirm={async () => { try { await api.delete(`/activities/${removing!.id}`); void reload() } catch (e) { toast.error(errorMessage(e)) } }} />
       {actions.dialogs}
     </div>
   )
+}
+
+export default function Page() {
+  return <React.Suspense><DealPage /></React.Suspense>
 }

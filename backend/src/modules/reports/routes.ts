@@ -17,6 +17,7 @@ import { TAB_HANDLERS, availableTabs, dashboardConfig, scoper } from './dashboar
 import { search } from './search';
 import * as sales from './sales';
 import * as more from './more';
+import { HISTORY_KINDS, HistoryQuery, recordHistory, type HistoryKind } from '../audit/history';
 
 // Home dashboard (RPT-01): one call, widgets only for modules the role can see,
 // every figure filtered by that module's data scope. Totals are computed here, never in the UI.
@@ -197,6 +198,12 @@ router.get('/reports/payroll', requirePermission('hr.payroll.view'), validate(mo
 router.get('/reports/leave', requirePermission('hr.leave.view'), validate(more.Period, 'query'), tx(async (req, res) => { res.json(await more.leaveReport(req.ctx!, req.query as Q as { from: string; to: string })); }));
 router.get('/reports/bookings', requirePermission('bookings.appointment.view'), validate(more.BookingReport, 'query'), tx(async (req, res) => { res.json(await more.bookingReport(req.ctx!, req.query as never)); }));
 router.get('/reports/time', requirePermission('tasks.task.view'), validate(more.TimeReport, 'query'), tx(async (req, res) => { res.json(await more.timeReport(req.ctx!, req.query as never)); }));
+
+// ── A record's history, for every detail page; needs that record's view permission ──
+const historyGate = Object.fromEntries(Object.entries(HISTORY_KINDS).map(([k, v]) => [k, requirePermission(v.permission)])) as Record<HistoryKind, ReturnType<typeof requirePermission>>;
+router.get('/history', validate(HistoryQuery, 'query'), (req, res, next) => historyGate[(req.query as { kind: HistoryKind }).kind](req, res, next), tx(async (req, res) => {
+  res.json(await recordHistory(req.ctx!, req.query as unknown as z.infer<typeof HistoryQuery>));
+}));
 
 router.get('/dashboard/config', tx(async (req, res) => {
   const ctx = req.ctx!;

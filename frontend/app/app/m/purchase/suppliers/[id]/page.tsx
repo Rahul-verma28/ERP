@@ -21,6 +21,7 @@ import { stateName } from "@contracts/validation"
 import { invoiceStatus, returnStatus, type Supplier } from "@/lib/purchase"
 import { cn } from "@/lib/utils"
 import { PageLoading } from "@/components/page-states"
+import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
 
 // One supplier, laid out like a statement: totals for a period on top, then their invoices, returns,
 // payments and the running ledger. The cards and the first three tabs come from one request.
@@ -29,7 +30,8 @@ interface Doc { id: string; kind: string; status: string; number: string; suppli
 interface Pay { id: string; number: string; paidOn: string; method: string; reference: string | null; accountName: string | null; amountPaise: number; reversed: boolean; bills: string[] }
 interface Overview { supplier: Supplier; totals: { billedPaise: number; returnedPaise: number; paidPaise: number; balancePaise: number; overduePaise: number }; bills: Doc[]; returns: Doc[]; payments: Pay[] }
 interface LedgerRow { id: string; kind: string; number: string; date: string; details: string; billPaise: number; paidPaise: number; balancePaise: number }
-type Tab = "invoices" | "returns" | "payments" | "ledger" | "details"
+type Tab = "invoices" | "returns" | "payments" | "ledger" | "details" | "history"
+const TAB_KEYS: Tab[] = ["invoices", "returns", "payments", "ledger", "details", "history"]
 
 const KIND: Record<string, string> = { purchase_bill: "Invoice", purchase_return: "Return", payment: "Payment", payment_reversal: "Payment reversed" }
 const PERIODS = [["this_month", "This month"], ["this_fy", "This year"], ["last_fy", "Last year"], ["all", "All time"]] as const
@@ -47,13 +49,13 @@ function range(key: string, fyStart: number): { from: string; to: string } {
 const money = (p: number, cls?: string) => <span className={cn("tabular-nums", cls)}>{formatPaise(p)}</span>
 const date = (d: string | null) => (d ? formatDate(d) : "—")
 
-export default function SupplierPage() {
+function SupplierPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const { can, me } = useAuth()
   const fyStart = me?.tenant?.fyStartMonth ?? 4
   const [editing, setEditing] = React.useState(false)
-  const [tab, setTab] = React.useState<Tab>("invoices")
+  const [tab, setTab] = useTabParam<Tab>(TAB_KEYS, "invoices")
   const [period, setPeriod] = React.useState<string>("this_fy")
   const [dates, setDates] = React.useState(() => range("this_fy", fyStart))
   const qs = new URLSearchParams(Object.entries(dates).filter(([, v]) => v)).toString()
@@ -151,8 +153,13 @@ export default function SupplierPage() {
         { key: "returns", label: "Purchase Returns", count: ov.returns.length, hidden: !canSee },
         { key: "payments", label: "Payments", count: ov.payments.length, hidden: !canSee },
         { key: "ledger", label: "Ledger", hidden: !canSee },
-        { key: "details", label: "Details" },
-      ]} />
+        { key: "details", label: "Details" }, { key: "history", label: "History" }]} />
+      {tab === "history" && (
+        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+          <RecordHistory kind="supplier" id={s.id} refText={name} created={{ at: s.createdAt }} />
+          <AboutCard id={s.id} createdAt={s.createdAt} updatedAt={"updatedAt" in s ? (s as { updatedAt?: string }).updatedAt : null} className="h-fit" />
+        </div>
+      )}
 
       {tab === "invoices" && canSee && (
         <DataList<Doc>
@@ -240,4 +247,8 @@ function Ledger({ id, dates, onPayment, onDoc }: { id: string; dates: { from: st
       emptyState={<EmptyState icon={BookOpen} title="No invoices or payments in this period" />}
     />
   )
+}
+
+export default function Page() {
+  return <React.Suspense><SupplierPage /></React.Suspense>
 }

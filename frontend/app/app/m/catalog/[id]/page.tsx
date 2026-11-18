@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useParams, useRouter, useSearchParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Archive, ArchiveRestore, ArrowLeftRight, Copy, Package, Pencil, Plus, SlidersHorizontal, Trash2, Wrench } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -17,6 +17,7 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
 import { cn } from "@/lib/utils"
 import { PageError, PageLoading } from "@/components/page-states"
+import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
 
 // One item: what it is and costs, where its stock is and how it moved, and where it was sold and
 // bought. Stock actions are one click away.
@@ -31,7 +32,8 @@ interface Ledger {
 interface Line { id: string; quantity: number; ratePaise: number; document: { id: string; kind: string; number: string | null; date: string; party: string | null } }
 interface History { sold: Line[]; bought: Line[]; totals: { sold: { quantity: number; valuePaise: number }; bought: { quantity: number; valuePaise: number } } }
 
-type Tab = "overview" | "stock" | "sales" | "purchases"
+type Tab = "overview" | "stock" | "sales" | "purchases" | "history"
+const TAB_KEYS: Tab[] = ["overview", "stock", "sales", "purchases", "history"]
 const LEDGER_HREF: Record<string, string> = { invoice: "/app/m/billing/", delivery_challan: "/app/m/sales/challans/", credit_note: "/app/m/billing/credit-notes/", stock_entry: "/app/m/inventory/entries/", purchase: "/app/m/purchase/" }
 const SALE_HREF = (d: Line["document"]) => (d.kind === "credit_note" ? `/app/m/billing/credit-notes/${d.id}` : `/app/m/billing/${d.id}`)
 
@@ -63,7 +65,6 @@ function LineTable({ rows, unit, href, empty, partyLabel }: { rows: Line[]; unit
 function ItemPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
-  const params = useSearchParams()
   const { can, me } = useAuth()
   const { data: item, error, reload } = useApi<Item>(`/items/${id}`)
   const categories = useApi<{ data: Category[] }>("/item-categories")
@@ -71,7 +72,7 @@ function ItemPage() {
   const product = item?.type === "product"
   const ledger = useApi<Ledger>(showStock && product && item?.trackStock ? `/stock/items/${id}` : null)
   const history = useApi<History>(`/items/${id}/history`)
-  const [tab, setTab] = React.useState<Tab>((params.get("tab") as Tab) || "overview")
+  const [tab, setTab] = useTabParam<Tab>(TAB_KEYS, "overview")
   const [stock, setStock] = React.useState<"add" | "adjust" | "move" | null>(null)
   const [deleting, setDeleting] = React.useState(false)
   const showCost = !!me?.fieldAccess?.["item.cost_price"] && me.fieldAccess["item.cost_price"] !== "hidden"
@@ -139,8 +140,13 @@ function ItemPage() {
         { key: "overview", label: "Overview" },
         { key: "stock", label: "Stock", count: ledger.data?.rows.length, hidden: !(product && item.trackStock && showStock) },
         { key: "sales", label: "Sales", count: history.data?.sold.length },
-        { key: "purchases", label: "Purchases", count: history.data?.bought.length, hidden: !product },
-      ]} />
+        { key: "purchases", label: "Purchases", count: history.data?.bought.length, hidden: !product }, { key: "history", label: "History" }]} />
+      {tab === "history" && (
+        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+          <RecordHistory kind="item" id={item.id} refText={item.name} created={{ at: item.createdAt }} />
+          <AboutCard id={item.id} createdAt={item.createdAt} updatedAt={"updatedAt" in item ? (item as { updatedAt?: string }).updatedAt : null} className="h-fit" />
+        </div>
+      )}
 
       {tab === "overview" && (
         <div className="grid gap-5 lg:grid-cols-2">

@@ -61,15 +61,35 @@ export function DetailHeader({ title, pills, subtitle, extra, actions, icon: Ico
   )
 }
 
-export interface Stat { label: string; value: React.ReactNode; hint?: React.ReactNode; accent?: string; href?: string }
+export interface Stat { label: string; value: React.ReactNode; hint?: React.ReactNode; accent?: string; href?: string; color?: string; icon?: React.ElementType }
+
+// The same tinted cards the lists show (components/summary-cards), so a record page and its list
+// look alike. Without a colour, cards take blue, emerald, violet, amber in turn.
+const STAT_TINT: Record<string, string> = {
+  blue: "from-blue-50 to-blue-100/60 border-blue-200 text-blue-700 dark:from-blue-500/10 dark:to-blue-500/5 dark:border-blue-500/25 dark:text-blue-300",
+  emerald: "from-emerald-50 to-emerald-100/60 border-emerald-200 text-emerald-700 dark:from-emerald-500/10 dark:to-emerald-500/5 dark:border-emerald-500/25 dark:text-emerald-300",
+  violet: "from-violet-50 to-violet-100/60 border-violet-200 text-violet-700 dark:from-violet-500/10 dark:to-violet-500/5 dark:border-violet-500/25 dark:text-violet-300",
+  amber: "from-amber-50 to-amber-100/60 border-amber-200 text-amber-700 dark:from-amber-500/10 dark:to-amber-500/5 dark:border-amber-500/25 dark:text-amber-300",
+  rose: "from-rose-50 to-rose-100/60 border-rose-200 text-rose-700 dark:from-rose-500/10 dark:to-rose-500/5 dark:border-rose-500/25 dark:text-rose-300",
+  slate: "from-slate-50 to-slate-100/60 border-slate-200 text-slate-700 dark:from-slate-500/10 dark:to-slate-500/5 dark:border-slate-500/25 dark:text-slate-300",
+}
+const STAT_ORDER = ["blue", "emerald", "violet", "amber"]
 
 export function StatGrid({ items, className }: { items: (Stat | false | null | undefined)[]; className?: string }) {
   const list = items.filter(Boolean) as Stat[]
   return (
     <div className={cn("grid grid-cols-2 gap-3", list.length >= 4 ? "lg:grid-cols-4" : list.length === 3 ? "lg:grid-cols-3" : "", className)}>
-      {list.map((s) => {
-        const body = (<><p className="text-xs text-muted-foreground">{s.label}</p><p className={cn("text-lg font-semibold tabular-nums", s.accent)}>{s.value}</p>{s.hint && <p className="text-xs text-muted-foreground">{s.hint}</p>}</>)
-        return s.href ? <Link key={s.label} href={s.href} className="ui-surface grid gap-1 p-4 transition-shadow hover:shadow-md">{body}</Link> : <div key={s.label} className="ui-surface grid gap-1 p-4">{body}</div>
+      {list.map((s, i) => {
+        const Icon = s.icon
+        const body = (
+          <>
+            <div className="flex items-start justify-between gap-2"><p className="text-xs font-medium">{s.label}</p>{Icon && <Icon className="size-4 opacity-80" aria-hidden />}</div>
+            <p className={cn("text-xl font-bold tabular-nums text-foreground", s.accent)}>{s.value}</p>
+            {s.hint && <p className="text-[11px] opacity-80">{s.hint}</p>}
+          </>
+        )
+        const cls = cn("grid gap-1 rounded-2xl border bg-gradient-to-br p-4 transition-shadow", STAT_TINT[s.color ?? STAT_ORDER[i % STAT_ORDER.length]] ?? STAT_TINT.slate, s.href && "hover:shadow-md")
+        return s.href ? <Link key={s.label} href={s.href} className={cls}>{body}</Link> : <div key={s.label} className={cls}>{body}</div>
       })}
     </div>
   )

@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { ArrowLeft, Check, CheckSquare, Handshake, Mail, MessageCircle, Pencil, Phone, Plus } from "lucide-react"
+import { CalendarClock, Check, CheckSquare, Clock, Handshake, IndianRupee, ListChecks, Mail, MessageCircle, Pencil, Phone, Plus } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { ACTIVITY_META, ActivityDialog, DealDialog, LabelChips, ProductsEditor, StagePill } from "@/components/crm/dialogs"
@@ -18,6 +18,8 @@ import { dueLabel, LEAD_STATUS, tone, useCrmSetup, waLink, type Activity, type C
 import { formatDate, formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { PageError, PageLoading } from "@/components/page-states"
+import { BackLink, DetailHeader, DetailList, Section, StatGrid, Tabs } from "@/components/page-parts"
+import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
 
 // One lead (or a customer's CRM side): where it stands, what was said, what is to be done,
 // what they want, and the deals made from it.
@@ -29,7 +31,8 @@ interface Detail extends Lead {
   documents: { id: string; kind: string; number: string | null; status: string; issueDate: string; totalPaise: number }[]
 }
 
-type Tab = "overview" | "activity" | "tasks" | "products" | "deals"
+type Tab = "overview" | "activity" | "tasks" | "products" | "deals" | "history"
+const TABS: Tab[] = ["overview", "activity", "tasks", "products", "deals", "history"]
 
 function StageStepper({ lead, onMove }: { lead: Detail; onMove: (stageId: string) => void }) {
   const setup = useCrmSetup().data
@@ -67,12 +70,12 @@ function StageStepper({ lead, onMove }: { lead: Detail; onMove: (stageId: string
   )
 }
 
-export default function LeadPage() {
+function LeadPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
   const { can } = useAuth()
   const { data, setData, error, reload } = useApi<Detail>(`/contacts/${id}`)
-  const [tab, setTab] = React.useState<Tab>("overview")
+  const [tab, setTab] = useTabParam<Tab>(TABS, "overview")
   const [logging, setLogging] = React.useState<"note" | "call" | "task" | "email" | "meeting" | "follow_up" | null>(null)
   const [newDeal, setNewDeal] = React.useState(false)
   const [removing, setRemoving] = React.useState<Activity | null>(null)
@@ -100,32 +103,19 @@ export default function LeadPage() {
     }
   }
 
-  const tabs: [Tab, string, number | null][] = [
-    ["overview", "Overview", null],
-    ["activity", "Activity", timeline.length],
-    ["tasks", "Tasks", openTasks],
-    ...(isLead || lead.products.length ? [["products", "Products", lead.products.length] as [Tab, string, number]] : []),
-    ["deals", "Deals", lead.deals.length],
-  ]
   const back = isLead ? { href: "/app/m/crm", label: "Leads" } : { href: `/app/m/sales/customers/${lead.id}`, label: lead.name }
-  const card = (label: string, value: React.ReactNode, hint?: React.ReactNode, accent?: string) => (
-    <div className="ui-surface grid gap-1 p-4"><p className="text-xs text-muted-foreground">{label}</p><p className={cn("text-lg font-semibold tabular-nums", accent)}>{value}</p>{hint && <p className="text-xs text-muted-foreground">{hint}</p>}</div>
-  )
 
   return (
     <div className="grid gap-5">
-      <Link href={back.href} className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {back.label}</Link>
+      <BackLink href={back.href}>{back.label}</BackLink>
 
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-primary/10 text-lg font-bold text-primary">{lead.name.split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("")}</span>
-          <div className="min-w-0">
-            <h1 className="flex flex-wrap items-center gap-2 text-2xl font-bold tracking-tight">{lead.name} {isLead && !closed && <StagePill stage={lead.stage} />}{lead.leadStatus && LEAD_STATUS[lead.leadStatus] && <span className={cn("inline-flex h-[22px] items-center rounded-full px-2 text-xs font-semibold", tone(LEAD_STATUS[lead.leadStatus].tone).pill)}>{LEAD_STATUS[lead.leadStatus].label}</span>}</h1>
-            <p className="text-sm text-muted-foreground">{[lead.companyName, lead.subject].filter(Boolean).join(" · ") || (isLead ? "Lead" : "Customer")}</p>
-            <div className="mt-1"><LabelChips labels={lead.labels} max={6} /></div>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+      <DetailHeader
+        title={lead.name}
+        initials={lead.name}
+        pills={<>{isLead && !closed && <StagePill stage={lead.stage} />}{lead.leadStatus && LEAD_STATUS[lead.leadStatus] && <span className={cn("inline-flex h-[22px] items-center rounded-full px-2 text-xs font-semibold", tone(LEAD_STATUS[lead.leadStatus].tone).pill)}>{LEAD_STATUS[lead.leadStatus].label}</span>}</>}
+        subtitle={[lead.companyName, lead.subject].filter(Boolean).join(" · ") || (isLead ? "Lead" : "Customer")}
+        extra={<LabelChips labels={lead.labels} max={6} />}
+        actions={<>
           {lead.phone && <a href={`tel:${lead.phone}`} className={buttonVariants({ variant: "outline" })} onClick={() => setTimeout(() => setLogging("call"), 600)}><Phone /> Call</a>}
           {lead.phone && <a href={waLink(lead.phone, `Hello ${lead.name},`)} target="_blank" rel="noreferrer" className={cn(buttonVariants({ variant: "outline" }), "text-emerald-700 dark:text-emerald-300")}><MessageCircle /> WhatsApp</a>}
           {lead.email && <a href={`mailto:${lead.email}`} className={buttonVariants({ variant: "outline" })} onClick={() => setTimeout(() => setLogging("email"), 600)}><Mail /> Email</a>}
@@ -133,43 +123,43 @@ export default function LeadPage() {
           {isLead && !closed && can("crm.deal.create") && <Button onClick={() => actions.act("deal", lead)}><Handshake /> Convert to deal</Button>}
           {!isLead && can("crm.deal.create") && <Button onClick={() => setNewDeal(true)}><Plus /> New deal</Button>}
           {isLead && <LeadMenu lead={lead} actions={actions} view={false} />}
-        </div>
-      </header>
+        </>}
+      />
 
       {isLead && <StageStepper lead={lead} onMove={(stageId) => void actions.moveTo(lead, stageId).then(() => toast.success("Stage changed")).catch(() => undefined)} />}
       {lead.leadStatus === "lost" && <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-800 dark:bg-rose-500/10 dark:text-rose-200">Lost{lead.lostReason ? `: ${lead.lostReason}` : ""}. {can("crm.lead.edit") && <button type="button" className="font-semibold underline" onClick={() => void actions.reopen(lead)}>Reopen</button>}</p>}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {card("Expected value", lead.valuePaise ? formatPaise(lead.valuePaise) : "—", lead.products.length ? `${lead.products.length} product${lead.products.length === 1 ? "" : "s"}` : "Add products to work it out")}
-        {card("Follow up", lead.followUpOn ? formatDate(lead.followUpOn) : "Not set", due?.text, due?.late ? "text-destructive" : undefined)}
-        {card("Open tasks", openTasks, `${lead.activities.filter((a) => a.type === "task" || a.type === "follow_up").length} in all`)}
-        {card(isLead ? "Days open" : "With you for", `${days} day${days === 1 ? "" : "s"}`, `Added ${formatDate(lead.createdAt)}`)}
-      </div>
+      <StatGrid items={[
+        { label: "Expected value", value: lead.valuePaise ? formatPaise(lead.valuePaise) : "—", hint: lead.products.length ? `${lead.products.length} product${lead.products.length === 1 ? "" : "s"}` : "Add products to work it out", icon: IndianRupee, color: "emerald" },
+        { label: "Follow up", value: lead.followUpOn ? formatDate(lead.followUpOn) : "Not set", hint: due?.text, accent: due?.late ? "text-destructive" : undefined, icon: CalendarClock, color: due?.late ? "rose" : "blue" },
+        { label: "Open tasks", value: openTasks, hint: `${lead.activities.filter((a) => a.type === "task" || a.type === "follow_up").length} in all`, icon: ListChecks, color: "violet" },
+        { label: isLead ? "Days open" : "With you for", value: `${days} day${days === 1 ? "" : "s"}`, hint: `Added ${formatDate(lead.createdAt)}`, icon: Clock, color: "amber" },
+      ]} />
 
-      <div className="flex flex-wrap gap-1 border-b" role="tablist">
-        {tabs.map(([k, label, n]) => (
-          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={cn("-mb-px flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium", tab === k ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground")}>
-            {label}{n ? <span className="rounded-full bg-muted px-1.5 text-xs tabular-nums">{n}</span> : null}
-          </button>
-        ))}
-      </div>
+      <Tabs<Tab> value={tab} onChange={setTab} tabs={[
+        { key: "overview", label: "Overview" },
+        { key: "activity", label: "Activity", count: timeline.length },
+        { key: "tasks", label: "Tasks", count: openTasks },
+        { key: "products", label: "Products", count: lead.products.length, hidden: !(isLead || lead.products.length) },
+        { key: "deals", label: "Deals", count: lead.deals.length },
+        { key: "history", label: "History" },
+      ]} />
 
       {tab === "overview" && (
         <div className="grid gap-5 lg:grid-cols-[1fr_1.2fr]">
-          <section className="ui-surface p-5">
-            <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Details</h2>{isLead && !closed && can("crm.lead.edit") && <Button size="sm" variant="ghost" onClick={() => actions.act("edit", lead)}><Pencil /> Edit</Button>}</div>
-            <dl className="grid gap-3 text-sm sm:grid-cols-2">
-              {[
+          <div className="grid content-start gap-5">
+            <Section title="Details" action={isLead && !closed && can("crm.lead.edit") && <Button size="sm" variant="ghost" onClick={() => actions.act("edit", lead)}><Pencil /> Edit</Button>}>
+              <DetailList items={[
                 ["Mobile", lead.phone], ["Email", lead.email], ["Company", lead.companyName], ["Looking for", lead.subject],
                 ["Source", lead.leadSource], ["Assigned to", lead.owner?.name ?? "Unassigned"], ["Stage", lead.stage?.name], ["Added", formatDate(lead.createdAt)],
-              ].map(([k, v]) => <div key={k}><dt className="text-xs text-muted-foreground">{k}</dt><dd className="font-medium break-words">{v || "—"}</dd></div>)}
-            </dl>
-            {lead.notes && <div className="mt-4 rounded-2xl bg-muted/60 p-3 text-sm whitespace-pre-wrap">{lead.notes}</div>}
-          </section>
-          <section className="ui-surface p-5">
-            <div className="mb-3 flex items-center justify-between"><h2 className="font-semibold">Latest activity</h2><Button size="sm" variant="ghost" onClick={() => setTab("activity")}>See all</Button></div>
+              ]} />
+              {lead.notes && <div className="mt-4 rounded-2xl bg-muted/60 p-3 text-sm whitespace-pre-wrap">{lead.notes}</div>}
+            </Section>
+            <AboutCard id={lead.id} createdAt={lead.createdAt} />
+          </div>
+          <Section title="Latest activity" action={<Button size="sm" variant="ghost" onClick={() => setTab("activity")}>See all</Button>}>
             <Timeline items={timeline.slice(0, 4)} />
-          </section>
+          </Section>
         </div>
       )}
 
@@ -220,6 +210,8 @@ export default function LeadPage() {
         </section>
       )}
 
+      {tab === "history" && <RecordHistory kind="lead" id={lead.id} refText={lead.name} created={{ at: lead.createdAt }} />}
+
       {logging && <ActivityDialog contactId={lead.id} who={lead.name} initialType={logging} onClose={() => setLogging(null)} onSaved={() => { setLogging(null); void reload() }} />}
       {newDeal && <DealDialog initialContact={{ id: lead.id, name: lead.name, companyName: lead.companyName, phone: lead.phone }} onClose={() => setNewDeal(false)} onSaved={(d) => router.push(`/app/m/crm/deals/${d.id}`)} />}
       <ConfirmDialog
@@ -240,4 +232,8 @@ export default function LeadPage() {
       {actions.dialogs}
     </div>
   )
+}
+
+export default function Page() {
+  return <React.Suspense><LeadPage /></React.Suspense>
 }

@@ -1,6 +1,8 @@
 // Item types shared by the catalogue pages.
 
 export interface Item {
+  createdAt?: string
+  updatedAt?: string
   id: string
   type: "product" | "service"
   name: string

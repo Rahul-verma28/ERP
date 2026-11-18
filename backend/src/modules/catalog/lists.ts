@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { bundle, type Row } from '../../kernel/bundle';
 import type { TenantCtx } from '../../kernel/context';
 import { todayIST } from '../../kernel/gst';
+import { AppError } from '../../kernel/errors';
 
 // The item list in ONE database round trip (kernel/bundle): every item with its category, stock by
 // warehouse, what is held for orders, what sold and when, the last purchase price, and the counts and
@@ -137,6 +138,46 @@ export async function listPriceLists(ctx: TenantCtx) {
     sums: {
       lists: data.length, customers: data.reduce((a, r) => a + (r.customerCount as number), 0), prices: data.reduce((a, r) => a + (r.itemCount as number), 0),
       sold30: data.reduce((a, r) => a + r.sold30Paise, 0n),
+    },
+  };
+}
+
+/** One price list for its page, in one round trip: every active item at its base price and its
+ *  price on this list (exact price, else the list's discount), the customers on it with what they
+ *  bought, and what was sold to them in the last 30 and 90 days. */
+export async function getPriceList(ctx: TenantCtx, id: string) {
+  const t = ctx.tenantId;
+  const b = await bundle({
+    list: Prisma.sql`select * from price_lists where tenant_id = ${t}::uuid and id = ${id}::uuid`,
+    items: Prisma.sql`
+      select i.id, i.name, i.sku, i.type, i.unit, i.price_paise, i.cost_price_paise, i.gst_rate_bp, c.name as category, pi.price_paise as exact_paise
+      from items i left join item_categories c on c.id = i.category_id
+        left join price_list_items pi on pi.item_id = i.id and pi.price_list_id = ${id}::uuid
+      where i.tenant_id = ${t}::uuid and (i.is_active or pi.id is not null)
+      order by (pi.id is null), i.name`,
+    customers: Prisma.sql`
+      select c.id, c.name, c.company_name, c.phone, c.gstin,
+        (select coalesce(sum(d.total_paise), 0) from sales_documents d where d.contact_id = c.id and d.kind = 'invoice' and d.status not in ('draft', 'cancelled') and d.issue_date >= ${todayIST()}::date - 90) as sold90_paise,
+        (select max(d.issue_date) from sales_documents d where d.contact_id = c.id and d.kind = 'invoice' and d.status not in ('draft', 'cancelled')) as last_bill_on
+      from contacts c where c.tenant_id = ${t}::uuid and c.price_list_id = ${id}::uuid order by coalesce(c.company_name, c.name)`,
+  });
+  const list = b.list[0];
+  if (!list) throw new AppError('NOT_FOUND', 'This price list was not found.');
+  const off = Number(list.discountBp ?? 0);
+  const items = b.items.map((r) => {
+    const base = Number(r.pricePaise ?? 0);
+    const exact = r.exactPaise === null || r.exactPaise === undefined ? null : Number(r.exactPaise);
+    const price = exact ?? Math.round((base * (10_000 - off)) / 10_000);
+    const cost = r.costPricePaise === null || r.costPricePaise === undefined ? null : Number(r.costPricePaise);
+    return { id: r.id as string, name: r.name as string, sku: r.sku as string | null, type: r.type as string, unit: r.unit as string, category: r.category as string | null, gstRateBp: Number(r.gstRateBp ?? 0), basePaise: base, exactPaise: exact, pricePaise: price, costPaise: cost, offPct: base ? Math.round(((base - price) / base) * 1000) / 10 : 0, marginPct: cost !== null && price ? Math.round(((price - cost) / price) * 1000) / 10 : null };
+  });
+  const customers = b.customers.map((r) => ({ id: r.id as string, name: (r.companyName as string | null) || (r.name as string), person: r.companyName ? (r.name as string) : null, phone: r.phone as string | null, gstin: r.gstin as string | null, sold90Paise: Number(r.sold90Paise ?? 0), lastBillOn: r.lastBillOn as Date | null }));
+  return {
+    id: list.id as string, name: list.name as string, discountBp: off, createdAt: list.createdAt as Date, updatedAt: list.updatedAt as Date,
+    items, customers,
+    sums: {
+      exact: items.filter((i) => i.exactPaise !== null).length, items: items.length, customers: customers.length,
+      sold90Paise: customers.reduce((s, c) => s + c.sold90Paise, 0), belowCost: items.filter((i) => i.marginPct !== null && i.marginPct < 0).length,
     },
   };
 }

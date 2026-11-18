@@ -18,6 +18,7 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
 import { INVOICE_STEPS, KIND_LABEL, KIND_PATH, KIND_PLURAL, RETURN_STEPS, invoiceStatus, returnStatus, type PurchaseDoc } from "@/lib/purchase"
 import { PageLoading } from "@/components/page-states"
+import { AboutCard, RecordHistory } from "@/components/record-kit"
 
 // A purchase document with what happened since: received or billed quantities, documents made
 // from it, payments. The next step is one button away: receive, bill, return, pay.
@@ -252,6 +253,10 @@ export default function PurchaseDocPage() {
           try { setDoc(await api.post<PurchaseDoc>(`/purchases/${doc.id}/cancel`, { reason })); toast.success("Cancelled") } catch (e) { toast.error(errorMessage(e)); throw e }
         }}
       />
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px] print:hidden">
+        <RecordHistory kind="purchase" id={doc.id} refText={(doc as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).number ?? null} created={{ at: (doc as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).createdAt }} />
+        <AboutCard id={doc.id} createdAt={(doc as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).createdAt} updatedAt={(doc as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).updatedAt} className="h-fit" />
+      </div>
     </div>
   )
 }

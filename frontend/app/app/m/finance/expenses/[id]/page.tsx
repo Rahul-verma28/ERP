@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import type { Expense } from "@/lib/finance"
+import { AboutCard, RecordHistory } from "@/components/record-kit"
 
 // One expense: what, how much, from which account, and its GST bill.
 
@@ -81,6 +82,10 @@ export default function ExpensePage() {
           }
         }}
       />
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px] print:hidden">
+        <RecordHistory kind="expense" id={e.id} refText={(e as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).number ?? null} created={{ at: (e as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).createdAt }} />
+        <AboutCard id={e.id} createdAt={(e as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).createdAt} updatedAt={(e as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).updatedAt} className="h-fit" />
+      </div>
     </div>
   )
 }

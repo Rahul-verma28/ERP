@@ -21,6 +21,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useFinAccounts } from "@/lib/finance"
 import { monthLabel, RUN_STATUS, type Line, type PayrollRun, type Payslip } from "@/lib/hr"
+import { AboutCard, RecordHistory } from "@/components/record-kit"
 
 // One month's payroll: check every payslip, add a bonus or a one-off deduction, process, then pay.
 
@@ -218,6 +219,10 @@ export default function PayrollRunPage() {
       {adjusting && <AdjustDialog slip={adjusting} onClose={() => setAdjusting(null)} onSaved={() => { setAdjusting(null); refresh() }} />}
       <ConfirmDialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)} destructive={confirm?.destructive} title={confirm?.title ?? ""} description={confirm?.description} confirmLabel={confirm?.label ?? "OK"}
         onConfirm={async () => { try { await confirm!.run(); toast.success("Done"); refresh() } catch (e) { toast.error(errorMessage(e)) } }} />
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px] print:hidden">
+        <RecordHistory kind="payroll" id={run.id} refText={(run as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).number ?? null} created={{ at: (run as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).createdAt }} />
+        <AboutCard id={run.id} createdAt={(run as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).createdAt} updatedAt={(run as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).updatedAt} className="h-fit" />
+      </div>
     </div>
   )
 }

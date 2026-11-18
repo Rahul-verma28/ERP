@@ -31,6 +31,7 @@ import { PAYMENT_METHODS } from "@/lib/money"
 import { cn } from "@/lib/utils"
 import { docApi, docLabel, docPath, type DocKind, type SalesDoc } from "@/lib/sales"
 import { PageError, PageLoading } from "@/components/page-states"
+import { AboutCard, RecordHistory } from "@/components/record-kit"
 
 type Kind = DocKind
 const perm = (kind: Kind) => ({ invoice: "billing.invoice", quotation: "sales.quotation", sales_order: "sales.order", delivery_challan: "sales.delivery" })[kind]
@@ -827,6 +828,10 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
           router.replace(`/app/m/${docPath(kind)}`)
         }}
       />
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px] print:hidden">
+        <RecordHistory kind={kind === "quotation" ? "quotation" : "sales_doc"} id={doc.id} refText={doc.number} created={{ at: (doc as SalesDoc & { createdAt?: string }).createdAt }} />
+        <AboutCard id={doc.id} createdAt={(doc as SalesDoc & { createdAt?: string }).createdAt} updatedAt={(doc as SalesDoc & { updatedAt?: string }).updatedAt} className="h-fit" />
+      </div>
     </div>
   )
 }

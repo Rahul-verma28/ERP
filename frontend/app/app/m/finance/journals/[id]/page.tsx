@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { ledgerHref, type Journal } from "@/lib/finance"
+import { AboutCard, RecordHistory } from "@/components/record-kit"
 
 // One journal entry, laid out as a voucher: each ledger with its debit or credit.
 
@@ -84,6 +85,10 @@ export default function JournalPage() {
           }
         }}
       />
+      <div className="grid gap-5 lg:grid-cols-[1fr_320px] print:hidden">
+        <RecordHistory kind="journal" id={j.id} refText={(j as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).number ?? null} created={{ at: (j as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).createdAt }} />
+        <AboutCard id={j.id} createdAt={(j as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).createdAt} updatedAt={(j as unknown as { id: string; number?: string | null; createdAt?: string; updatedAt?: string }).updatedAt} className="h-fit" />
+      </div>
     </div>
   )
 }

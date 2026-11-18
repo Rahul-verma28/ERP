@@ -20,17 +20,19 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatDateTime, formatPaise } from "@/lib/format"
 import { PRIORITY, PROJECT_STATUS, STATUS, fmtMin, type Project, type Task, type TaskStatus, type TimeLog } from "@/lib/tasks"
 import { cn } from "@/lib/utils"
+import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
 
 // One project: the board of its tasks, the people and their hours, recent activity and details.
 
 interface Detail extends Project { hours: { userId: string; name: string; minutes: number; billableMin: number }[]; events: { id: string; type: string; body: string | null; at: string; actorName: string | null; taskTitle: string; taskId: string }[] }
-type Tab = "board" | "list" | "time" | "activity" | "details"
+type Tab = "board" | "list" | "time" | "activity" | "details" | "history"
+const TAB_KEYS: Tab[] = ["board", "list", "time", "activity", "details", "history"]
 const BOARD: { id: TaskStatus; name: string; color: string }[] = [{ id: "todo", name: "To do", color: "slate" }, { id: "in_progress", name: "In progress", color: "blue" }, { id: "done", name: "Done", color: "emerald" }]
 
-export default function ProjectPage() {
+function ProjectPage() {
   const { id } = useParams<{ id: string }>()
   const { can } = useAuth()
-  const [tab, setTab] = React.useState<Tab>("board")
+  const [tab, setTab] = useTabParam<Tab>(TAB_KEYS, "board")
   const [editing, setEditing] = React.useState(false)
   const [adding, setAdding] = React.useState<TaskStatus | null>(null)
   const [timing, setTiming] = React.useState(false)
@@ -74,8 +76,13 @@ export default function ProjectPage() {
         { key: "list", label: "All tasks", count: tasks.data?.data.length ?? null },
         { key: "time", label: "Time" },
         { key: "activity", label: "Activity", count: p.events.length },
-        { key: "details", label: "Details" },
-      ]} />
+        { key: "details", label: "Details" }, { key: "history", label: "History" }]} />
+      {tab === "history" && (
+        <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+          <RecordHistory kind="project" id={p.id} refText={p.name} created={{ at: p.createdAt }} />
+          <AboutCard id={p.id} createdAt={p.createdAt} updatedAt={"updatedAt" in p ? (p as { updatedAt?: string }).updatedAt : null} className="h-fit" />
+        </div>
+      )}
 
       {(tab === "board" || tab === "list") && !tasks.data && <div className="grid place-items-center py-16"><Spinner /></div>}
       {tab === "board" && tasks.data && (
@@ -144,4 +151,8 @@ export default function ProjectPage() {
       {asking && <ApprovalDialog projectId={p.id} onClose={() => setAsking(false)} onSaved={() => setAsking(false)} />}
     </div>
   )
+}
+
+export default function Page() {
+  return <React.Suspense><ProjectPage /></React.Suspense>
 }
