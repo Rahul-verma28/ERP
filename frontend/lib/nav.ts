@@ -91,6 +91,7 @@ export const MODULE_SUBS: Partial<Record<ModuleKey, SubNav[]>> = {
     { label: "Projects", href: "/app/m/tasks/projects", permission: "tasks.task.view" },
     { label: "Timesheet", href: "/app/m/tasks/timesheet", permission: "tasks.task.view" },
     { label: "Approvals", href: "/app/m/tasks/approvals", permission: "tasks.approval.view" },
+    { label: "Reports", href: "/app/m/tasks/reports", permission: "tasks.task.view" },
   ],
   bookings: [
     { label: "Calendar", href: "/app/m/bookings", permission: "bookings.appointment.view" },
@@ -99,6 +100,7 @@ export const MODULE_SUBS: Partial<Record<ModuleKey, SubNav[]>> = {
     { label: "Staff & Hours", href: "/app/m/bookings/staff", permission: "bookings.appointment.view" },
     { label: "Rooms & Resources", href: "/app/m/bookings/resources", permission: "bookings.appointment.view" },
     { label: "Online Booking", href: "/app/m/bookings/online", permission: "bookings.resource.edit" },
+    { label: "Reports", href: "/app/m/bookings/reports", permission: "bookings.appointment.view" },
   ],
 }
 
@@ -298,6 +300,11 @@ export const HRM_NAV = {
       label: "Acknowledgments",
       href: "/app/m/hr/acknowledgments",
       permission: "hr.workplace.view"
+    },
+    {
+      label: "Reports",
+      href: "/app/m/hr/reports",
+      permission: "hr.attendance.view"
     },
     {
       label: "System Setup",

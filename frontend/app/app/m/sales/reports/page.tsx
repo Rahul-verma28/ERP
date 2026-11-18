@@ -11,6 +11,8 @@ import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { useReportTab } from "@/components/reports/kit"
+import { ProfitByItem } from "@/components/reports/profit-stock"
 import { todayInIndia } from "@contracts/validation"
 
 // Sales reports, the same five a shop owner and their CA ask for, each on the shared table:
@@ -155,11 +157,11 @@ function Collection() {
   )
 }
 
-const TABS = [["receivables", "Receivables"], ["register", "Sales Register"], ["customer", "By Customer"], ["item", "By Item"], ["collection", "Money Collected"]] as const
+const TABS = [["receivables", "Receivables"], ["register", "Sales Register"], ["customer", "By Customer"], ["item", "By Item"], ["profit", "Profit by Item"], ["collection", "Money Collected"]] as const
 
-export default function SalesReportsPage() {
+function SalesReportsPageInner() {
   const { can } = useAuth()
-  const [tab, setTab] = React.useState<(typeof TABS)[number][0]>("receivables")
+  const [tab, setTab] = useReportTab(TABS)
   if (!can("reports.report.view")) return <PageHeader title="Sales reports" description="You don't have access to reports. Ask your admin." />
   return (
     <div className="grid gap-4">
@@ -170,7 +172,12 @@ export default function SalesReportsPage() {
       {tab === "register" && <Register />}
       {tab === "customer" && <SalesBy by="customer" />}
       {tab === "item" && <SalesBy by="item" />}
+      {tab === "profit" && <ProfitByItem />}
       {tab === "collection" && <Collection />}
     </div>
   )
+}
+
+export default function SalesReportsPage() {
+  return <React.Suspense><SalesReportsPageInner /></React.Suspense>
 }

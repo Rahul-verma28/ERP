@@ -6,6 +6,8 @@ export const DASHBOARD_TABS = [
   { key: 'myday', label: 'My day', permission: 'reports.dashboard.view' },
   { key: 'billing', label: 'Billing', permission: 'billing.invoice.view' },
   { key: 'sales', label: 'Sales', permission: 'sales.quotation.view' },
+  { key: 'purchase', label: 'Purchase', permission: 'inventory.supplier_bill.view' },
+  { key: 'inventory', label: 'Inventory', permission: 'inventory.stock.view' },
   { key: 'crm', label: 'CRM', permission: 'crm.contact.view' },
   { key: 'bookings', label: 'Bookings', permission: 'bookings.appointment.view' },
   { key: 'finance', label: 'Finance', permission: 'finance.expense.view' },
@@ -40,6 +42,18 @@ export const DASHBOARD_WIDGETS: Record<DashboardTab, { key: string; label: strin
     { key: 'top', label: 'Best-selling services & products' },
     { key: 'open', label: 'Open quotations' },
   ],
+  purchase: [
+    { key: 'kpis', label: 'Purchased, paid, to pay, overdue' },
+    { key: 'trend', label: 'Purchased vs paid' },
+    { key: 'due', label: 'Bills to pay' },
+    { key: 'suppliers', label: 'Top suppliers' },
+  ],
+  inventory: [
+    { key: 'kpis', label: 'Stock value, low, out, expiring' },
+    { key: 'low', label: 'Low on stock' },
+    { key: 'movers', label: 'Fast movers' },
+    { key: 'warehouses', label: 'Stock by warehouse' },
+  ],
   crm: [
     { key: 'kpis', label: 'Leads, converted, customers, follow-ups' },
     { key: 'stages', label: 'Leads by stage' },
@@ -48,7 +62,8 @@ export const DASHBOARD_WIDGETS: Record<DashboardTab, { key: string; label: strin
     { key: 'top', label: 'Top customers' },
   ],
   bookings: [
-    { key: 'kpis', label: 'Appointments, completed, no-shows, cancelled' },
+    { key: 'kpis', label: 'Appointments, completed, earned, no-shows' },
+    { key: 'services', label: 'Earnings by service' },
     { key: 'hours', label: 'Busy hours' },
     { key: 'staff', label: 'Staff utilisation' },
     { key: 'week', label: 'Next 7 days' },
@@ -61,7 +76,8 @@ export const DASHBOARD_WIDGETS: Record<DashboardTab, { key: string; label: strin
     { key: 'gst', label: 'GST for the period' },
   ],
   tasks: [
-    { key: 'kpis', label: 'Open, overdue, done' },
+    { key: 'kpis', label: 'Open, overdue, done, hours, approvals' },
+    { key: 'projects', label: 'Projects' },
     { key: 'people', label: 'Open tasks by person' },
     { key: 'due', label: 'Overdue and due today' },
   ],

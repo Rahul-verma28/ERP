@@ -8,6 +8,7 @@ import { SETUP_STEPS, withDefaults, type SetupState } from '../../contracts/work
 import { DASHBOARD_TABS, addDays, bucketsFor, daysBetween, gstr3bDue, previousRange, type DashboardTab } from '../../contracts/dashboard';
 import { getRolePermissions } from '../access/service';
 import { getEntitlements } from '../subscription/entitlements';
+import { inventory, purchase } from './dashboard-more';
 
 // Phase 3 dashboard (wireframes 5.1–5.8): one endpoint per tab, every figure filtered by the
 // module's data scope and the chosen branch, with the same figures for the previous period.
@@ -473,7 +474,8 @@ export async function bookings(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
     const rows = await db().appointment.groupBy({ by: ['status'], where: { AND: [apptWhere(a, b), { startAt: timeIn(range) }] }, _count: true });
     const get = (st: string) => rows.find((x) => x.status === st)?._count ?? 0;
     const total = rows.reduce((t, x) => t + x._count, 0);
-    return { total, completed: get('completed'), noShow: get('no_show'), cancelled: get('cancelled') };
+    const earned = await db().appointment.aggregate({ where: { AND: [apptWhere(a, b), { startAt: timeIn(range), status: 'completed' }] }, _sum: { pricePaise: true } });
+    return { total, completed: get('completed'), noShow: get('no_show'), cancelled: get('cancelled'), earned: n(earned._sum.pricePaise) };
   };
   out.kpis = run(async () => {
     const [now, before] = await Promise.all([statusCounts(r), compare ? statusCounts(prev) : null]);
@@ -483,6 +485,7 @@ export async function bookings(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
       completed: { value: now.completed, rate: live ? Math.round((now.completed / live) * 100) : null },
       noShows: { value: now.noShow, rate: live ? Math.round((now.noShow / live) * 100) : null, change: change(now.noShow, before?.noShow ?? null) },
       cancelled: { value: now.cancelled, change: change(now.cancelled, before?.cancelled ?? null) },
+      earned: { value: now.earned, change: change(now.earned, before?.earned ?? null) },
     };
   });
   const inRange = () => db().appointment.findMany({ where: { AND: [apptWhere(a, b), { startAt: timeIn(r), status: { not: 'cancelled' } }] }, select: { startAt: true, endAt: true, staffId: true, status: true } });
@@ -506,9 +509,23 @@ export async function bookings(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
       p.count++;
       per.set(x.staffId, p);
     }
-    const names = await userNames([...per.keys()]);
-    const capacity = elapsed * WORK_HOURS_PER_DAY * 60;
-    return { hoursPerDay: WORK_HOURS_PER_DAY, rows: [...per.entries()].map(([id, p]) => ({ id, name: names.get(id) ?? 'Staff', count: p.count, pct: Math.min(100, Math.round((p.minutes / capacity) * 100)) })).sort((x, y) => y.pct - x.pct) };
+    const [names, hours] = await Promise.all([userNames([...per.keys()]), db().staffHours.findMany({ where: { userId: { in: [...per.keys()] } }, select: { userId: true, weekday: true, startMin: true, endMin: true } })]);
+    // Each person's own working hours over the days gone by; Mon–Sat ${WORK_HOURS_PER_DAY} h for anyone not set up
+    const days = Array.from({ length: elapsed }, (_, k) => new Date(`${addDays(r.from, k)}T00:00:00Z`).getUTCDay());
+    const capacityOf = (id: string) => {
+      const own = hours.filter((h) => h.userId === id);
+      if (!own.length) return days.filter((d) => d !== 0).length * WORK_HOURS_PER_DAY * 60;
+      return days.reduce((t, d) => t + own.filter((h) => h.weekday === d).reduce((u, h) => u + h.endMin - h.startMin, 0), 0);
+    };
+    return { hoursPerDay: WORK_HOURS_PER_DAY, fromHours: hours.length > 0, rows: [...per.entries()].map(([id, p]) => { const cap = capacityOf(id); return { id, name: names.get(id) ?? 'Staff', count: p.count, pct: cap ? Math.min(100, Math.round((p.minutes / cap) * 100)) : 0 }; }).sort((x, y) => y.pct - x.pct) };
+  });
+  out.services = run(async () => {
+    const rows = await db().appointment.groupBy({ by: ['itemId'], where: { AND: [apptWhere(a, b), { startAt: timeIn(r), status: { not: 'cancelled' }, kind: 'appointment' }] }, _count: true });
+    const done = await db().appointment.groupBy({ by: ['itemId'], where: { AND: [apptWhere(a, b), { startAt: timeIn(r), status: 'completed' }] }, _sum: { pricePaise: true } });
+    const items = await db().item.findMany({ where: { id: { in: rows.map((x) => x.itemId).filter((x): x is string => !!x) } }, select: { id: true, name: true } });
+    const name = new Map(items.map((x) => [x.id, x.name]));
+    const earned = new Map(done.map((x) => [x.itemId, n(x._sum.pricePaise)]));
+    return { rows: rows.map((x) => ({ id: x.itemId, name: x.itemId ? name.get(x.itemId) ?? 'Service' : 'No service', count: x._count, earned: earned.get(x.itemId) ?? 0 })).sort((p, q) => q.earned - p.earned || q.count - p.count).slice(0, 6) };
   });
   out.week = run(async () => {
     const rows = await db().appointment.findMany({ where: { AND: [apptWhere(a, b), { startAt: timeIn({ from: today, to: addDays(today, 6) }), status: { not: 'cancelled' } }] }, select: { startAt: true } });
@@ -585,13 +602,16 @@ export async function tasks(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
   const OPEN = { status: { in: ['todo' as const, 'in_progress' as const] } };
   const out: Record<string, unknown> = {};
   out.kpis = run(async () => {
-    const [open, overdue, done, donePrev] = await Promise.all([
+    const ap = s('tasks.approval.view');
+    const [open, overdue, done, donePrev, logged, waiting] = await Promise.all([
       db().task.count({ where: { AND: [scope, OPEN] } }),
       db().task.count({ where: { AND: [scope, OPEN, { dueAt: { lt: istStart(today) } }] } }),
       db().task.count({ where: { AND: [scope, { status: 'done', completedAt: timeIn(r) }] } }),
       compare ? db().task.count({ where: { AND: [scope, { status: 'done', completedAt: timeIn(prev) }] } }) : null,
+      db().taskTime.aggregate({ where: { workDate: dateIn(r), ...(t.scope === 'own' ? { userId: ctx.userId } : {}) }, _sum: { minutes: true } }),
+      ap ? db().approvalRequest.count({ where: { status: 'pending', approverId: ctx.userId } }) : null,
     ]);
-    return { open: { value: open }, overdue: { value: overdue }, done: { value: done, change: change(done, donePrev) } };
+    return { open: { value: open }, overdue: { value: overdue }, done: { value: done, change: change(done, donePrev) }, minutes: { value: n(logged._sum.minutes) }, approvals: waiting === null ? null : { value: waiting } };
   });
   out.people = run(async () => {
     const [all, late] = await Promise.all([
@@ -605,6 +625,18 @@ export async function tasks(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
       rows: all
         .map((x) => ({ id: x.assigneeId, name: !x.assigneeId ? 'Unassigned' : x.assigneeId === ctx.userId ? 'You' : names.get(x.assigneeId) ?? 'Someone', open: x._count, overdue: lateBy.get(x.assigneeId) ?? 0, pct: Math.round((x._count / max) * 100) }))
         .sort((a, z) => z.open - a.open),
+    };
+  });
+  out.projects = run(async () => {
+    const projects = await db().taskProject.findMany({ where: { status: { in: ['planning', 'active'] } }, orderBy: [{ dueOn: { sort: 'asc', nulls: 'last' } }], take: 6, select: { id: true, name: true, color: true, dueOn: true, status: true } });
+    const counts = projects.length ? await db().task.groupBy({ by: ['projectId', 'status'], where: { projectId: { in: projects.map((p) => p.id) }, parentId: null, status: { not: 'cancelled' } }, _count: true }) : [];
+    return {
+      rows: projects.map((p) => {
+        const mine = counts.filter((x) => x.projectId === p.id);
+        const total = mine.reduce((u, x) => u + x._count, 0);
+        const doneN = mine.filter((x) => x.status === 'done').reduce((u, x) => u + x._count, 0);
+        return { id: p.id, name: p.name, color: p.color, status: p.status, dueOn: p.dueOn, total, done: doneN, pct: total ? Math.round((doneN / total) * 100) : 0, late: !!p.dueOn && p.dueOn < dateOnly(today) };
+      }),
     };
   });
   out.due = run(async () => {
@@ -660,7 +692,7 @@ export async function myday(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
 }
 
 export const TAB_HANDLERS: Record<DashboardTab, (ctx: TenantCtx, s: Scoped, i: DashboardInput) => Promise<Record<string, unknown>>> = {
-  overview, myday, billing, sales, crm, bookings, finance, tasks,
+  overview, myday, billing, sales, purchase, inventory, crm, bookings, finance, tasks,
 };
 
 /** Which tabs this person gets: the module is on and the role can view it. */

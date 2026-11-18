@@ -62,7 +62,7 @@ describe('dashboard tabs per role', () => {
 describe('dashboard layout', () => {
   it('keeps the person order, adds new widgets at the end and drops hidden ones', () => {
     expect(visibleWidgets('overview', { order: ['trend', 'kpis', 'gone'], hidden: ['activity'] })).toEqual(['trend', 'kpis', 'inbox', 'today']);
-    expect(visibleWidgets('tasks')).toEqual(['kpis', 'people', 'due']);
+    expect(visibleWidgets('tasks')).toEqual(['kpis', 'projects', 'people', 'due']);
   });
 
   it('fills defaults for a first visit', () => {

@@ -13,12 +13,13 @@ import { formatPaise } from "@/lib/format"
 import { qty, type StockRow } from "@/lib/inventory"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
+import { StockMovement } from "@/components/reports/profit-stock"
+import { useReportTab } from "@/components/reports/kit"
 import { todayInIndia } from "@contracts/validation"
 
 // The less frequent questions about stock, in one place.
 
-const TABS = [["expiry", "Near Expiry"], ["ageing", "Stock Ageing"], ["date", "Stock on a Date"], ["serial", "Find Serial"]] as const
-type Tab = (typeof TABS)[number][0]
+const TABS = [["movement", "Stock Movement"], ["expiry", "Near Expiry"], ["ageing", "Stock Ageing"], ["date", "Stock on a Date"], ["serial", "Find Serial"]] as const
 
 function StockOnDate() {
   const [date, setDate] = React.useState(todayInIndia())
@@ -59,17 +60,22 @@ function FindSerial() {
   )
 }
 
-export default function StockReportsPage() {
-  const [tab, setTab] = React.useState<Tab>("expiry")
+function StockReportsPageInner() {
+  const [tab, setTab] = useReportTab(TABS)
   return (
     <div className="grid gap-4">
       <div className="flex w-fit flex-wrap gap-1 rounded-xl border p-1 text-sm" role="tablist" aria-label="Reports">
         {TABS.map(([key, label]) => <button key={key} role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={cn("rounded-lg px-3 py-1.5 font-medium text-muted-foreground", tab === key && "bg-primary text-primary-foreground")}>{label}</button>)}
       </div>
+      {tab === "movement" && <StockMovement />}
       {tab === "expiry" && <NearExpiryReport />}
       {tab === "ageing" && <StockAgeingReport />}
       {tab === "date" && <StockOnDate />}
       {tab === "serial" && <FindSerial />}
     </div>
   )
+}
+
+export default function StockReportsPage() {
+  return <React.Suspense><StockReportsPageInner /></React.Suspense>
 }

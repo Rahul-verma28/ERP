@@ -525,10 +525,10 @@ const bookings: Record<string, WidgetDef> = {
         <KpiSkeleton d={d} />
       ) : (
         <KpiRow>
-          <Kpi label="Appointments" value={d.total.value} change={d.total.change} absolute={(n) => String(n)} note="in this period" href="/app/m/bookings" />
+          <Kpi label="Appointments" value={d.total.value} change={d.total.change} absolute={(n) => String(n)} note={d.cancelled.value ? `${d.cancelled.value} cancelled` : "in this period"} href="/app/m/bookings" />
           <Kpi label="Completed" value={`${d.completed.value}${d.completed.rate !== null ? ` · ${d.completed.rate}%` : ""}`} note="of the ones not cancelled" />
           <Kpi label="No-shows" value={`${d.noShows.value}${d.noShows.rate !== null ? ` · ${d.noShows.rate}%` : ""}`} change={d.noShows.change} goodWhenDown absolute={(n) => String(n)} note="vs previous period" />
-          <Kpi label="Cancelled" value={d.cancelled.value} change={d.cancelled.change} goodWhenDown absolute={(n) => String(n)} note="vs previous period" />
+          {d.earned && <Kpi label="Earned" value={money(d.earned.value)} change={d.earned.change} absolute={(n) => money(n)} note="from completed visits" href="/app/m/bookings/reports" />}
         </KpiRow>
       ),
   },
@@ -549,9 +549,17 @@ const bookings: Record<string, WidgetDef> = {
             {d.rows.map((r: Any) => (
               <Meter key={r.id} label={r.name} value={`${r.pct}% · ${plural(r.count, "appt")}`} pct={r.pct} color={r.pct < 40 ? "#C27C0E" : undefined} />
             ))}
-            <p className="text-xs text-muted-foreground">Working hours: {d.hoursPerDay} h a day until staff schedules arrive</p>
+            <p className="text-xs text-muted-foreground">{d.fromHours ? "Against each person's working hours" : `Against ${d.hoursPerDay} h a day, Mon–Sat`} · <Link href="/app/m/bookings/staff" className="hover:underline">Staff &amp; Hours</Link></p>
           </>
         )}
+      </Widget>
+    ),
+  },
+  services: {
+    span: NARROW,
+    render: (d, c) => (
+      <Widget title="Earnings by service" right={<WidgetLink href="/app/m/bookings/reports">Report</WidgetLink>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.rows.length && "No appointments in this period."}>
+        {ok(d) && <Donut rows={d.rows.map((r: Any) => ({ label: r.name, value: `${money(r.earned)} · ${plural(r.count, "visit")}`, n: r.earned || r.count }))} />}
       </Widget>
     ),
   },
@@ -593,6 +601,141 @@ const bookings: Record<string, WidgetDef> = {
             </MiniTable>
             <p className="text-xs text-muted-foreground">Reminders 24 h and 2 h before cut no-shows (Settings › Notifications)</p>
           </>
+        )}
+      </Widget>
+    ),
+  },
+}
+
+// ── Purchase ──
+
+const purchase: Record<string, WidgetDef> = {
+  kpis: {
+    span: FULL,
+    render: (d) =>
+      !ok(d) ? (
+        <KpiSkeleton d={d} />
+      ) : (
+        <KpiRow>
+          <Kpi label="Purchased" value={money(d.purchased.value)} change={d.purchased.change} absolute={(n) => money(n)} note="bills less returns" href="/app/m/purchase" />
+          <Kpi label="Paid to suppliers" value={money(d.paid.value)} change={d.paid.change} absolute={(n) => money(n)} note="in this period" href="/app/m/purchase/payments" />
+          <Kpi label="To pay" value={money(d.toPay.value)} note={plural(d.toPay.bills, "bill")} href="/app/m/purchase/reports?tab=payables" />
+          <Kpi label="Overdue" value={money(d.overdue.value)} note={d.overdue.bills ? `${plural(d.overdue.bills, "bill")} past due` : "nothing late"} tone={d.overdue.bills ? "red" : undefined} />
+        </KpiRow>
+      ),
+  },
+  trend: {
+    span: WIDE,
+    render: (d, c) => (
+      <Widget title={`Purchased vs paid · ${formatDate(c.q.from)} – ${formatDate(c.q.to)}`} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && d.buckets.every((b: Any) => !b.purchased && !b.paid) && "No purchases in this period."}>
+        {ok(d) && <AreaChart format={money} labels={["Purchased", "Paid"]} rows={d.buckets.map((b: Any) => ({ label: b.label, a: b.purchased, b: b.paid, title: `${b.from === b.to ? formatDate(b.from) : `${formatDate(b.from)} – ${formatDate(b.to)}`}: ${money(b.purchased)} · paid ${money(b.paid)}` }))} />}
+      </Widget>
+    ),
+  },
+  suppliers: {
+    span: NARROW,
+    render: (d, c) => (
+      <Widget title="Top suppliers" right={<WidgetLink href="/app/m/purchase/suppliers">Suppliers</WidgetLink>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.rows.length && "No purchases in this period."}>
+        {ok(d) && d.rows.map((r: Any) => <Meter key={r.id ?? r.name} href={r.id ? `/app/m/purchase/suppliers/${r.id}` : undefined} label={r.name} value={`${money(r.amount)} · ${plural(r.bills, "bill")}`} pct={r.pct} />)}
+      </Widget>
+    ),
+  },
+  due: {
+    span: FULL,
+    render: (d, c) => (
+      <Widget title={ok(d) ? `Bills to pay · overdue and next 7 days · ${d.rows.length}` : "Bills to pay"} right={<WidgetLink href="/app/m/purchase/reports?tab=payables">Payables</WidgetLink>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.rows.length && "Nothing due in the next 7 days."}>
+        {ok(d) && (
+          <MiniTable>
+            <thead>
+              <tr>
+                <th className={th}>Due</th>
+                <th className={th}>Bill</th>
+                <th className={th}>Supplier</th>
+                <th className={cn(th, "text-right")}>To pay</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.rows.map((r: Any) => (
+                <tr key={r.id}>
+                  <td className={cn(td, "w-32", r.daysLate && "text-red-700 dark:text-red-400")}>{!r.dueDate ? "No due date" : r.daysLate ? `${r.daysLate} day${r.daysLate === 1 ? "" : "s"} late` : formatDate(r.dueDate)}</td>
+                  <td className={td}>
+                    <Link href={`/app/m/purchase/${r.id}`} className="font-mono text-xs hover:underline">{r.number}</Link>
+                    {r.ref && <span className="ml-1.5 text-xs text-muted-foreground">({r.ref})</span>}
+                  </td>
+                  <td className={td}>{r.supplier}</td>
+                  <td className={cn(td, "text-right font-semibold tabular-nums")}>{money(r.balancePaise)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </MiniTable>
+        )}
+      </Widget>
+    ),
+  },
+}
+
+// ── Inventory ──
+
+const inventory: Record<string, WidgetDef> = {
+  kpis: {
+    span: FULL,
+    render: (d) =>
+      !ok(d) ? (
+        <KpiSkeleton d={d} />
+      ) : (
+        <KpiRow>
+          <Kpi label="Stock value" value={money(d.value.value)} note={`${plural(d.value.items, "item")} in stock`} href="/app/m/inventory" />
+          <Kpi label="Low on stock" value={d.low.value} note={d.low.value ? "at or under the low-stock level" : "all above the level"} tone={d.low.value ? "red" : undefined} href="/app/m/inventory?low=1" />
+          <Kpi label="Out of stock" value={d.out.value} note="none left" tone={d.out.value ? "red" : undefined} href="/app/m/inventory" />
+          <Kpi label="Expiring in 30 days" value={d.expiring.value} note={d.expiring.expired ? `${plural(d.expiring.expired, "batch")} already expired` : "batches"} tone={d.expiring.expired ? "red" : undefined} href="/app/m/inventory/reports?tab=expiry" />
+        </KpiRow>
+      ),
+  },
+  low: {
+    span: WIDE,
+    render: (d, c) => (
+      <Widget title={ok(d) ? `Low on stock · ${d.rows.length}` : "Low on stock"} right={<WidgetLink href="/app/m/inventory?low=1">Stock</WidgetLink>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.rows.length && "Everything is above its low-stock level."}>
+        {ok(d) && (
+          <MiniTable>
+            <thead>
+              <tr>
+                <th className={th}>Item</th>
+                <th className={cn(th, "text-right")}>Available</th>
+                <th className={cn(th, "text-right")}>Low at</th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.rows.map((r: Any) => (
+                <tr key={r.id}>
+                  <td className={td}>
+                    <Link href={`/app/m/catalog/${r.id}?tab=stock`} className="hover:underline">{r.name}</Link>
+                  </td>
+                  <td className={cn(td, "text-right tabular-nums", r.quantity <= 0 && "font-semibold text-red-700 dark:text-red-400")}>{r.quantity} {r.unit}</td>
+                  <td className={cn(td, "text-right tabular-nums text-muted-foreground")}>{r.reorderLevel ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </MiniTable>
+        )}
+      </Widget>
+    ),
+  },
+  movers: {
+    span: NARROW,
+    render: (d, c) => (
+      <Widget title="Fast movers" right={<span className="text-xs text-muted-foreground">sold in this period</span>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.rows.length && "Nothing sold from stock in this period."}>
+        {ok(d) && d.rows.map((r: Any) => <Meter key={r.id} href={`/app/m/catalog/${r.id}`} label={r.name} value={`${r.quantity} ${r.unit}`} pct={r.pct} />)}
+      </Widget>
+    ),
+  },
+  warehouses: {
+    span: FULL,
+    render: (d, c) => (
+      <Widget title="Stock by warehouse" right={<WidgetLink href="/app/m/inventory/warehouses">Warehouses</WidgetLink>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.total && "No stock yet."}>
+        {ok(d) && (
+          <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+            {d.rows.map((r: Any) => <Meter key={r.id} label={r.name} value={`${money(r.valuePaise)} · ${r.pct}% · ${plural(r.items, "item")}`} pct={r.pct} />)}
+          </div>
         )}
       </Widget>
     ),
@@ -697,11 +840,12 @@ const tasks: Record<string, WidgetDef> = {
       !ok(d) ? (
         <KpiSkeleton d={d} />
       ) : (
-        <div className="grid grid-cols-3 gap-3">
-          <Kpi label="Open" value={d.open.value} note="to do or in progress" href="/app/m/tasks" />
-          <Kpi label="Overdue" value={d.overdue.value} note={d.overdue.value ? "past their due date" : "none late"} tone={d.overdue.value ? "red" : undefined} />
+        <KpiRow>
+          <Kpi label="Open" value={d.open.value} note={d.approvals?.value ? `${plural(d.approvals.value, "approval")} waiting for you` : "to do or in progress"} href={d.approvals?.value ? "/app/m/tasks/approvals" : "/app/m/tasks"} />
+          <Kpi label="Overdue" value={d.overdue.value} note={d.overdue.value ? "past their due date" : "none late"} tone={d.overdue.value ? "red" : undefined} href="/app/m/tasks?view=overdue" />
           <Kpi label="Done" value={d.done.value} change={d.done.change} absolute={(n) => String(n)} note="in this period" />
-        </div>
+          {d.minutes && <Kpi label="Time logged" value={`${Math.floor(d.minutes.value / 60)}h${d.minutes.value % 60 ? ` ${d.minutes.value % 60}m` : ""}`} note="in this period" href="/app/m/tasks/reports" />}
+        </KpiRow>
       ),
   },
   people: {
@@ -709,6 +853,18 @@ const tasks: Record<string, WidgetDef> = {
     render: (d, c) => (
       <Widget title="Open tasks by person" right={<span className="text-xs text-muted-foreground">open · overdue</span>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.rows.length && "No open tasks."}>
         {ok(d) && d.rows.map((r: Any) => <Meter key={r.id ?? "none"} label={r.name} value={`${r.open}${r.overdue ? ` · ${r.overdue} overdue` : ""}`} pct={r.pct} color={r.overdue ? "#C2410C" : r.id ? undefined : SHADES[4]} />)}
+      </Widget>
+    ),
+  },
+  projects: {
+    span: FULL,
+    render: (d, c) => (
+      <Widget title="Projects" right={<WidgetLink href="/app/m/tasks/projects">All projects</WidgetLink>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.rows.length && "No active projects."}>
+        {ok(d) && (
+          <div className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+            {d.rows.map((r: Any) => <Meter key={r.id} href={`/app/m/tasks/projects/${r.id}`} label={r.name} value={`${r.done}/${r.total} done${r.dueOn ? ` · ${r.late ? "was due" : "due"} ${formatDate(r.dueOn)}` : ""}`} pct={r.pct} color={r.late ? "#C2410C" : undefined} />)}
+          </div>
+        )}
       </Widget>
     ),
   },
@@ -797,4 +953,4 @@ const myday: Record<string, WidgetDef> = {
   },
 }
 
-export const TAB_WIDGETS: Record<DashboardTab, Record<string, WidgetDef>> = { overview, myday, billing, sales, crm, bookings, finance, tasks }
+export const TAB_WIDGETS: Record<DashboardTab, Record<string, WidgetDef>> = { overview, myday, billing, sales, purchase, inventory, crm, bookings, finance, tasks }

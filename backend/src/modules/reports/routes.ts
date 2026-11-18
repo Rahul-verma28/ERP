@@ -16,6 +16,7 @@ import { DASHBOARD_TABS, DASHBOARD_WIDGETS, dashboardWithDefaults, daysBetween, 
 import { TAB_HANDLERS, availableTabs, dashboardConfig, scoper } from './dashboard';
 import { search } from './search';
 import * as sales from './sales';
+import * as more from './more';
 
 // Home dashboard (RPT-01): one call, widgets only for modules the role can see,
 // every figure filtered by that module's data scope. Totals are computed here, never in the UI.
@@ -186,6 +187,16 @@ router.get('/reports/gst/download', requirePermission('reports.report.export'), 
   res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
   res.send(file.body);
 }));
+
+// ── Profit, stock movement, HR registers, bookings and time ──
+type Q = Record<string, string>;
+router.get('/reports/profit', requirePermission('reports.report.view'), validate(more.Period, 'query'), tx(async (req, res) => { res.json(await more.profitByItem(req.ctx!, req.query as Q as { from: string; to: string })); }));
+router.get('/reports/stock-movement', requirePermission('inventory.stock.view'), validate(more.Period.and(z.object({ locationId: z.string().uuid().optional() })), 'query'), tx(async (req, res) => { res.json(await more.stockMovement(req.ctx!, req.query as Q as { from: string; to: string; locationId?: string })); }));
+router.get('/reports/attendance', requirePermission('hr.attendance.view'), validate(more.MonthQuery, 'query'), tx(async (req, res) => { res.json(await more.attendanceSummary(req.ctx!, (req.query as Q).month)); }));
+router.get('/reports/payroll', requirePermission('hr.payroll.view'), validate(more.MonthQuery, 'query'), tx(async (req, res) => { res.json(await more.payrollRegister(req.ctx!, (req.query as Q).month)); }));
+router.get('/reports/leave', requirePermission('hr.leave.view'), validate(more.Period, 'query'), tx(async (req, res) => { res.json(await more.leaveReport(req.ctx!, req.query as Q as { from: string; to: string })); }));
+router.get('/reports/bookings', requirePermission('bookings.appointment.view'), validate(more.BookingReport, 'query'), tx(async (req, res) => { res.json(await more.bookingReport(req.ctx!, req.query as never)); }));
+router.get('/reports/time', requirePermission('tasks.task.view'), validate(more.TimeReport, 'query'), tx(async (req, res) => { res.json(await more.timeReport(req.ctx!, req.query as never)); }));
 
 router.get('/dashboard/config', tx(async (req, res) => {
   const ctx = req.ctx!;

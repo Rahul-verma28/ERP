@@ -12,6 +12,7 @@ import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
 import { cn } from "@/lib/utils"
+import { useReportTab } from "@/components/reports/kit"
 import { todayInIndia } from "@contracts/validation"
 
 // Purchase reports, each on the shared table: what you owe by age, the purchase register, the input
@@ -150,10 +151,10 @@ function Pending() {
   )
 }
 
-export default function PurchaseReportsPage() {
+function PurchaseReportsPageInner() {
   const { can, me } = useAuth()
   const tabs = [["payables", "Payables"], ["register", "Purchase Register"], ["itc", "ITC Register"], ...(me?.tenant?.purchaseOrders ? [["pending", "Pending Orders"]] : [])] as [string, string][]
-  const [tab, setTab] = React.useState("payables")
+  const [tab, setTab] = useReportTab(tabs)
   if (!can("inventory.supplier_bill.view")) return <PageHeader title="Purchase reports" description="You don't have access to this. Ask your admin." />
   return (
     <div className="grid gap-4">
@@ -166,4 +167,8 @@ export default function PurchaseReportsPage() {
       {tab === "pending" && <Pending />}
     </div>
   )
+}
+
+export default function PurchaseReportsPage() {
+  return <React.Suspense><PurchaseReportsPageInner /></React.Suspense>
 }
