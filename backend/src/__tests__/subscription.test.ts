@@ -92,9 +92,9 @@ describe('predefined roles', () => {
     expect(cashier.some((k) => k.startsWith('billing.refund') || k.endsWith('.delete'))).toBe(false);
   });
 
-  it('there are 4 core and 17 module tenant roles', () => {
+  it('there are 4 core and 18 module tenant roles', () => {
     const tenant = ROLES.filter((r) => r.layer === 'tenant');
     expect(tenant.filter((r) => r.requiredModules.length === 0)).toHaveLength(4);
-    expect(tenant.filter((r) => r.requiredModules.length > 0)).toHaveLength(17);
+    expect(tenant.filter((r) => r.requiredModules.length > 0)).toHaveLength(18);
   });
 });

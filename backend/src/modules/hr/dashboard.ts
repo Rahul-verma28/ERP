@@ -3,6 +3,7 @@ import type { TenantCtx } from '../../kernel/context';
 import { todayIST } from '../../kernel/gst';
 import { bundle, nameParts, namesFrom } from './bundle';
 import { ensureHr, HrConfig } from './setup';
+import { hrReach } from './employees';
 
 // HR home: who is in today, who is away, what waits for approval, and what is coming up.
 // Everything is read in ONE database round trip (see bundle.ts), then worked out here.
@@ -43,6 +44,12 @@ export async function hrDashboard(ctx: TenantCtx) {
   let b = await read(ctx, today);
   // A business opening HR for the first time gets its default shift and leave types
   if (!b._shift.length || !b.types.length) { await ensureHr(ctx); b = await read(ctx, today); }
+  // A team manager (or branch-scoped HR) sees only the people in reach; the payroll run stays company-wide
+  const reach = await hrReach(ctx);
+  if (reach) {
+    const has = (r: { employeeId?: unknown; id?: unknown }, k: 'employeeId' | 'id' = 'employeeId') => reach.includes(r[k] as string);
+    b = { ...b, emps: b.emps.filter((e) => has(e, 'id')), attToday: b.attToday.filter((x) => has(x)), pending: b.pending.filter((x) => has(x)), onLeave: b.onLeave.filter((x) => has(x)), recent: b.recent.filter((x) => has(x)), run: [] };
+  }
   const lookup = namesFrom(b);
   const cfg = HrConfig.parse(b.settings[0]?.data ?? {});
   const typeOf = (id: string) => b.types.find((x) => x.id === id);

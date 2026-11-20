@@ -5,7 +5,7 @@ import type { TenantCtx } from '../../kernel/context';
 import { todayIST } from '../../kernel/gst';
 import { DateStr } from '../../kernel/query';
 import { audit } from '../audit/service';
-import { employeeScope, myEmployee } from './employees';
+import { assertReach, employeeScope, hrReach, myEmployee } from './employees';
 import { getConfig, listLeaveTypes, shiftMinutes, toMinutes, type HrConfig } from './setup';
 import { Prisma } from '@prisma/client';
 import { bundle, nameParts, namesFrom } from './bundle';
@@ -62,6 +62,7 @@ const employedOn = (e: { joinedOn: Date; exitOn: Date | null }, date: string) =>
 export async function markAttendance(ctx: TenantCtx, b: z.infer<typeof MarkInput>) {
   if (b.date > todayIST()) throw new AppError('VALIDATION_FAILED', "Attendance can't be marked for a future date.", { fields: { date: 'In the future' } });
   const ids = [...new Set(b.rows.map((r) => r.employeeId))];
+  await assertReach(ctx, ids);
   const [emps, shifts, leaves] = await Promise.all([
     db().employee.findMany({ where: { tenantId: ctx.tenantId, id: { in: ids } } }),
     db().hrShift.findMany({ where: { tenantId: ctx.tenantId } }),
@@ -88,6 +89,7 @@ export async function markAttendance(ctx: TenantCtx, b: z.infer<typeof MarkInput
 }
 
 export async function clearAttendance(ctx: TenantCtx, employeeId: string, date: string) {
+  await assertReach(ctx, [employeeId]);
   const row = await db().attendance.findFirst({ where: { tenantId: ctx.tenantId, employeeId, date: day(date) } });
   if (!row) return;
   if (row.source === 'leave') throw new AppError('CONFLICT', 'This day is approved leave. Cancel the leave instead.');
@@ -128,7 +130,7 @@ export async function myToday(ctx: TenantCtx) {
 export async function dayView(ctx: TenantCtx, date: string) {
   const [cfg, holidays, emps, rows, shifts] = await Promise.all([
     getConfig(ctx), holidaysBetween(ctx, date, date),
-    db().employee.findMany({ where: { AND: [employeeScope(ctx), { joinedOn: { lte: day(date) } }, { OR: [{ exitOn: null }, { exitOn: { gte: day(date) } }] }] }, orderBy: { name: 'asc' } }),
+    db().employee.findMany({ where: { AND: [await employeeScope(ctx), { joinedOn: { lte: day(date) } }, { OR: [{ exitOn: null }, { exitOn: { gte: day(date) } }] }] }, orderBy: { name: 'asc' } }),
     db().attendance.findMany({ where: { tenantId: ctx.tenantId, date: day(date) } }),
     db().hrShift.findMany({ where: { tenantId: ctx.tenantId } }),
   ]);
@@ -156,7 +158,7 @@ export async function monthView(ctx: TenantCtx, month: string, employeeId?: stri
   const today = todayIST();
   const [cfg, holidays, emps, rows] = await Promise.all([
     getConfig(ctx), holidaysBetween(ctx, from, to),
-    db().employee.findMany({ where: { AND: [employeeScope(ctx), employeeId ? { id: employeeId } : {}, { joinedOn: { lte: day(to) } }, { OR: [{ exitOn: null }, { exitOn: { gte: day(from) } }] }] }, orderBy: { name: 'asc' } }),
+    db().employee.findMany({ where: { AND: [await employeeScope(ctx), employeeId ? { id: employeeId } : {}, { joinedOn: { lte: day(to) } }, { OR: [{ exitOn: null }, { exitOn: { gte: day(from) } }] }] }, orderBy: { name: 'asc' } }),
     db().attendance.findMany({ where: { tenantId: ctx.tenantId, date: { gte: day(from), lte: day(to) } } }),
   ]);
   const days = Array.from({ length: last }, (_, i) => addDays(from, i));
@@ -217,7 +219,7 @@ export async function balances(ctx: TenantCtx, opts: { employeeId?: string; date
   const year = leaveYear(cfg, opts.date ?? todayIST());
   const [types, emps, apps] = await Promise.all([
     listLeaveTypes(ctx),
-    db().employee.findMany({ where: { AND: [employeeScope(ctx), opts.employeeId ? { id: opts.employeeId } : {}, { status: { not: 'exited' } }] }, orderBy: { name: 'asc' } }),
+    db().employee.findMany({ where: { AND: [await employeeScope(ctx), opts.employeeId ? { id: opts.employeeId } : {}, { status: { not: 'exited' } }] }, orderBy: { name: 'asc' } }),
     db().leaveApplication.findMany({ where: { tenantId: ctx.tenantId, status: { in: ['approved', 'pending'] }, fromDate: { gte: day(year.from), lte: day(year.to) } } }),
   ]);
   const active = types.filter((t) => t.isActive);
@@ -243,6 +245,7 @@ async function leaveData(ctx: TenantCtx, b: z.infer<typeof LeaveInput>, exceptId
     if (!me) throw new AppError('VALIDATION_FAILED', 'Choose the employee.', { fields: { employeeId: 'Choose the employee' } });
     if (ctx.scope === 'own' || !employeeId) employeeId = me.id;
   }
+  await assertReach(ctx, [employeeId]);
   const [cfg, e, type, holidays] = await Promise.all([
     getConfig(ctx),
     db().employee.findFirst({ where: { id: employeeId, tenantId: ctx.tenantId } }),
@@ -283,10 +286,8 @@ export async function updateLeave(ctx: TenantCtx, id: string, b: z.infer<typeof 
 async function findLeave(ctx: TenantCtx, id: string) {
   const l = await db().leaveApplication.findFirst({ where: { id, tenantId: ctx.tenantId } });
   if (!l) throw notFound('Leave application');
-  if (ctx.scope === 'own') {
-    const me = await myEmployee(ctx);
-    if (!me || me.id !== l.employeeId) throw notFound('Leave application');
-  }
+  const reach = await hrReach(ctx);
+  if (reach && !reach.includes(l.employeeId)) throw notFound('Leave application');
   return l;
 }
 
@@ -296,6 +297,7 @@ export const DecideInput = z.object({ status: z.enum(['approved', 'rejected']), 
 export async function decideLeave(ctx: TenantCtx, id: string, b: z.infer<typeof DecideInput>) {
   const l = await findLeave(ctx, id);
   if (l.status !== 'pending') throw new AppError('CONFLICT', `This leave is already ${l.status}.`);
+  if (ctx.scope !== 'all' && (await myEmployee(ctx))?.id === l.employeeId) throw new AppError('PERMISSION_DENIED', 'You can\'t decide your own leave. Your manager or HR will.');
   if (b.status === 'rejected' && !b.comment) throw new AppError('VALIDATION_FAILED', 'Say why it is rejected.', { fields: { comment: 'Needed to reject' } });
   if (b.status === 'approved') await fillLeave(ctx, l);
   await db().leaveApplication.update({ where: { id }, data: { status: b.status, comment: b.comment ?? null, decidedBy: ctx.userId, decidedAt: new Date(), version: { increment: 1 } } });
@@ -342,9 +344,9 @@ export async function listLeaves(ctx: TenantCtx, q: z.infer<typeof LeaveList>) {
       order by from_date desc, created_at desc limit 2000`,
   });
   const lookup = namesFrom(b);
-  const mine = ctx.scope === 'own' ? (b.me[0]?.id as string | undefined) ?? null : undefined;
-  if (mine === null) return { data: [], counts: { all: 0, pending: 0, approved: 0, rejected: 0, cancelled: 0 } };
-  const base = b.rows.filter((l) => !mine || l.employeeId === mine);
+  const reach = await hrReach(ctx);
+  if (reach && !reach.length) return { data: [], counts: { all: 0, pending: 0, approved: 0, rejected: 0, cancelled: 0 } };
+  const base = b.rows.filter((l) => !reach || reach.includes(l.employeeId as string));
   const c = (s: string) => base.filter((l) => l.status === s).length;
   return {
     data: base.filter((l) => (!q.status || l.status === q.status) && (!q.leaveTypeId || l.leaveTypeId === q.leaveTypeId)).map((l) => {
@@ -370,10 +372,10 @@ export async function leaveWeek(ctx: TenantCtx, start: string) {
   });
   const lookup = namesFrom(b);
   const cfg = HrConfigSchema.parse(b.settings[0]?.data ?? {});
-  const mine = ctx.scope === 'own' ? (b.me[0]?.id as string | undefined) ?? '-' : null;
+  const reach = await hrReach(ctx);
   const days = Array.from({ length: 7 }, (_, i) => iso(new Date(day(start).getTime() + i * 86_400_000)));
-  const emps = b.emps.filter((e) => !mine || e.id === mine);
-  const leaves = b.leaves.filter((l) => !mine || l.employeeId === mine);
+  const emps = b.emps.filter((e) => !reach || reach.includes(e.id as string));
+  const leaves = b.leaves.filter((l) => !reach || reach.includes(l.employeeId as string));
   return {
     start, end, today: todayIST(),
     days: days.map((d) => ({ date: d, weekday: day(d).getUTCDay(), working: cfg.workingDays.includes(day(d).getUTCDay()), holiday: b.holidays.find((h) => iso(h.fromDate) <= d && iso(h.toDate) >= d)?.name ?? null })),

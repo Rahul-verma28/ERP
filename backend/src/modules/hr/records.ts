@@ -6,7 +6,7 @@ import type { TenantCtx } from '../../kernel/context';
 import { todayIST } from '../../kernel/gst';
 import { DateStr, Paise } from '../../kernel/query';
 import { audit } from '../audit/service';
-import { myEmployee, names } from './employees';
+import { hrReach, myEmployee, names } from './employees';
 import { hireCandidate } from './people';
 import { Prisma } from '@prisma/client';
 import { bundle, nameParts, namesFrom } from './bundle';
@@ -227,8 +227,10 @@ export async function listRecords(ctx: TenantCtx, kind: RecordKind, refId?: stri
 // ── Payslips across all runs, and acknowledgments across all documents ──
 
 export async function allPayslips(ctx: TenantCtx, q: { month?: string; status?: string; employeeId?: string }) {
-  const own = ctx.scope === 'own' ? await myEmployee(ctx) : null;
-  if (ctx.scope === 'own' && !own) return { data: [] };
+  // Salaries stay private: below "all" a person sees only their own payslips
+  const self = (ctx.scope ?? 'own') !== 'all';
+  const own = self ? await myEmployee(ctx) : null;
+  if (self && !own) return { data: [] };
   const [rows, lookup] = await Promise.all([
     db().payslip.findMany({
       where: { tenantId: ctx.tenantId, ...(own ? { employeeId: own.id, run: { status: { not: 'draft' } } } : q.employeeId ? { employeeId: q.employeeId } : {}), ...(q.status ? { status: q.status } : {}), ...(q.month ? { run: { month: q.month } } : {}) },
@@ -249,8 +251,8 @@ export async function acknowledgments(ctx: TenantCtx) {
     emps: Prisma.sql`select id, name, code, department_id from employees where tenant_id = ${t}::uuid and status <> 'exited' order by name`,
   });
   const lookup = namesFrom(b);
-  const own = ctx.scope === 'own' ? (b.me[0]?.id as string | undefined) ?? '-' : null;
-  const rows = b.docs.flatMap((d) => b.emps.filter((e) => (!own || e.id === own) && (!d.departmentIds.length || (e.departmentId && d.departmentIds.includes(e.departmentId)))).map((e) => {
+  const reach = await hrReach(ctx);
+  const rows = b.docs.flatMap((d) => b.emps.filter((e) => (!reach || reach.includes(e.id as string)) && (!d.departmentIds.length || (e.departmentId && d.departmentIds.includes(e.departmentId)))).map((e) => {
     const a = b.acks.find((x) => x.postId === d.id && x.employeeId === e.id);
     const by = d.approvedBy ?? d.createdBy;
     return { id: `${d.id}:${e.id}`, postId: d.id, document: d.title, category: d.category, url: d.url, effectiveOn: d.startsOn, employeeId: e.id, employee: e.name, employeeCode: e.code, employeeSub: lookup.sub.get(e.id) ?? null, department: e.departmentId ? lookup.dept.get(e.departmentId) ?? null : null, status: a ? 'acknowledged' : 'pending', ackedAt: a?.ackedAt ?? null, assignedOn: d.approvedAt ?? d.createdAt, assignedBy: by ? lookup.user.get(by) ?? null : null };

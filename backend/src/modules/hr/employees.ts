@@ -58,9 +58,39 @@ export const EmployeeList = z.object({
   branchId: z.string().uuid().optional(),
 });
 
-/** Employees this person may see: everyone, or with the "own" scope only their own record */
-export function employeeScope(ctx: TenantCtx): Prisma.EmployeeWhereInput {
-  return ctx.scope === 'own' ? { tenantId: ctx.tenantId, memberId: ctx.memberId } : { tenantId: ctx.tenantId };
+/**
+ * The employees this person may see and act on, by the permission's scope: null = everyone;
+ * branch = their branches' people; own = their own record; team = themselves and everyone who
+ * reports to them, at any depth (from each employee's manager).
+ */
+export async function hrReach(ctx: TenantCtx): Promise<string[] | null> {
+  const scope = ctx.scope ?? 'own';
+  if (scope === 'all') return null;
+  if (scope === 'branch') {
+    if (!ctx.branchIds.length) return null;
+    const rows = await db().employee.findMany({ where: { tenantId: ctx.tenantId, OR: [{ branchId: { in: ctx.branchIds } }, { branchId: null }] }, select: { id: true } });
+    return rows.map((r) => r.id);
+  }
+  if (scope === 'own') return (await db().employee.findMany({ where: { tenantId: ctx.tenantId, memberId: ctx.memberId }, select: { id: true } })).map((r) => r.id);
+  const rows = await db().$queryRaw<{ id: string }[]>`
+    with recursive team as (
+      select id from employees where tenant_id = ${ctx.tenantId}::uuid and member_id = ${ctx.memberId}::uuid
+      union
+      select e.id from employees e join team t on e.manager_id = t.id where e.tenant_id = ${ctx.tenantId}::uuid
+    ) select id from team`;
+  return rows.map((r) => r.id);
+}
+
+/** Employees this person may see, as a filter (see hrReach) */
+export async function employeeScope(ctx: TenantCtx): Promise<Prisma.EmployeeWhereInput> {
+  const reach = await hrReach(ctx);
+  return reach ? { tenantId: ctx.tenantId, id: { in: reach } } : { tenantId: ctx.tenantId };
+}
+
+/** Stops an action on someone outside this person's reach */
+export async function assertReach(ctx: TenantCtx, employeeIds: string[]) {
+  const reach = await hrReach(ctx);
+  if (reach && employeeIds.some((id) => !reach.includes(id))) throw new AppError('PERMISSION_DENIED', 'This person is not in your team.');
 }
 
 /** The employee record of whoever is signed in, for self-service */
@@ -181,7 +211,8 @@ export async function listEmployees(ctx: TenantCtx, q: z.infer<typeof EmployeeLi
   // One round trip: every employee of the business plus the names, then filtered here
   const b = await bundle({ ...nameParts(ctx.tenantId), rows: Prisma.sql`select * from employees where tenant_id = ${ctx.tenantId}::uuid order by name` });
   const n = namesFrom(b);
-  const all = b.rows.filter((e) => ctx.scope !== 'own' || e.memberId === ctx.memberId);
+  const reach = await hrReach(ctx);
+  const all = b.rows.filter((e) => !reach || reach.includes(e.id as string));
   const text = q.q?.toLowerCase();
   const rows = all
     .filter((e) => (q.status === 'current' ? e.status !== 'exited' : !q.status || e.status === q.status))
@@ -200,7 +231,7 @@ export async function listEmployees(ctx: TenantCtx, q: z.infer<typeof EmployeeLi
 }
 
 export async function getEmployee(ctx: TenantCtx, id: string) {
-  const e = await db().employee.findFirst({ where: { AND: [employeeScope(ctx), { id }] } });
+  const e = await db().employee.findFirst({ where: { AND: [await employeeScope(ctx), { id }] } });
   if (!e) throw notFound('Employee');
   const [n, items, member] = await Promise.all([
     names(ctx),

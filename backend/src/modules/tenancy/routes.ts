@@ -25,6 +25,7 @@ import { zReason } from '../../kernel/zodRules';
 import { INDUSTRIES, industryTemplateKey } from '../../contracts/workspace';
 import { zEmail, zMobileIN } from '../../kernel/zodRules';
 import { acceptHandover, handoverForOwner } from '../console/onboarding';
+import * as users from './users';
 
 // Platform routes for the signed-in tenant (LLD §10.2, §10.3) plus a few public lookups.
 
@@ -214,6 +215,18 @@ router.post('/invitations', requirePermission('tenant.member.create'), validate(
 router.delete('/invitations/:id', requirePermission('tenant.member.create'), validate(id, 'params'), tx(async (req, res) => {
   await tenancy.revokeInvitation(String(req.params.id));
   res.status(204).end();
+}));
+router.get('/users', requirePermission('tenant.member.view'), tx(async (req, res) => {
+  res.json(await users.listUsers(req.ctx!));
+}));
+router.get('/users/:id', requirePermission('tenant.member.view'), validate(id, 'params'), tx(async (req, res) => {
+  res.json(await users.getUser(req.ctx!, String(req.params.id)));
+}));
+router.post('/invitations/:id/resend', requirePermission('tenant.member.create'), validate(id, 'params'), tx(async (req, res) => {
+  res.json(await users.resendInvitation(req.ctx!, String(req.params.id)));
+}));
+router.post('/members/:id/sign-out', requirePermission('tenant.member.edit'), validate(id, 'params'), tx(async (req, res) => {
+  res.json(await users.signOutEverywhere(req.ctx!, String(req.params.id)));
 }));
 router.patch('/members/:id', requirePermission('tenant.member.edit'), validate(id, 'params'), validate(tenancy.MemberPatch), tx(async (req, res) => {
   res.json(await tenancy.updateMember(req.ctx!, String(req.params.id), req.body));

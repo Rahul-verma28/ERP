@@ -66,7 +66,7 @@ export default function StaffPage() {
           meta: (rows) => ({ sums: { booked: rows.reduce((a, p) => a + p.bookedThisWeek, 0), busy: rows.length ? Math.round(rows.reduce((a, p) => a + p.bookedPct, 0) / rows.length) : 0, hours: rows.reduce((a, p) => a + p.weekHours, 0), offNow: rows.filter((p) => p.offNow).length } }),
         })}
         params={{ v: String(version) }}
-        header={{ title: "Staff & Hours", description: "Each person's working week and time off. Bookings only go inside these hours.", primary: canEdit ? <Button className="h-10 rounded-xl px-4 font-semibold" onClick={() => setOff({})}><Plus /> Add time off</Button> : undefined, more: [{ label: "Team and roles", href: "/app/settings/team" }] }}
+        header={{ title: "Staff & Hours", description: "Each person's working week and time off. Bookings only go inside these hours.", primary: canEdit ? <Button className="h-10 rounded-xl px-4 font-semibold" onClick={() => setOff({})}><Plus /> Add time off</Button> : undefined, more: [{ label: "Team and roles", href: "/app/users" }] }}
         columns={columns}
         searchPlaceholder="Search people"
         presets={[{ key: "all", label: "Everyone", params: {}, countKey: "all" }, { key: "off", label: "Time off", params: { show: "off" }, countKey: "off" }, { key: "default", label: "Usual hours", params: { show: "default" }, countKey: "default" }]}
@@ -85,7 +85,7 @@ export default function StaffPage() {
         }}
         rowClick={canEdit ? (p) => setHours(p) : undefined}
         exportName="staff-hours"
-        emptyState={<EmptyState icon={Users} title="No staff" description="Add the people who take bookings in Settings › Team." action={<Link href="/app/settings/team" className={buttonVariants()}>Open team</Link>} />}
+        emptyState={<EmptyState icon={Users} title="No staff" description="Invite the people who take bookings in Users, then set their hours here." action={<Link href="/app/users" className={buttonVariants()}>Open Users</Link>} />}
       />
       {hours && <HoursDialog person={hours} onClose={() => setHours(null)} onSaved={() => { setHours(null); reload() }} />}
       {off && <TimeOffDialog personId={off.personId} onClose={() => setOff(null)} onSaved={() => { setOff(null); reload() }} />}

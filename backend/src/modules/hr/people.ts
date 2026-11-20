@@ -5,7 +5,7 @@ import type { TenantCtx } from '../../kernel/context';
 import { todayIST } from '../../kernel/gst';
 import { DateStr, Paise } from '../../kernel/query';
 import { audit } from '../audit/service';
-import { createEmployee, EmployeeInput, myEmployee, names } from './employees';
+import { createEmployee, EmployeeInput, hrReach, myEmployee, names } from './employees';
 import { Prisma } from '@prisma/client';
 import { bundle, nameParts, namesFrom } from './bundle';
 
@@ -141,8 +141,8 @@ export async function listActions(ctx: TenantCtx, q: { kind?: ActionKind; employ
       order by on_date desc, created_at desc limit 2000`,
   });
   const lookup = namesFrom(b);
-  const own = ctx.scope === 'own' ? (b.me[0]?.id as string | undefined) ?? '-' : null;
-  const mine = b.rows.filter((a) => !own || a.employeeId === own);
+  const reach = await hrReach(ctx);
+  const mine = b.rows.filter((a) => !reach || reach.includes(a.employeeId as string));
   const place = (d: unknown) => {
     const x = (d ?? {}) as { branchId?: string; departmentId?: string; designationId?: string };
     return { branch: x.branchId ? lookup.branch.get(x.branchId) ?? null : null, department: x.departmentId ? lookup.dept.get(x.departmentId) ?? null : null, designation: x.designationId ? lookup.desig.get(x.designationId) ?? null : null };
@@ -309,8 +309,8 @@ export async function setGoalProgress(ctx: TenantCtx, id: string, progress: numb
 }
 
 export async function listGoals(ctx: TenantCtx) {
-  const own = ctx.scope === 'own' ? await myEmployee(ctx) : null;
-  const [rows, lookup] = await Promise.all([db().hrGoal.findMany({ where: { tenantId: ctx.tenantId, ...(own ? { employeeId: own.id } : {}) }, orderBy: { endsOn: 'asc' } }), names(ctx)]);
+  const reach = await hrReach(ctx);
+  const [rows, lookup] = await Promise.all([db().hrGoal.findMany({ where: { tenantId: ctx.tenantId, ...(reach ? { employeeId: { in: reach } } : {}) }, orderBy: { endsOn: 'asc' } }), names(ctx)]);
   const today = todayIST();
   return { data: rows.map((g) => ({ ...g, status: g.status !== 'completed' && iso(g.endsOn)! < today ? 'overdue' : g.status, employee: lookup.emp.get(g.employeeId) ?? '—', employeeCode: lookup.code.get(g.employeeId) ?? '' })) };
 }
@@ -349,8 +349,8 @@ export async function conductReview(ctx: TenantCtx, id: string, b: z.infer<typeo
 }
 
 export async function listReviews(ctx: TenantCtx) {
-  const own = ctx.scope === 'own' ? await myEmployee(ctx) : null;
-  const [rows, lookup] = await Promise.all([db().hrReview.findMany({ where: { tenantId: ctx.tenantId, ...(own ? { employeeId: own.id } : {}) }, orderBy: { reviewOn: 'desc' } }), names(ctx)]);
+  const reach = await hrReach(ctx);
+  const [rows, lookup] = await Promise.all([db().hrReview.findMany({ where: { tenantId: ctx.tenantId, ...(reach ? { employeeId: { in: reach } } : {}) }, orderBy: { reviewOn: 'desc' } }), names(ctx)]);
   return { data: rows.map((r) => ({ ...r, rating: r.rating === null ? null : Number(r.rating), employee: lookup.emp.get(r.employeeId) ?? '—', employeeCode: lookup.code.get(r.employeeId) ?? '', reviewer: r.reviewerId ? lookup.emp.get(r.reviewerId) ?? null : null })) };
 }
 
@@ -379,8 +379,8 @@ export async function saveTraining(ctx: TenantCtx, b: z.infer<typeof TrainingInp
 }
 
 export async function listTrainings(ctx: TenantCtx) {
-  const own = ctx.scope === 'own' ? await myEmployee(ctx) : null;
-  const [rows, lookup] = await Promise.all([db().hrTraining.findMany({ where: { tenantId: ctx.tenantId, ...(own ? { employeeIds: { has: own.id } } : {}) }, orderBy: { startsOn: 'desc' } }), names(ctx)]);
+  const reach = await hrReach(ctx);
+  const [rows, lookup] = await Promise.all([db().hrTraining.findMany({ where: { tenantId: ctx.tenantId, ...(reach ? { employeeIds: { hasSome: reach.length ? reach : ['00000000-0000-0000-0000-000000000000'] } } : {}) }, orderBy: { startsOn: 'desc' } }), names(ctx)]);
   return { data: rows.map((t) => ({ ...t, participants: t.employeeIds.map((id) => ({ id, name: lookup.emp.get(id) ?? '—' })) })) };
 }
 

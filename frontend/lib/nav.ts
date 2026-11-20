@@ -401,8 +401,8 @@ export const USER_NAV = {
   label: "User Management",
   icon: UserCog,
   subs: [
-    { label: "Users", href: "/app/settings/team", permission: "tenant.member.view" },
-    { label: "Roles", href: "/app/settings/roles", permission: "tenant.role.view" },
+    { label: "Users", href: "/app/users", permission: "tenant.member.view" },
+    { label: "Roles", href: "/app/users/roles", permission: "tenant.role.view" },
   ] as SubNav[],
 }
 

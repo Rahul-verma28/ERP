@@ -1,9 +1,6 @@
-"use client"
+import { redirect } from "next/navigation"
 
-import { useSearchParams } from "next/navigation"
-import { RoleForm } from "@/components/role-form"
-
-export default function NewRolePage() {
-  const from = useSearchParams().get("from")
-  return <RoleForm key={from ?? "new"} fromId={from} />
+export default async function Page({ searchParams }: { searchParams: Promise<{ from?: string }> }) {
+  const { from } = await searchParams
+  redirect(`/app/users/roles/new${from ? `?from=${from}` : ""}`)
 }

@@ -27,7 +27,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // screen (/app/welcome) shows its real progress. Welcome and setup are full-screen.
   const pathname = usePathname()
   // A business requires two-step and the grace period is over: nothing else opens until it's set up (A4-D)
-  const mustSetUpMfa = status === "authenticated" && !!me?.security.mustSetUpMfa
+  // Console users go to /console, whose own gate sends them to its two-step page; both redirecting
+  // at once left the page spinning
+  const mustSetUpMfa = status === "authenticated" && !inConsole && !!me?.security.mustSetUpMfa
   const onTwoStep = pathname.startsWith("/app/account/two-step")
   React.useEffect(() => {
     if (mustSetUpMfa && !onTwoStep) router.replace("/app/account/two-step")

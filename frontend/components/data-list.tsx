@@ -390,6 +390,8 @@ export function DataList<T extends { id: string }>({
     if (rowClick) return rowClick(row)
     if (!rowHref) return
     const href = rowHref(row)
+    // A row with nowhere to go (an invitation, say) opens nothing
+    if (!href) return
     if (e && (e.ctrlKey || e.metaKey)) window.open(href, "_blank", "noopener")
     else router.push(href)
   }

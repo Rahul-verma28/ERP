@@ -145,11 +145,22 @@ export async function updateBranch(id: string, patch: Partial<z.infer<typeof Bra
 
 // ── Members & invitations (PLT-07) ──
 
-async function assertSeat(tenantId: string) {
+/** Roles that don't take a paid seat: self-service employees see only their own HR data */
+export const SEAT_FREE_ROLE_TYPES = ['employee'] as const;
+const seatFree = { roleType: { in: [...SEAT_FREE_ROLE_TYPES] } };
+
+/** A seat for one more person with this role; self-service employee logins don't use one */
+async function assertSeat(tenantId: string, roleId?: string) {
+  if (roleId) {
+    const role = await db().role.findUnique({ where: { id: roleId }, select: { roleType: true } });
+    if (role && (SEAT_FREE_ROLE_TYPES as readonly string[]).includes(role.roleType)) return;
+  }
   const ent = await getEntitlements(tenantId);
+  const free = await db().role.findMany({ where: seatFree, select: { id: true } });
+  const freeIds = free.map((r) => r.id);
   const [active, pending] = await Promise.all([
-    db().tenantMember.count({ where: { status: 'active' } }),
-    db().invitation.count({ where: { acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } } }),
+    db().tenantMember.count({ where: { status: 'active', roleId: { notIn: freeIds } } }),
+    db().invitation.count({ where: { acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() }, roleId: { notIn: freeIds } } }),
   ]);
   if (active + pending >= ent.limits.users) {
     throw new AppError('LIMIT_REACHED', `Your plan allows ${ent.limits.users} users. Upgrade or deactivate a user first.`, { limit: 'users' });
@@ -191,12 +202,14 @@ export const InviteInput = z
     mobile: z.string().trim().transform(normaliseMobile).pipe(z.string().regex(/^\+[1-9]\d{7,14}$/, 'Enter a valid mobile number')).optional(),
     roleId: z.string().uuid(),
     branchIds: z.array(z.string().uuid()).default([]),
+    /** Giving an HR employee their login: it links to them when accepted */
+    employeeId: z.string().uuid().optional(),
   })
   .refine((v) => v.email || v.mobile, { message: 'Email or mobile is required', path: ['email'] });
 
 export async function invite(ctx: TenantCtx, input: z.infer<typeof InviteInput>) {
-  await assertSeat(ctx.tenantId);
   const role = await assertAssignableRole(ctx.tenantId, input.roleId);
+  await assertSeat(ctx.tenantId, input.roleId);
   await assertBranches(input.branchIds);
 
   const existingUser = await db().user.findFirst({ where: { OR: [...(input.email ? [{ email: input.email }] : []), ...(input.mobile ? [{ mobile: input.mobile }] : [])] } });
@@ -205,11 +218,17 @@ export async function invite(ctx: TenantCtx, input: z.infer<typeof InviteInput>)
     if (m) throw new AppError('CONFLICT', 'This person is already a member of your business.');
   }
 
+  if (input.employeeId) {
+    const e = await db().employee.findFirst({ where: { id: input.employeeId, tenantId: ctx.tenantId }, select: { memberId: true, status: true } });
+    if (!e) throw notFound('Employee');
+    if (e.memberId) throw new AppError('CONFLICT', 'This employee already has a login.');
+    if (e.status === 'exited') throw new AppError('CONFLICT', 'This employee has left. Give logins to people who work here.');
+  }
   const token = randomToken();
   const inv = await db().invitation.create({
     data: {
       tenantId: ctx.tenantId, name: input.name, email: input.email, mobile: input.mobile, roleId: input.roleId,
-      branchIds: input.branchIds, tokenHash: sha256(token), invitedBy: ctx.userId, expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+      branchIds: input.branchIds, employeeId: input.employeeId ?? null, tokenHash: sha256(token), invitedBy: ctx.userId, expiresAt: new Date(Date.now() + INVITE_TTL_MS),
     },
   });
   const tenant = await getTenant(ctx.tenantId);
@@ -244,7 +263,10 @@ export async function updateMember(ctx: TenantCtx, id: string, patch: z.infer<ty
   if (m.userId === ctx.userId) throw new AppError('PERMISSION_DENIED', 'You cannot change your own role or status.');
   if (patch.roleId && patch.roleId !== m.roleId) await assertAssignableRole(ctx.tenantId, patch.roleId);
   if (patch.branchIds) await assertBranches(patch.branchIds);
-  if (patch.status === 'active' && m.status !== 'active') await assertSeat(ctx.tenantId);
+  const nextRole = patch.roleId ?? m.roleId;
+  const wasFree = (SEAT_FREE_ROLE_TYPES as readonly string[]).includes(m.role.roleType);
+  if (patch.status === 'active' && m.status !== 'active') await assertSeat(ctx.tenantId, nextRole);
+  else if (patch.roleId && patch.roleId !== m.roleId && m.status === 'active' && wasFree) await assertSeat(ctx.tenantId, nextRole);
 
   const updated = await db().tenantMember.update({
     where: { id },
@@ -319,6 +341,8 @@ export async function acceptInvitation(token: string, input: z.infer<typeof Acce
       update: { roleId: inv.roleId, branchIds: inv.branchIds, status: 'active', joinedAt: new Date(), deactivatedAt: null, version: { increment: 1 } },
     });
     await tx.invitation.update({ where: { id: inv.id }, data: { acceptedAt: new Date() } });
+    // Invited from an employee's page: their record now has this login (if no one took it meanwhile)
+    if (inv.employeeId) await tx.employee.updateMany({ where: { id: inv.employeeId, tenantId: inv.tenantId, memberId: null }, data: { memberId: member.id } });
     await tx.user.update({ where: { id: user.id }, data: { lastTenantId: inv.tenantId } });
     cache.del(`member:${inv.tenantId}:${user.id}`);
     await publish('member.activated', { memberId: member.id, userId: user.id, roleId: inv.roleId }, { tenantId: inv.tenantId });

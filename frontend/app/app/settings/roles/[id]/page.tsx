@@ -1,9 +1,5 @@
-"use client"
+import { redirect } from "next/navigation"
 
-import { useParams } from "next/navigation"
-import { RoleForm } from "@/components/role-form"
-
-export default function RolePage() {
-  const { id } = useParams<{ id: string }>()
-  return <RoleForm key={id} roleId={id} />
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+  redirect(`/app/users/roles/${(await params).id}`)
 }

@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { CalendarDays, ChevronLeft, ChevronRight, Eye, IndianRupee, LogOut, Pencil, RotateCcw, Trash2 } from "lucide-react"
+import { CalendarDays, ChevronLeft, ChevronRight, Eye, IndianRupee, KeyRound, LogOut, Pencil, RotateCcw, Trash2 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { PageError, PageLoading, ErrorState } from "@/components/page-states"
@@ -20,6 +20,7 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { ACTION_STATUS, ATT, EMP_STATUS, EMPLOYMENT_LABEL, LEAVE_STATUS, monthLabel, RUN_STATUS, type Employee, type HrAction, type LeaveApp, type Payslip } from "@/lib/hr"
 import { cn } from "@/lib/utils"
 import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
+import { InviteDialog } from "@/components/users/forms"
 
 // One employee: profile, salary, attendance, leave, payslips and career history.
 
@@ -146,7 +147,8 @@ function EmployeeView() {
   const { can } = useAuth()
   const { data: e, error, reload } = useApi<Employee>(`/hr/employees/${id}`)
   const [tab, setTab] = useTabParam<Tab>(TAB_KEYS, "overview")
-  const [open, setOpen] = React.useState<"salary" | "exit" | "delete" | null>(null)
+  const [open, setOpen] = React.useState<"salary" | "exit" | "delete" | "login" | null>(null)
+  const branches = useApi<{ data: { id: string; name: string }[] }>(open === "login" ? "/branches" : null)
   if (error) return <PageError error={error} onRetry={() => void reload()} />
   if (!e) return <PageLoading />
   const pay = can("hr.payroll.view")
@@ -177,6 +179,9 @@ function EmployeeView() {
           {can("hr.employee.edit") && <Link href={`/app/m/hr/employees/${e.id}/edit`} className={buttonVariants({ variant: "outline" })}><Pencil /> Edit</Link>}
           {can("hr.payroll.create") && e.status !== "exited" && <Button onClick={() => setOpen("salary")}><IndianRupee /> Salary</Button>}
           <ActionMenu items={[
+            can("tenant.member.create") && !e.memberId && e.status !== "exited" && { label: "Give app login", icon: KeyRound, onClick: () => setOpen("login") },
+            e.member && can("tenant.member.view") && { label: `Login: ${e.member.name}`, icon: KeyRound, href: "/app/users" },
+            "-",
             can("hr.employee.edit") && (e.status === "exited" ? { label: "Mark as rejoined", icon: RotateCcw, onClick: () => void rejoin() } : { label: "Mark as leaving", icon: LogOut, onClick: () => setOpen("exit") }),
             "-",
             can("hr.employee.delete") && { label: "Delete", icon: Trash2, destructive: true, onClick: () => setOpen("delete") },
@@ -198,6 +203,7 @@ function EmployeeView() {
       )}
 
       {tab === "overview" && <EmployeeOverview e={e} />}
+      {open === "login" && <InviteDialog branches={branches.data?.data ?? []} employee={{ id: e.id, name: e.name, email: e.email, mobile: e.phone }} onClose={() => setOpen(null)} onSaved={() => { setOpen(null); toast.success("Invitation sent. The login links to this employee when they join.") }} />}
 
       {tab === "salary" && pay && (
         <div className="grid gap-5">

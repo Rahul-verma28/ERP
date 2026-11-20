@@ -34,10 +34,8 @@ export const SETTINGS_GROUPS: { label: string; items: SettingsItem[] }[] = [
     ],
   },
   {
-    label: "People",
+    label: "Security",
     items: [
-      { key: "team", label: "Users", href: "/app/settings/team", permission: "tenant.member.view" },
-      { key: "roles", label: "Roles", href: "/app/settings/roles", permission: "tenant.role.view" },
       { key: "security", label: "Security", href: "/app/settings/security", permission: "tenant.settings.view" },
     ],
   },
@@ -51,6 +49,18 @@ export const SETTINGS_GROUPS: { label: string; items: SettingsItem[] }[] = [
       { key: "audit", label: "Audit log", href: "/app/settings/audit", permission: "tenant.audit.view" },
       { key: "subscription", label: "Subscription", href: "/app/billing", permission: "tenant.billing.view" },
       { key: "integrations", label: "Integrations", href: "#", permission: "tenant.settings.view", later: true },
+    ],
+  },
+  {
+    // Each module keeps its own setup page; they are listed here so every setting is found in one place
+    label: "Module settings",
+    items: [
+      { key: "crm-setup", label: "CRM", href: "/app/m/crm/setup", permission: "crm.pipeline.edit" },
+      { key: "finance-setup", label: "Accounting & Finance", href: "/app/m/finance/settings", permission: "finance.expense.view" },
+      { key: "hr-setup", label: "HR & Payroll", href: "/app/m/hr/setup", permission: "hr.setup.view" },
+      { key: "booking-setup", label: "Online booking", href: "/app/m/bookings/online", permission: "bookings.resource.edit" },
+      { key: "booking-services", label: "Booking services", href: "/app/m/bookings/services", permission: "bookings.appointment.view" },
+      { key: "support-setup", label: "Customer service", href: "/app/m/support/setup", permission: "support.sla.edit" },
     ],
   },
 ]
@@ -88,8 +98,6 @@ const SEARCH_INDEX: { label: string; page: string; anchor?: string; section?: st
   { label: "Reverse charge", page: "taxes", anchor: "gst", keywords: "rcm" },
   { label: "Bank account", page: "payments", anchor: "bank", keywords: "ifsc account number" },
   { label: "UPI ID", page: "payments", anchor: "upi-id", keywords: "upi vpa" },
-  { label: "Invite people", page: "team", keywords: "users staff members" },
-  { label: "Custom roles", page: "roles", keywords: "permissions clone" },
   { label: "Two-step verification policy", page: "security", anchor: "two-step", keywords: "mfa 2fa otp authenticator" },
   { label: "Password rules", page: "security", anchor: "passwords", keywords: "length expiry" },
   { label: "Sign out after inactivity", page: "security", anchor: "sessions", keywords: "idle timeout session" },
@@ -106,6 +114,12 @@ const SEARCH_INDEX: { label: string; page: string; anchor?: string; section?: st
   { label: "Sample data", page: "data", anchor: "sample" },
   { label: "Close business", page: "data", anchor: "close", keywords: "delete account" },
   { label: "Plan and billing", page: "subscription", keywords: "upgrade invoice" },
+  { label: "Pipelines, stages and lead sources", page: "crm-setup", keywords: "crm deal lost reasons labels" },
+  { label: "Expense categories and accounts", page: "finance-setup", keywords: "chart of accounts ledger budget" },
+  { label: "Departments, shifts, leave types and holidays", page: "hr-setup", keywords: "payroll pf esi professional tax salary" },
+  { label: "Online booking page", page: "booking-setup", keywords: "appointment slots link qr" },
+  { label: "Service duration and staff", page: "booking-services", keywords: "appointment buffer" },
+  { label: "Ticket categories, SLA and warranty", page: "support-setup", keywords: "support complaint request form" },
 ]
 
 function useSettingsSearch(query: string, allowed: (key: string) => boolean) {
@@ -265,7 +279,7 @@ const TITLED: Record<string, [string, string]> = {
 }
 
 /** Wide pages (X4–X6) use the full width with a "Settings ›" breadcrumb instead of the side menu */
-const WIDE = ["/app/settings/roles", "/app/settings/notifications", "/app/settings/data"]
+const WIDE = ["/app/settings/notifications", "/app/settings/data"]
 
 export function SettingsFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()

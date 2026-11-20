@@ -2,7 +2,7 @@ import type { PermissionScope, RoleLayer, RoleType } from '@prisma/client';
 import { PERMISSIONS } from './permissions';
 import type { ModuleKey } from './modules';
 
-// Predefined roles: 4 Console roles + 2 partner roles (Console v3) + 4 core + 17 module roles.
+// Predefined roles: 4 Console roles + 2 partner roles (Console v3) + 4 core + 18 module roles.
 // Grants use patterns: "crm.*", "crm.contact.*", "*.view", "billing.invoice.create".
 
 type Grant = [pattern: string, scope: PermissionScope];
@@ -141,6 +141,19 @@ export const ROLES: RoleDef[] = [
     description: 'Salary structures, payroll runs, payslips; can see salaries',
     grants: [['hr.payroll.*', 'all'], ['hr.payslip.*', 'all'], ['hr.employee.view', 'all'], ['hr.attendance.view', 'all'], ['hr.leave.view', 'all'], ['hr.setup.view', 'all'], ['finance.expense.view', 'all']],
     fieldAccess: [{ entity: 'employee', field: 'salary', access: 'write' }, { entity: 'employee', field: 'bank_account', access: 'write' }],
+  },
+  {
+    // "team" = the person and everyone who reports to them, at any depth (each employee's manager)
+    key: 'team_manager', name: 'Team Manager', layer: 'tenant', roleType: 'user', requiredModules: ['hr'],
+    description: 'Their team only (everyone reporting to them): attendance, leave approval, goals and reviews; own payslips',
+    grants: [
+      ['hr.employee.view', 'team'], ['hr.attendance.view', 'team'], ['hr.attendance.create', 'team'], ['hr.attendance.edit', 'team'], ['hr.attendance.approve', 'team'],
+      ['hr.leave.view', 'team'], ['hr.leave.create', 'team'], ['hr.leave.approve', 'team'],
+      ['hr.performance.view', 'team'], ['hr.performance.create', 'team'], ['hr.performance.edit', 'team'], ['hr.training.view', 'team'],
+      ['hr.payslip.view', 'own'], ['hr.workplace.view', 'all'],
+      ['tasks.task.*', 'own'], ['tasks.approval.view', 'all'], ['tasks.approval.create', 'all'], ['tasks.approval.approve', 'all'],
+      ['automation.notification.view', 'own'],
+    ],
   },
   {
     key: 'employee', name: 'Employee (Self-service)', layer: 'tenant', roleType: 'employee', requiredModules: ['hr'],

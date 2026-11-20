@@ -376,7 +376,8 @@ export async function getRun(ctx: TenantCtx, id: string) {
 export async function getPayslip(ctx: TenantCtx, id: string) {
   const s = await db().payslip.findFirst({ where: { id, tenantId: ctx.tenantId }, include: { run: true } });
   if (!s) throw notFound('Payslip');
-  if (ctx.scope === 'own') {
+  // Salaries stay private: below "all" a person sees only their own payslips
+  if ((ctx.scope ?? 'own') !== 'all') {
     const me = await myEmployee(ctx);
     if (!me || me.id !== s.employeeId || s.run.status === 'draft') throw notFound('Payslip');
   }
@@ -387,12 +388,12 @@ export async function getPayslip(ctx: TenantCtx, id: string) {
 /** Payslips for one employee (self-service sees only processed ones) */
 export async function employeePayslips(ctx: TenantCtx, employeeId?: string) {
   let id = employeeId;
-  if (ctx.scope === 'own' || !id) {
+  if ((ctx.scope ?? 'own') !== 'all' || !id) {
     const me = await myEmployee(ctx);
     if (!me) return { data: [] };
     id = me.id;
   }
-  const slips = await db().payslip.findMany({ where: { tenantId: ctx.tenantId, employeeId: id, ...(ctx.scope === 'own' ? { run: { status: { not: 'draft' } } } : {}) }, include: { run: { select: { month: true, status: true, payDate: true } } }, orderBy: { createdAt: 'desc' } });
+  const slips = await db().payslip.findMany({ where: { tenantId: ctx.tenantId, employeeId: id, ...((ctx.scope ?? 'own') !== 'all' ? { run: { status: { not: 'draft' } } } : {}) }, include: { run: { select: { month: true, status: true, payDate: true } } }, orderBy: { createdAt: 'desc' } });
   return { data: slips.map((s) => ({ ...s, payableDays: Number(s.payableDays), lopDays: Number(s.lopDays), month: s.run.month, runStatus: s.run.status })) };
 }
 

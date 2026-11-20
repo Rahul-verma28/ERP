@@ -170,7 +170,7 @@ export function RoleForm({ roleId, fromId }: { roleId?: string; fromId?: string 
       if (isEdit) await api.patch(`/roles/${roleId}`, { version: data!.version, ...details, ...(people > 0 ? { reason: reason.trim() } : {}) })
       else await api.post("/roles", { ...details, fromRoleId: fromId ?? null })
       toast.success(isEdit ? `${n} saved` : `${n} created`)
-      router.push("/app/settings/roles")
+      router.push("/app/users/roles")
     } catch (e) {
       if (e instanceof ApiError && e.code === "VERSION_CONFLICT") setFormError("Someone else changed this role. Reload to see their changes — yours aren't saved.")
       else if (e instanceof ApiError && Object.keys(e.fields).length) {
@@ -194,11 +194,11 @@ export function RoleForm({ roleId, fromId }: { roleId?: string; fromId?: string 
           <p className="mt-0.5 text-[13px] text-muted-foreground">{editable ? "Name the role and choose what it can do in each module." : "This is a ready-made role, so it can't be changed. Clone it to make your own."}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/app/settings/roles" className={buttonVariants({ variant: "outline" })}>
+          <Link href="/app/users/roles" className={buttonVariants({ variant: "outline" })}>
             <ArrowLeft /> Back
           </Link>
           {isEdit && !editable && data!.key !== "owner" && can("tenant.role.create") && (
-            <Link href={`/app/settings/roles/new?from=${roleId}`} className={buttonVariants()}>
+            <Link href={`/app/users/roles/new?from=${roleId}`} className={buttonVariants()}>
               <Copy /> Clone role
             </Link>
           )}
@@ -365,7 +365,7 @@ export function RoleForm({ roleId, fromId }: { roleId?: string; fromId?: string 
             </div>
           )}
           <FormError message={formError} />
-          <Link href="/app/settings/roles" className={buttonVariants({ variant: "outline" })}>
+          <Link href="/app/users/roles" className={buttonVariants({ variant: "outline" })}>
             Cancel
           </Link>
           <Button onClick={save} disabled={busy || !!problem}>

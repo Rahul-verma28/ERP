@@ -374,6 +374,8 @@ model Invitation {
   mobile     String?   @db.VarChar(15)
   roleId     String    @map("role_id") @db.Uuid
   branchIds  String[]  @default([]) @map("branch_ids") @db.Uuid
+  /// For an HR employee: accepting links the login to the employee record
+  employeeId String?   @map("employee_id") @db.Uuid
   tokenHash  String    @unique @map("token_hash")
   invitedBy  String    @map("invited_by") @db.Uuid
   expiresAt  DateTime  @map("expires_at") @db.Timestamptz
