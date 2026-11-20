@@ -2,7 +2,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* Pages customers open (portal, booking, requests) stay light inside .light-scope, even in dark mode */
+@custom-variant dark (&:is(.dark *):not(:where(.light-scope, .light-scope *)));
 
 @theme inline {
     --font-heading: var(--font-sans);
@@ -48,7 +49,9 @@
     --radius-4xl: 14px;
 }
 
-:root {
+/* .light-scope takes the light palette again under a dark page */
+:root, .light-scope {
+    color-scheme: light;
     /* AHEAD app palette (wireframes): light grey page, white cards, blue accent */
     --background: #F6F7F9;
     --foreground: #16181D;

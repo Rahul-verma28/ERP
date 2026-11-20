@@ -5,7 +5,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { BookOpen, FilePlus2, FileText, Handshake, IndianRupee, MessageCircle, MessageSquare, Pencil, Phone, Printer, Trash2 } from "lucide-react"
+import { BookOpen, Copy, FilePlus2, FileText, Globe, Handshake, IndianRupee, MessageCircle, MessageSquare, Pencil, Phone, Printer, Trash2 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ActionMenu, BackLink, DetailHeader, DetailList, Pill, Section, StatGrid, Tabs } from "@/components/page-parts"
@@ -51,6 +51,35 @@ function CustomerPage() {
   const dues = can("billing.dues.view")
   const [tab, setTab] = useTabParam<Tab>(TAB_KEYS, dues ? "ledger" : "details")
   const [newTicket, setNewTicket] = React.useState(false)
+  const portal = useApi<{ enabled: boolean; slug: string | null; seenAt: string | null; blocked: boolean; hasMobile: boolean }>(can("crm.contact.view") ? `/customers/${id}/portal` : null)
+  // A sign-in link for this customer, good for 30 days; WhatsApp opens before the request so it isn't blocked
+  async function sendPortal(phone: string | null, whatsapp: boolean) {
+    const w = whatsapp ? window.open("", "_blank", "noopener") : null
+    try {
+      const r = await api.post<{ url: string; name: string }>(`/customers/${id}/portal-link`)
+      if (whatsapp && phone) {
+        const to = phone.replace(/D/g, "").replace(/^(d{10})$/, "91$1")
+        const text = encodeURIComponent(`Hello ${r.name}, see your bills, pay by UPI and raise requests here (works for 30 days): ${r.url}`)
+        if (w) w.location.href = `https://wa.me/${to}?text=${text}`
+        else window.open(`https://wa.me/${to}?text=${text}`, "_blank", "noopener")
+      } else {
+        await navigator.clipboard.writeText(r.url)
+        toast.success("Portal link copied. It works for 30 days.")
+      }
+    } catch (e) {
+      w?.close()
+      toast.error(errorMessage(e))
+    }
+  }
+  async function portalAccess(blocked: boolean) {
+    try {
+      await api.post(`/customers/${id}/portal-access`, { blocked })
+      toast.success(blocked ? "Portal access turned off" : "Portal access turned on")
+      void portal.reload()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    }
+  }
   const priceLists = useApi<{ data: { id: string; name: string }[] }>(can("catalog.price_list.view") ? "/price-lists" : null)
   const c = contact.data
 
@@ -136,6 +165,10 @@ function CustomerPage() {
                 c.isActive && can("sales.quotation.create") && { label: "New quotation", icon: FileText, href: `/app/m/sales/new?contact=${c.id}` },
                 c.isActive && can("crm.deal.create") && { label: "New deal", icon: Handshake, onClick: () => setDialog("deal") },
                 can("crm.activity.view") && { label: "Notes, calls and tasks", icon: MessageSquare, href: `/app/m/crm/${c.id}` },
+                "-",
+                portal.data?.enabled && !portal.data.blocked && can("crm.contact.edit") && c.phone && { label: "Send portal link on WhatsApp", icon: Globe, hint: portal.data.seenAt ? `Last visit ${formatDate(portal.data.seenAt)}` : "Not signed in yet", onClick: () => void sendPortal(c.phone!, true) },
+                portal.data?.enabled && !portal.data.blocked && can("crm.contact.edit") && { label: "Copy portal link", icon: Copy, onClick: () => void sendPortal(null, false) },
+                portal.data?.enabled && can("crm.contact.edit") && { label: portal.data.blocked ? "Turn on portal access" : "Turn off portal access", icon: Globe, onClick: () => void portalAccess(!portal.data!.blocked) },
                 "-",
                 dues && { label: "Print statement", icon: Printer, onClick: () => window.open(`/print/statement/${c.id}`, "_blank", "noopener") },
                 dues && c.phone && { label: "Send statement on WhatsApp", icon: MessageCircle, onClick: () => window.open(`https://wa.me/${c.phone!.replace(/\D/g, "").replace(/^(\d{10})$/, "91$1")}?text=${message}`, "_blank", "noopener") },

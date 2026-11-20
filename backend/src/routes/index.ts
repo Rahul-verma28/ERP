@@ -11,6 +11,7 @@ import hrRoutes from '../modules/hr/routes';
 import taskRoutes from '../modules/tasks/routes';
 import bookingRoutes, { publicBookings } from '../modules/bookings/routes';
 import supportRoutes, { publicSupport } from '../modules/support/routes';
+import portalRoutes, { publicPortal } from '../modules/portal/routes';
 import reportRoutes from '../modules/reports/routes';
 import inventoryRoutes from '../modules/inventory/routes';
 import purchaseRoutes from '../modules/purchase/routes';
@@ -37,6 +38,7 @@ router.use('/console', consoleRoutes); // AHEAD team workspace; before the tenan
 router.use('/', publicBilling); // public share links, before any authenticated router
 router.use('/', publicBookings); // the online booking page, no login
 router.use('/', publicSupport); // the request form and tracking link, no login
+router.use('/', publicPortal); // the customer portal: its own sign-in, never a staff login
 router.use('/', publicPayments); // gateway webhooks (+ dev test gateway), signed, no login
 router.use('/', tenantPayments); // what the client owes AHEAD
 router.use('/', tenancyRoutes);
@@ -48,6 +50,7 @@ router.use('/', hrRoutes);
 router.use('/', taskRoutes);
 router.use('/', bookingRoutes);
 router.use('/', supportRoutes);
+router.use('/', portalRoutes);
 router.use('/', reportRoutes);
 router.use('/', inventoryRoutes);
 router.use('/', purchaseRoutes);

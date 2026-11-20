@@ -61,6 +61,7 @@ export const SETTINGS_GROUPS: { label: string; items: SettingsItem[] }[] = [
       { key: "booking-setup", label: "Online booking", href: "/app/m/bookings/online", permission: "bookings.resource.edit" },
       { key: "booking-services", label: "Booking services", href: "/app/m/bookings/services", permission: "bookings.appointment.view" },
       { key: "support-setup", label: "Customer service", href: "/app/m/support/setup", permission: "support.sla.edit" },
+      { key: "portal-setup", label: "Customer portal", href: "/app/m/sales/portal", permission: "billing.invoice.view" },
     ],
   },
 ]
@@ -120,6 +121,7 @@ const SEARCH_INDEX: { label: string; page: string; anchor?: string; section?: st
   { label: "Online booking page", page: "booking-setup", keywords: "appointment slots link qr" },
   { label: "Service duration and staff", page: "booking-services", keywords: "appointment buffer" },
   { label: "Ticket categories, SLA and warranty", page: "support-setup", keywords: "support complaint request form" },
+  { label: "Customer portal link and what customers see", page: "portal-setup", keywords: "self service bills statement login otp" },
 ]
 
 function useSettingsSearch(query: string, allowed: (key: string) => boolean) {

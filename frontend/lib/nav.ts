@@ -125,6 +125,7 @@ export const SALES_NAV = {
     { label: "Sales Returns", href: "/app/m/billing/credit-notes", permission: "billing.invoice.view" },
     { label: "Payments Received", href: "/app/m/billing/payments", permission: "billing.payment.view" },
     { label: "Reports", href: "/app/m/sales/reports", permission: "reports.report.view" },
+    { label: "Customer Portal", href: "/app/m/sales/portal", permission: "billing.invoice.view" },
   ] as SubNav[],
 }
 

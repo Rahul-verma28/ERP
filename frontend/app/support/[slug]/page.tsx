@@ -118,7 +118,7 @@ export default function SupportFormPage({ params }: { params: Promise<{ slug: st
 
 function Shell({ page, children }: { page?: FormData; children: React.ReactNode }) {
   return (
-    <div className="min-h-svh bg-neutral-100 px-4 py-6 text-neutral-900">
+    <div className="light-scope min-h-svh bg-neutral-100 px-4 py-6 text-neutral-900">
       <div className="mx-auto grid max-w-xl gap-5">
         {page && (
           <header className="grid gap-1 rounded-3xl bg-white p-5 shadow-sm">

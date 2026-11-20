@@ -102,7 +102,7 @@ export default function RequestPage({ params }: { params: Promise<{ token: strin
 
 function Shell({ r, children }: { r?: Request; children: React.ReactNode }) {
   return (
-    <div className="min-h-svh bg-neutral-100 px-4 py-6 text-neutral-900">
+    <div className="light-scope min-h-svh bg-neutral-100 px-4 py-6 text-neutral-900">
       <div className="mx-auto grid max-w-xl gap-4">
         {r && (
           <header className="flex items-center gap-3 rounded-3xl bg-white p-4 shadow-sm">

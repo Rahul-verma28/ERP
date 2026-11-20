@@ -41,6 +41,7 @@ enum OtpPurpose {
   email_change
   mobile_change
   close_account
+  portal
 
   @@map("otp_purpose")
 }
@@ -1308,6 +1309,9 @@ model Contact {
   labels           String[]    @default([])
   lostReason       String?     @map("lost_reason")
   createdAt        DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  /// Customer portal: last visit, and access turned off for this customer
+  portalSeenAt     DateTime?   @map("portal_seen_at") @db.Timestamptz
+  portalBlocked    Boolean     @default(false) @map("portal_blocked")
   updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz
   version          Int         @default(1)
 
@@ -3070,4 +3074,22 @@ model KbArticle {
 
   @@index([tenantId, kind])
   @@map("kb_articles")
+}
+
+/// Customer portal setup: the link, the title and which parts customers see
+model PortalSettings {
+  tenantId        String   @id @map("tenant_id") @db.Uuid
+  enabled         Boolean  @default(false)
+  slug            String?  @unique @db.VarChar(40)
+  title           String   @default("Your account")
+  intro           String?
+  showBills       Boolean  @default(true) @map("show_bills")
+  showQuotes      Boolean  @default(true) @map("show_quotes")
+  allowQuoteReply Boolean  @default(true) @map("allow_quote_reply")
+  showStatement   Boolean  @default(true) @map("show_statement")
+  showRequests    Boolean  @default(true) @map("show_requests")
+  showBookings    Boolean  @default(true) @map("show_bookings")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("portal_settings")
 }
