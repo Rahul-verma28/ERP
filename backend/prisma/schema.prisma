@@ -1503,6 +1503,8 @@ model Payment {
   reversesId  String?       @unique @map("reverses_id") @db.Uuid
   /// The cash or bank account it went into; empty = by method
   accountId   String?       @map("account_id") @db.Uuid
+  /// Taken or paid back at a POS counter during this shift
+  posShiftId  String?       @map("pos_shift_id") @db.Uuid
   createdBy   String?       @map("created_by") @db.Uuid
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
 
@@ -1514,6 +1516,7 @@ model Payment {
   @@index([tenantId, documentId])
   @@index([tenantId, paidOn])
   @@index([tenantId, contactId])
+  @@index([posShiftId])
   @@map("payments_received")
 }
 
@@ -3092,4 +3095,113 @@ model PortalSettings {
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
 
   @@map("portal_settings")
+}
+
+// ── POS: counter billing (BIL-08) ──
+
+/// A billing counter: where its sales are billed from (branch, warehouse) and paid into
+model PosCounter {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  name          String   @db.VarChar(60)
+  branchId      String?  @map("branch_id") @db.Uuid
+  /// Warehouse the goods leave from; empty = the default warehouse
+  locationId    String?  @map("location_id") @db.Uuid
+  /// Cash goes here; empty = the first cash account
+  cashAccountId String?  @map("cash_account_id") @db.Uuid
+  /// UPI and card go here; empty = the default bank account
+  bankAccountId String?  @map("bank_account_id") @db.Uuid
+  /// 80mm | 58mm | a4
+  paper         String   @default("80mm") @db.VarChar(4)
+  receiptNote   String?  @map("receipt_note")
+  /// Most discount a cashier may give on a bill without approval; empty = no limit
+  maxDiscountBp Int?     @map("max_discount_bp")
+  /// A known customer may pay part now and owe the rest
+  allowCredit   Boolean  @default(true) @map("allow_credit")
+  /// Every bill needs a customer name and phone
+  needCustomer  Boolean  @default(false) @map("need_customer")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdBy     String?  @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+  version       Int      @default(1)
+
+  shifts PosShift[]
+  held   PosHeldBill[]
+
+  @@unique([tenantId, name])
+  @@map("pos_counters")
+}
+
+/// One person's time at a counter, from the opening cash to the cash counted at close
+model PosShift {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  tenantId          String    @map("tenant_id") @db.Uuid
+  counterId         String    @map("counter_id") @db.Uuid
+  number            String    @db.VarChar(20)
+  /// open | closed
+  status            String    @default("open") @db.VarChar(8)
+  openedBy          String    @map("opened_by") @db.Uuid
+  openedAt          DateTime  @default(now()) @map("opened_at") @db.Timestamptz
+  openingCashPaise  BigInt    @default(0) @map("opening_cash_paise")
+  closedBy          String?   @map("closed_by") @db.Uuid
+  closedAt          DateTime? @map("closed_at") @db.Timestamptz
+  expectedCashPaise BigInt?   @map("expected_cash_paise")
+  countedCashPaise  BigInt?   @map("counted_cash_paise")
+  /// counted minus expected: negative = short, positive = extra
+  differencePaise   BigInt?   @map("difference_paise")
+  /// { "500": 4, "100": 12, ... } notes and coins counted
+  denominations     Json?
+  closingNote       String?   @map("closing_note")
+  /// Cash sent to the bank at close (a transfer in Finance)
+  depositPaise      BigInt    @default(0) @map("deposit_paise")
+  depositTransferId String?   @map("deposit_transfer_id") @db.Uuid
+  version           Int       @default(1)
+
+  counter PosCounter    @relation(fields: [counterId], references: [id])
+  moves   PosCashMove[]
+
+  @@unique([tenantId, number])
+  @@index([tenantId, openedAt])
+  @@map("pos_shifts")
+}
+
+/// Cash put into or taken out of the drawer during a shift (not a sale)
+model PosCashMove {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  shiftId     String   @map("shift_id") @db.Uuid
+  /// in | out
+  kind        String   @db.VarChar(4)
+  amountPaise BigInt   @map("amount_paise")
+  /// in: float | change | other; out: expense | owner | change | other
+  reason      String   @db.VarChar(16)
+  note        String?
+  /// Paid out for a shop expense: the expense made in Finance
+  expenseId   String?  @map("expense_id") @db.Uuid
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  shift PosShift @relation(fields: [shiftId], references: [id])
+
+  @@index([shiftId])
+  @@map("pos_cash_moves")
+}
+
+/// A bill parked at the counter to serve the next customer, picked up again later
+model PosHeldBill {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  counterId  String   @map("counter_id") @db.Uuid
+  label      String   @db.VarChar(60)
+  cart       Json
+  totalPaise BigInt   @default(0) @map("total_paise")
+  lines      Int      @default(0)
+  createdBy  String?  @map("created_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  counter PosCounter @relation(fields: [counterId], references: [id], onDelete: Cascade)
+
+  @@index([counterId])
+  @@map("pos_held_bills")
 }

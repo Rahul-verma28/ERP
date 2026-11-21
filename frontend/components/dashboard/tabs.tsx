@@ -607,6 +607,70 @@ const bookings: Record<string, WidgetDef> = {
   },
 }
 
+// ── POS ──
+
+const pos: Record<string, WidgetDef> = {
+  kpis: {
+    span: FULL,
+    render: (d) =>
+      !ok(d) ? (
+        <KpiSkeleton d={d} />
+      ) : (
+        <KpiRow>
+          <Kpi label="Counter sales" value={money(d.sales.value)} change={d.sales.change} absolute={(n) => money(n)} note="bills at the POS" href="/app/m/pos/sales" />
+          <Kpi label="Bills" value={String(d.bills.value)} change={d.bills.change} note="in this period" href="/app/m/pos/sales" />
+          <Kpi label="Average bill" value={money(d.average.value)} change={d.average.change} absolute={(n) => money(n)} note="vs previous period" />
+          <Kpi label="Cash in drawers" value={money(d.drawers.value)} note={d.drawers.open ? plural(d.drawers.open, "open shift") : "no shift open"} href="/app/m/pos/shifts" />
+        </KpiRow>
+      ),
+  },
+  trend: {
+    span: WIDE,
+    render: (d, c) => (
+      <Widget title={`Counter sales · ${formatDate(c.q.from)} – ${formatDate(c.q.to)}`} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && d.buckets.every((b: Any) => !b.sales) && "No counter sales in this period."}>
+        {ok(d) && <AreaChart format={money} labels={["Sales", "Average bill"]} rows={d.buckets.map((b: Any) => ({ label: b.label, a: b.sales, b: b.bills ? Math.round(b.sales / b.bills) : 0, title: `${b.from === b.to ? formatDate(b.from) : `${formatDate(b.from)} – ${formatDate(b.to)}`}: ${money(b.sales)} · ${plural(b.bills, "bill")}` }))} />}
+      </Widget>
+    ),
+  },
+  counters: {
+    span: NARROW,
+    render: (d, c) => (
+      <Widget title="Counters now" right={<WidgetLink href="/app/m/pos">Counter</WidgetLink>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.rows.length && "No counter yet."}>
+        {ok(d) && (
+          <ul className="grid gap-2">
+            {d.rows.map((r: Any) => (
+              <li key={r.id} className="flex items-center gap-3 rounded-xl border px-3 py-2 text-sm">
+                <span className={cn("size-2.5 shrink-0 rounded-full", r.shift ? "bg-emerald-500" : "bg-muted-foreground/40")} />
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium">{r.name}</span>
+                  <span className="text-xs text-muted-foreground">{r.shift ? <Link href={`/app/m/pos/shifts/${r.shift.id}`} className="hover:underline">{r.shift.cashier} · drawer {money(r.shift.drawerPaise)}</Link> : "Closed"}</span>
+                </span>
+                <span className="text-right tabular-nums"><span className="block font-semibold">{money(r.todayPaise)}</span><span className="text-xs text-muted-foreground">{plural(r.todayBills, "bill")} today</span></span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Widget>
+    ),
+  },
+  methods: {
+    span: NARROW,
+    render: (d, c) => (
+      <Widget title="How counter bills were paid" data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.total && "No counter payments in this period."}>
+        {ok(d) && <Donut rows={d.rows.map((r: Any) => ({ label: METHOD[r.method] ?? r.method, value: `${money(r.amount)} · ${r.share}%`, n: r.amount }))} />}
+      </Widget>
+    ),
+  },
+  items: {
+    span: WIDE,
+    render: (d, c) => (
+      <Widget title="Best sellers at the counter" right={<WidgetLink href="/app/m/pos/reports">POS report</WidgetLink>} data={d} slow={c.slow} onRetry={c.reload} empty={ok(d) && !d.rows.length && "Nothing sold at the counter in this period."}>
+        {ok(d) && d.rows.map((r: Any) => <Meter key={r.id ?? r.name} href={r.id ? `/app/m/catalog/${r.id}` : undefined} label={r.name} value={`${money(r.amount)} · ${Number(r.qty.toFixed(2))} sold`} pct={r.pct} />)}
+      </Widget>
+    ),
+  },
+}
+
 // ── Purchase ──
 
 const purchase: Record<string, WidgetDef> = {
@@ -953,4 +1017,4 @@ const myday: Record<string, WidgetDef> = {
   },
 }
 
-export const TAB_WIDGETS: Record<DashboardTab, Record<string, WidgetDef>> = { overview, myday, billing, sales, purchase, inventory, crm, bookings, finance, tasks }
+export const TAB_WIDGETS: Record<DashboardTab, Record<string, WidgetDef>> = { overview, myday, billing, pos, sales, purchase, inventory, crm, bookings, finance, tasks }

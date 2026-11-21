@@ -203,7 +203,7 @@ export async function cancelCreditNote(ctx: TenantCtx, id: string, reason: strin
 }
 
 /** Give money back from what is left on a credit note. It counts as money going out on the day. */
-export async function refundCreditNote(ctx: TenantCtx, id: string, input: z.infer<typeof PaymentInput>) {
+export async function refundCreditNote(ctx: TenantCtx, id: string, input: z.infer<typeof PaymentInput>, opts: { posShiftId?: string } = {}) {
   const note = await getDocument(ctx, id, 'credit_note');
   if (note.status !== 'issued') throw new AppError('CONFLICT', 'This credit note is cancelled.');
   const left = note.totalPaise - note.paidPaise;
@@ -212,7 +212,7 @@ export async function refundCreditNote(ctx: TenantCtx, id: string, input: z.infe
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
   const { number } = await allocateNumber(ctx.tenantId, 'receipt', tenant.fyStartMonth);
   const payment = await db().payment.create({
-    data: { ...input, accountId: await resolveAccount(ctx, input.accountId, input.method), paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: -amount, tenantId: ctx.tenantId, documentId: id, contactId: note.contactId, number, createdBy: ctx.userId },
+    data: { ...input, accountId: await resolveAccount(ctx, input.accountId, input.method), paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: -amount, tenantId: ctx.tenantId, documentId: id, contactId: note.contactId, number, createdBy: ctx.userId, posShiftId: opts.posShiftId ?? null },
   });
   await setCreditUsed(note, note.paidPaise + amount);
   await audit({ action: 'billing.refund.create', entity: 'payment', entityId: payment.id, after: { creditNote: note.number, amountPaise: input.amountPaise, method: input.method } });

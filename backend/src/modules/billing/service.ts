@@ -265,7 +265,7 @@ async function customerOwes(contactId: string) {
   return (open._sum.totalPaise ?? 0n) - (open._sum.paidPaise ?? 0n) - heldAdvance - heldCredit;
 }
 
-async function checkCreditLimit(contactId: string | null, addingPaise: bigint) {
+export async function checkCreditLimit(contactId: string | null, addingPaise: bigint) {
   if (!contactId) return;
   const contact = await db().contact.findUnique({ where: { id: contactId }, select: { creditLimitPaise: true } });
   if (contact?.creditLimitPaise == null) return;
@@ -366,7 +366,7 @@ export const PaymentInput = z.object({
 });
 
 /** BIL-03: record a receipt against an issued invoice; status moves to partially paid / paid. */
-export async function recordPayment(ctx: TenantCtx, id: string, input: z.infer<typeof PaymentInput>, kind: 'invoice' | 'opening_balance' | 'debit_note' = 'invoice') {
+export async function recordPayment(ctx: TenantCtx, id: string, input: z.infer<typeof PaymentInput>, kind: 'invoice' | 'opening_balance' | 'debit_note' = 'invoice', opts: { posShiftId?: string } = {}) {
   const doc = await getDocument(ctx, id, kind);
   if (!['issued', 'partially_paid'].includes(doc.status)) throw new AppError('CONFLICT', 'Payments can only be recorded on issued, unpaid invoices.');
   const balance = doc.totalPaise - doc.paidPaise;
@@ -376,7 +376,7 @@ export async function recordPayment(ctx: TenantCtx, id: string, input: z.infer<t
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
   const { number } = await allocateNumber(ctx.tenantId, 'receipt', tenant.fyStartMonth);
   const payment = await db().payment.create({
-    data: { ...input, accountId: await resolveAccount(ctx, input.accountId, input.method), paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: BigInt(input.amountPaise), tenantId: ctx.tenantId, documentId: id, contactId: doc.contactId, number, createdBy: ctx.userId },
+    data: { ...input, accountId: await resolveAccount(ctx, input.accountId, input.method), paidOn: dateOnly(input.paidOn ?? todayIST()), amountPaise: BigInt(input.amountPaise), tenantId: ctx.tenantId, documentId: id, contactId: doc.contactId, number, createdBy: ctx.userId, posShiftId: opts.posShiftId ?? null },
   });
   await setPaid(doc, doc.paidPaise + BigInt(input.amountPaise));
   await audit({ action: 'billing.payment.record', entity: 'payment', entityId: payment.id, after: { invoice: doc.number, amountPaise: input.amountPaise, method: input.method } });

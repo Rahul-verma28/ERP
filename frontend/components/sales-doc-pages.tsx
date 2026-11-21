@@ -773,6 +773,9 @@ export function SalesDocDetail({ kind, id }: { kind: Kind; id: string }) {
           {doc.sourceType === "sales_order" && doc.sourceId && (
             <Link href={`/app/m/sales/orders/${doc.sourceId}`} className="text-sm text-muted-foreground hover:text-foreground">Created from a sales order →</Link>
           )}
+          {doc.sourceType === "pos" && doc.sourceId && (
+            <span className="flex flex-wrap gap-3 text-sm"><Link href={`/app/m/pos/shifts/${doc.sourceId}`} className="text-muted-foreground hover:text-foreground">Billed at a POS counter →</Link><a href={`/print/pos/${doc.id}`} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">Print counter receipt</a></span>
+          )}
           {doc.sourceType === "quotation" && doc.sourceId && (
             <Link href={`/app/m/sales/${doc.sourceId}`} className="text-sm text-muted-foreground hover:text-foreground">Created from a quotation →</Link>
           )}

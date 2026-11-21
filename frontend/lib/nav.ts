@@ -9,6 +9,7 @@ import {
   Package,
   Receipt,
   ShoppingCart,
+  Store,
   Sparkles,
   UserCog,
   Users,
@@ -126,6 +127,19 @@ export const SALES_NAV = {
     { label: "Payments Received", href: "/app/m/billing/payments", permission: "billing.payment.view" },
     { label: "Reports", href: "/app/m/sales/reports", permission: "reports.report.view" },
     { label: "Customer Portal", href: "/app/m/sales/portal", permission: "billing.invoice.view" },
+  ] as SubNav[],
+}
+
+/** POS: counter billing, a paid part of Billing with its own place in the menu */
+export const POS_NAV = {
+  label: "POS",
+  icon: Store,
+  subs: [
+    { label: "Counter", href: "/app/m/pos", permission: "billing.pos.view" },
+    { label: "Counter Bills", href: "/app/m/pos/sales", permission: "billing.pos.view" },
+    { label: "Shifts", href: "/app/m/pos/shifts", permission: "billing.pos.view" },
+    { label: "Reports", href: "/app/m/pos/reports", permission: "billing.pos.view" },
+    { label: "Counters", href: "/app/m/pos/setup", permission: "billing.pos.edit" },
   ] as SubNav[],
 }
 
@@ -409,12 +423,12 @@ export const USER_NAV = {
 
 export const DASHBOARD_NAV = { label: "Dashboard", icon: LayoutDashboard }
 
-export type NavEntry = ModuleKey | "dashboard" | "salesgroup" | "purchase" | "users" | "plan" | "settings" | "hrm" | "performance" | "recruitment"
+export type NavEntry = ModuleKey | "dashboard" | "salesgroup" | "pos" | "purchase" | "users" | "plan" | "settings" | "hrm" | "performance" | "recruitment"
 
 /** The menu, by business area. Each area holds modules, and each module its own pages. */
 export const NAV_SECTIONS: { label: string; entries: NavEntry[] }[] = [
   { label: "Overview", entries: ["dashboard", "reports"] },
-  { label: "Sales & Revenue", entries: ["salesgroup", "crm"] },
+  { label: "Sales & Revenue", entries: ["salesgroup", "pos", "crm"] },
   { label: "Purchase & Inventory", entries: ["purchase", "inventory", "catalog"] },
   { label: "Project Management", entries: ["tasks", "bookings"] },
   { label: "Accounting & Finance", entries: ["finance"] },

@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { DASHBOARD_NAV, HRM_NAV, MODULE_NAV, MODULE_SUBS, NAV_SECTIONS, PERFORMANCE_NAV, PURCHASE_NAV, RECRUITMENT_NAV, SALES_NAV, USER_NAV, type NavEntry, type SubNav } from "@/lib/nav"
+import { DASHBOARD_NAV, HRM_NAV, MODULE_NAV, MODULE_SUBS, NAV_SECTIONS, PERFORMANCE_NAV, POS_NAV, PURCHASE_NAV, RECRUITMENT_NAV, SALES_NAV, USER_NAV, type NavEntry, type SubNav } from "@/lib/nav"
 import { ReadOnlyBanner } from "@/components/page-states"
 import { CommandPalette } from "@/components/command-palette"
 import { SidePanel } from "@/components/side-panel"
@@ -109,12 +109,14 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const hrSubs = (k: keyof typeof hrGroups) => (hrOn ? allowed(hrGroups[k].subs) : [])
   const purchase = me?.modules?.inventory?.status === "inactive" ? [] : allowed(PURCHASE_NAV.subs)
   const users = allowed(USER_NAV.subs)
+  // POS lives in Billing; it shows while Billing is on
+  const posSubs = me?.modules?.billing?.status === "inactive" ? [] : allowed(POS_NAV.subs)
   // Each Sales page belongs to the module its permission names (crm, sales or billing)
   const sales = allowed(SALES_NAV.subs).filter((s) => me?.modules?.[s.permission!.split(".")[0] as ModuleKey]?.status !== "inactive")
   const moduleSubs = (key: ModuleKey) => (me?.modules?.[key]?.status === "inactive" ? [] : allowed(MODULE_SUBS[key] ?? []))
 
   // The group holding this page is open until someone toggles another one
-  const groups: [string, SubNav[]][] = [["users", users], ["salesgroup", sales], ["purchase", purchase], ...(Object.keys(hrGroups) as (keyof typeof hrGroups)[]).map((k) => [k, hrSubs(k)] as [string, SubNav[]]), ...MODULE_NAV.map((m) => [m.key, moduleSubs(m.key)] as [string, SubNav[]])]
+  const groups: [string, SubNav[]][] = [["users", users], ["salesgroup", sales], ["pos", posSubs], ["purchase", purchase], ...(Object.keys(hrGroups) as (keyof typeof hrGroups)[]).map((k) => [k, hrSubs(k)] as [string, SubNav[]]), ...MODULE_NAV.map((m) => [m.key, moduleSubs(m.key)] as [string, SubNav[]])]
   // A link owns its own path and any listed in `also`; the longest matching path wins
   const matches = groups.flatMap(([id, subs]) => flatSubs(subs).flatMap((s) => [s.href.split("?")[0], ...(s.also ?? [])].filter((p) => pathname === p || pathname.startsWith(`${p}/`)).map((p) => ({ id, href: s.href, len: p.length }))))
   const current = matches.sort((a, b) => b.len - a.len)[0] ?? null
@@ -139,6 +141,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </NavLink>
       ) : null
     if (e === "salesgroup") return group("salesgroup", SALES_NAV.label, SALES_NAV.icon, sales)
+    if (e === "pos") return group("pos", POS_NAV.label, POS_NAV.icon, posSubs)
     if (e === "purchase") return group("purchase", PURCHASE_NAV.label, PURCHASE_NAV.icon, purchase)
     if (e === "users") return group("users", USER_NAV.label, USER_NAV.icon, users)
     if (e in hrGroups) { const g = hrGroups[e as keyof typeof hrGroups]; return group(e, g.label, g.icon, hrSubs(e as keyof typeof hrGroups)) }

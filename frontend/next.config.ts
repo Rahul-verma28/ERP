@@ -11,6 +11,8 @@ const NOINDEX = ["/app", "/app/:path*", "/console", "/console/:path*", "/partner
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Dev only: the app also opens on 127.0.0.1 (a second sign-in beside localhost while testing)
+  allowedDevOrigins: ["127.0.0.1"],
   turbopack: { root: REPO_ROOT },
   outputFileTracingRoot: REPO_ROOT,
   // Same-origin API: the refresh-token cookie stays first-party and no CORS is needed

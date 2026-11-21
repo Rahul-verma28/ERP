@@ -85,6 +85,60 @@ export async function purchase(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
   });
 }
 
+export async function pos(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
+  const c = s('billing.pos.view')!;
+  const { range: r, compare } = i;
+  const prev = previousRange(r);
+  const t = ctx.tenantId;
+  const today = todayIST();
+  const own = scopeSql(c, ['d.created_by'], 'd.branch_id');
+  const live = Prisma.sql`d.tenant_id = ${t}::uuid and d.kind = 'invoice' and d.source_type = 'pos' and d.status <> 'cancelled' ${own} ${i.branchId ? Prisma.sql`and d.branch_id = ${i.branchId}::uuid` : Prisma.empty}`;
+  return widgets(ctx, () => bundle({
+    bills: Prisma.sql`select d.issue_date, d.total_paise from sales_documents d where ${live} and d.issue_date between ${prev.from}::date and ${r.to}::date`,
+    pays: Prisma.sql`select p.method::text as method, sum(p.amount_paise) as amount from payments_received p join sales_documents d on d.id = p.document_id
+      where ${live} and p.pos_shift_id is not null and p.amount_paise > 0 and p.reverses_id is null and d.issue_date between ${r.from}::date and ${r.to}::date group by p.method`,
+    items: Prisma.sql`select l.item_id, l.description, sum(l.quantity)::float as qty, sum(l.total_paise) as total_paise from sales_document_lines l join sales_documents d on d.id = l.document_id
+      where ${live} and d.issue_date between ${r.from}::date and ${r.to}::date group by l.item_id, l.description order by sum(l.total_paise) desc limit 6`,
+    counters: Prisma.sql`select c.id, c.name, c.is_active, s.id as shift_id, s.number as shift_number, s.opened_at, s.opening_cash_paise, u.name as cashier,
+        (select coalesce(sum(p.amount_paise), 0) from payments_received p where p.pos_shift_id = s.id and p.method = 'cash') as cash_paise,
+        (select coalesce(sum(case when m.kind = 'in' then m.amount_paise else -m.amount_paise end), 0) from pos_cash_moves m where m.shift_id = s.id) as moves_paise,
+        (select coalesce(sum(d.total_paise), 0) from sales_documents d join pos_shifts x on x.id = d.source_id where x.counter_id = c.id and d.source_type = 'pos' and d.status <> 'cancelled' and d.issue_date = ${today}::date) as today_paise,
+        (select count(*)::int from sales_documents d join pos_shifts x on x.id = d.source_id where x.counter_id = c.id and d.source_type = 'pos' and d.status <> 'cancelled' and d.issue_date = ${today}::date) as today_bills
+      from pos_counters c left join pos_shifts s on s.counter_id = c.id and s.status = 'open' left join users u on u.id = s.opened_by
+      where c.tenant_id = ${t}::uuid and c.is_active order by c.name`,
+  }), {
+    kpis: (b) => {
+      const sumIn = (rg: { from: string; to: string }) => b.bills.filter((x) => day(x.issueDate) >= rg.from && day(x.issueDate) <= rg.to);
+      const now = sumIn(r);
+      const before = compare ? sumIn(prev) : null;
+      const total = (rows: Row[]) => rows.reduce((a, x) => a + n(x.totalPaise), 0);
+      const avg = (rows: Row[]) => (rows.length ? Math.round(total(rows) / rows.length) : 0);
+      const drawers = b.counters.filter((x) => x.shiftId).reduce((a, x) => a + n(x.openingCashPaise) + n(x.cashPaise) + n(x.movesPaise), 0);
+      return {
+        sales: { value: total(now), change: change(total(now), before ? total(before) : null) },
+        bills: { value: now.length, change: change(now.length, before ? before.length : null) },
+        average: { value: avg(now), change: change(avg(now), before ? avg(before) : null) },
+        drawers: { value: drawers, open: b.counters.filter((x) => x.shiftId).length },
+      };
+    },
+    trend: (b) => ({ buckets: bucketsFor(r).map((k) => { const rows = b.bills.filter((x) => day(x.issueDate) >= k.from && day(x.issueDate) <= k.to); return { label: k.label, from: k.from, to: k.to, sales: rows.reduce((a, x) => a + n(x.totalPaise), 0), bills: rows.length }; }) }),
+    counters: (b) => ({
+      rows: b.counters.map((x) => ({
+        id: x.id, name: x.name, todayPaise: n(x.todayPaise), todayBills: n(x.todayBills),
+        shift: x.shiftId ? { id: x.shiftId, number: x.shiftNumber, cashier: x.cashier ?? 'Someone', openedAt: x.openedAt, drawerPaise: n(x.openingCashPaise) + n(x.cashPaise) + n(x.movesPaise) } : null,
+      })),
+    }),
+    methods: (b) => {
+      const total = b.pays.reduce((a, x) => a + n(x.amount), 0);
+      return { total, rows: b.pays.map((x) => ({ method: x.method, amount: n(x.amount), share: total ? Math.round((n(x.amount) / total) * 100) : 0 })).sort((a, z) => z.amount - a.amount) };
+    },
+    items: (b) => {
+      const max = Math.max(1, ...b.items.map((x) => n(x.totalPaise)));
+      return { rows: b.items.map((x) => ({ id: x.itemId, name: x.description, qty: n(x.qty), amount: n(x.totalPaise), pct: Math.round((n(x.totalPaise) / max) * 100) })) };
+    },
+  });
+}
+
 export async function inventory(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
   const c = s('inventory.stock.view')!;
   const { range: r } = i;

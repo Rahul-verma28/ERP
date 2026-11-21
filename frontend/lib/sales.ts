@@ -109,6 +109,7 @@ export interface SalesDoc {
   notes: string | null
   terms: string | null
   shareToken: string | null
+  issuedAt?: string | null
   sourceType: string | null
   sourceId: string | null
   cancelReason: string | null

@@ -5,6 +5,7 @@ export const DASHBOARD_TABS = [
   { key: 'overview', label: 'Overview', permission: 'reports.dashboard.view' },
   { key: 'myday', label: 'My day', permission: 'reports.dashboard.view' },
   { key: 'billing', label: 'Billing', permission: 'billing.invoice.view' },
+  { key: 'pos', label: 'POS', permission: 'billing.pos.view' },
   { key: 'sales', label: 'Sales', permission: 'sales.quotation.view' },
   { key: 'purchase', label: 'Purchase', permission: 'inventory.supplier_bill.view' },
   { key: 'inventory', label: 'Inventory', permission: 'inventory.stock.view' },
@@ -41,6 +42,13 @@ export const DASHBOARD_WIDGETS: Record<DashboardTab, { key: string; label: strin
     { key: 'results', label: 'Quotations by result' },
     { key: 'top', label: 'Best-selling services & products' },
     { key: 'open', label: 'Open quotations' },
+  ],
+  pos: [
+    { key: 'kpis', label: 'Counter sales, bills, average, cash in drawers' },
+    { key: 'trend', label: 'Counter sales by day' },
+    { key: 'counters', label: 'Counters now' },
+    { key: 'methods', label: 'How counter bills were paid' },
+    { key: 'items', label: 'Best sellers at the counter' },
   ],
   purchase: [
     { key: 'kpis', label: 'Purchased, paid, to pay, overdue' },

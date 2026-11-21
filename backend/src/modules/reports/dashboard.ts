@@ -8,7 +8,7 @@ import { SETUP_STEPS, withDefaults, type SetupState } from '../../contracts/work
 import { DASHBOARD_TABS, addDays, bucketsFor, daysBetween, gstr3bDue, previousRange, type DashboardTab } from '../../contracts/dashboard';
 import { getRolePermissions } from '../access/service';
 import { getEntitlements } from '../subscription/entitlements';
-import { inventory, purchase } from './dashboard-more';
+import { inventory, pos, purchase } from './dashboard-more';
 
 // Phase 3 dashboard (wireframes 5.1–5.8): one endpoint per tab, every figure filtered by the
 // module's data scope and the chosen branch, with the same figures for the previous period.
@@ -694,7 +694,7 @@ export async function myday(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
 }
 
 export const TAB_HANDLERS: Record<DashboardTab, (ctx: TenantCtx, s: Scoped, i: DashboardInput) => Promise<Record<string, unknown>>> = {
-  overview, myday, billing, sales, purchase, inventory, crm, bookings, finance, tasks,
+  overview, myday, billing, pos, sales, purchase, inventory, crm, bookings, finance, tasks,
 };
 
 /** Which tabs this person gets: the module is on and the role can view it. */
@@ -714,7 +714,7 @@ export async function dashboardConfig(_ctx: TenantCtx, s: Scoped, readOnly: (m: 
   const tabs = availableTabs(s, readOnly);
   const has = (k: string) => tabs.some((t) => t.key === k);
   let defaultTab: string | null = tabs[0]?.key ?? null;
-  if (/billing|cashier|counter/.test(role.key) || role.roleType === 'counter') defaultTab = has('billing') ? 'billing' : defaultTab;
+  if (/billing|cashier|counter/.test(role.key) || role.roleType === 'counter') defaultTab = has('pos') ? 'pos' : has('billing') ? 'billing' : defaultTab;
   else if (/finance|account/.test(role.key)) defaultTab = has('finance') ? 'finance' : defaultTab;
   const branches = await db().branch.findMany({ orderBy: [{ isDefault: 'desc' }, { name: 'asc' }], select: { id: true, name: true } });
   return { tabs, defaultTab, branches: branches.length > 1 ? branches : [] };

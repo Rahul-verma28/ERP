@@ -15,6 +15,7 @@ import portalRoutes, { publicPortal } from '../modules/portal/routes';
 import reportRoutes from '../modules/reports/routes';
 import inventoryRoutes from '../modules/inventory/routes';
 import purchaseRoutes from '../modules/purchase/routes';
+import posRoutes from '../modules/pos/routes';
 import consoleRoutes from '../modules/console/routes';
 import { publicPayments, tenantPayments } from '../modules/platformBilling/routes';
 import { isDev } from '../config/env';
@@ -58,5 +59,6 @@ router.use('/', portalRoutes);
 router.use('/', reportRoutes);
 router.use('/', inventoryRoutes);
 router.use('/', purchaseRoutes);
+router.use('/', posRoutes);
 
 export default router;

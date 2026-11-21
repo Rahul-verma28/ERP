@@ -22,6 +22,7 @@ interface Hit {
 
 const ACTIONS = [
   { title: "New invoice", href: "/app/m/billing/new", permission: "billing.invoice.create" },
+  { title: "Open POS counter", href: "/app/m/pos", permission: "billing.pos.create" },
   { title: "New quotation", href: "/app/m/sales/new", permission: "sales.quotation.create" },
   { title: "Book appointment", href: "/app/m/bookings", permission: "bookings.appointment.create" },
   { title: "Add customer", href: "/app/m/sales/customers", permission: "crm.contact.create" },

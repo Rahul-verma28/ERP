@@ -94,7 +94,7 @@ export const ROLES: RoleDef[] = [
     key: 'cashier', name: 'Billing Staff / Cashier', layer: 'tenant', roleType: 'counter', requiredModules: ['billing'],
     description: 'Create invoices and receipts, record payments; no deletes or refunds',
     grants: [['billing.invoice.view', 'branch'], ['billing.invoice.create', 'branch'], ['billing.payment.*', 'branch'], ['billing.pos.*', 'branch'], ['crm.contact.view', 'all'], ['crm.contact.create', 'all'], ['catalog.item.view', 'all']],
-    deny: ['billing.payment.approve'],
+    deny: ['billing.payment.approve', 'billing.pos.edit', 'billing.pos.approve'],
   },
   {
     key: 'finance_manager', name: 'Finance Manager / Accountant', layer: 'tenant', roleType: 'user', requiredModules: ['finance'],
