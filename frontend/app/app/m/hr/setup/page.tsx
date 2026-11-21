@@ -25,6 +25,8 @@ import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
 import { DAY_NAMES, useHrLookups, type Department, type Designation, type DocumentType, type HrConfig, type ListKey } from "@/lib/hr"
 import { cn } from "@/lib/utils"
+import { InlineSave } from "@/components/save-bar"
+import { activeOr } from "@/lib/active"
 
 // HR setup: working days and IDs, payroll rules (PF, ESI, PT), departments, designations,
 // and the short lists the HR forms choose from. Leave types are under Leave Management.
@@ -66,7 +68,7 @@ function RulesForm({ cfg }: { cfg: HrConfig }) {
           <Field label="Employee ID starts with" hint={`New IDs look like ${f.employeePrefix || "EMP-"}0001`}><Input value={f.employeePrefix} maxLength={8} disabled={!edit} onChange={(e) => setF({ ...f, employeePrefix: e.target.value.toUpperCase() })} placeholder="EMP-" /></Field>
           <Field label="Leave year starts in" hint="Balances reset each leave year"><NativeSelect value={String(f.leaveYearStart)} disabled={!edit} aria-label="Leave year starts in" onChange={(e) => setF({ ...f, leaveYearStart: Number(e.target.value) })}>{months.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}</NativeSelect></Field>
         </div>
-        {edit && <div><Button disabled={!f.workingDays.length || !f.employeePrefix.trim()} onClick={() => void save({ ...f, employeePrefix: f.employeePrefix.trim() }, "Working rules saved")}>Save working rules</Button></div>}
+        {edit && <InlineSave dirty={JSON.stringify(f) !== JSON.stringify({ workingDays: cfg.workingDays, employeePrefix: cfg.employeePrefix, leaveYearStart: cfg.leaveYearStart })} onDiscard={() => setF({ workingDays: cfg.workingDays, employeePrefix: cfg.employeePrefix, leaveYearStart: cfg.leaveYearStart })} disabled={!f.workingDays.length || !f.employeePrefix.trim()} onSave={() => void save({ ...f, employeePrefix: f.employeePrefix.trim() }, "Working rules saved")} saveLabel="Save working rules" />}
       </div>
     </Section>
   )
@@ -115,7 +117,7 @@ function PayrollForm({ cfg }: { cfg: HrConfig }) {
           </div>
         </div>
       </Section>
-      {edit && <div><Button onClick={() => void save(f, "Payroll rules saved")}>Save payroll rules</Button></div>}
+      {edit && <InlineSave dirty={JSON.stringify(f) !== JSON.stringify({ pf: cfg.pf, esi: cfg.esi, pt: cfg.pt })} onDiscard={() => setF({ pf: cfg.pf, esi: cfg.esi, pt: cfg.pt })} onSave={() => void save(f, "Payroll rules saved")} saveLabel="Save payroll rules" />}
     </div>
   )
 }
@@ -140,7 +142,7 @@ function NameDialog({ title, kind, value, onClose, onSave }: { title: string; ki
         <form onSubmit={save} className="grid gap-4" noValidate>
           <Field label="Name" required><Input value={name} autoFocus maxLength={80} onChange={(e) => { setName(e.target.value); setError(null) }} placeholder={kind === "designation" ? "e.g. Store manager" : "e.g. Sales, Accounts, Warehouse"} /></Field>
           {kind === "designation" && <Field label="Department"><DepartmentSelect value={departmentId} onChange={setDepartmentId} aria-label="Department" /></Field>}
-          {kind === "department" && <Field label="Branch" hint="Leave empty if it works across branches"><SearchSelect value={branchId} onChange={setBranchId} options={[{ value: "", label: "All branches" }, ...(branches.data?.data ?? []).map((b) => ({ value: b.id, label: b.name }))]} aria-label="Branch" /></Field>}
+          {kind === "department" && <Field label="Branch" hint="Leave empty if it works across branches"><SearchSelect value={branchId} onChange={setBranchId} options={[{ value: "", label: "All branches" }, ...activeOr(branches.data?.data ?? [], branchId).map((b) => ({ value: b.id, label: b.name }))]} aria-label="Branch" /></Field>}
           <FormError message={error} />
           <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
         </form>
@@ -194,7 +196,7 @@ function Departments({ kind }: { kind: "departments" | "designations" }) {
   )
 }
 
-interface Branch { id: string; name: string; code: string; stateCode: string | null; gstin: string | null; isDefault: boolean }
+interface Branch { id: string; name: string; code: string; stateCode: string | null; gstin: string | null; isDefault: boolean; isActive?: boolean }
 
 function Branches() {
   const { can } = useAuth()
@@ -221,15 +223,21 @@ function Branches() {
     { key: "code", header: "Code", csv: (b) => b.code, cell: (b) => <span className="font-mono text-xs">{b.code}</span> },
     { key: "gstin", header: "GSTIN", csv: (b) => b.gstin ?? "", cell: (b) => (b.gstin ? <span className="font-mono text-xs">{b.gstin}</span> : "—") },
     { key: "depts", header: "Departments", align: "right", csv: (b) => depts.filter((d) => d.branchId === b.id).length, cell: (b) => depts.filter((d) => d.branchId === b.id).length },
+    { key: "status", header: "Status", csv: (b) => (b.isActive === false ? "Inactive" : "Active"), cell: (b) => <Pill color={b.isActive === false ? "slate" : "emerald"} dot>{b.isActive === false ? "Inactive" : "Active"}</Pill> },
   ]
   const addBtn = can("tenant.branch.create") ? <Button className="h-10 rounded-xl px-4 font-semibold" onClick={() => setAdding(true)}><Plus /> Add branch</Button> : undefined
   return (
     <>
       <DataList<Branch>
         id="hr-branches"
-        load={localList(async () => (await api.get<{ data: Branch[] }>("/branches")).data, (b, q) => `${b.name} ${b.code}`.toLowerCase().includes(q))}
+        load={localList(async () => (await api.get<{ data: Branch[] }>("/branches")).data, (b, q) => `${b.name} ${b.code}`.toLowerCase().includes(q), {
+          filter: (b, p) => (p.show === "active" ? b.isActive !== false : p.show === "inactive" ? b.isActive === false : true),
+          counts: (rows) => ({ all: rows.length, active: rows.filter((b) => b.isActive !== false).length, inactive: rows.filter((b) => b.isActive === false).length }),
+        })}
         params={{ v: String(version) }}
-        header={{ title: "Branches", description: "Your shops and offices. Departments and employees are placed at a branch. Address and GSTIN are in Settings → Branches.", primary: addBtn, more: [{ label: "Branch addresses and GSTIN", href: "/app/settings/branches" }] }}
+        presetLabel="Show"
+        presets={[{ key: "active", label: "Active", params: { show: "active" }, countKey: "active" }, { key: "inactive", label: "Inactive", params: { show: "inactive" }, countKey: "inactive" }, { key: "all", label: "All", params: {}, countKey: "all" }]}
+        header={{ title: "Branches", description: "Your shops and offices. Departments and employees are placed at a branch. Edit, address, GSTIN and making a branch inactive are in Settings → Branches.", primary: addBtn, more: [{ label: "Manage branches in Settings", href: "/app/settings/branches" }] }}
         columns={columns}
         searchPlaceholder="Search branch"
         exportName="branches"

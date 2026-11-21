@@ -18,9 +18,10 @@ export const money = (paise: number) => formatPaise(paise, true)
 
 // ── Page ──
 
-export function Page({ title, subtitle, back, eyebrow, actions, children, wide }: { title: React.ReactNode; subtitle?: React.ReactNode; back?: { href: string; label: string }; eyebrow?: string; actions?: React.ReactNode; children: React.ReactNode; wide?: boolean }) {
+/** A console page: full width of the content area (wide is kept for older callers) */
+export function Page({ title, subtitle, back, eyebrow, actions, children }: { title: React.ReactNode; subtitle?: React.ReactNode; back?: { href: string; label: string }; eyebrow?: string; actions?: React.ReactNode; children: React.ReactNode; wide?: boolean }) {
   return (
-    <div className={cn("mx-auto flex w-full flex-col gap-6", wide ? "max-w-[90rem]" : "max-w-6xl")}>
+    <div className="flex w-full min-w-0 flex-col gap-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           {back && (

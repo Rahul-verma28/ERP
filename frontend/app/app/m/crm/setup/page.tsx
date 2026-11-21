@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/auth"
 import { STAGE_COLORS, tone, useCrmSetup, type CrmOption, type Pipeline, type Stage } from "@/lib/crm"
 import { cn } from "@/lib/utils"
 import { PageError, PageLoading } from "@/components/page-states"
+import { useChanged } from "@/lib/use-dirty"
 
 // CRM setup on one page: pipelines and their lead and deal stages, sources, labels, lost reasons.
 
@@ -30,6 +31,7 @@ function StageDialog({ stage, pipelineId, kind, onClose, onSaved }: { stage: Sta
   const [name, setName] = React.useState(stage?.name ?? "")
   const [color, setColor] = React.useState(stage?.color ?? "blue")
   const [prob, setProb] = React.useState(stage?.probability == null ? "" : String(stage.probability))
+  const unchanged = !useChanged([name, color, prob])
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -59,7 +61,7 @@ function StageDialog({ stage, pipelineId, kind, onClose, onSaved }: { stage: Sta
           {kind === "deal" && <Field label="Chance of winning" required error={errors.probability} hint="Used for the likely value of open deals"><NumberStepper max={100} step={5} suffix="%" value={prob} onChange={(v) => { setProb(v); setErrors({}) }} placeholder="e.g. 50" /></Field>}
           <Field label="Colour"><ColorPick value={color} onChange={setColor} /></Field>
           <FormError message={error} />
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save stage"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!stage && unchanged)}>{busy ? "Saving…" : "Save stage"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -171,6 +173,7 @@ function OptionList({ kind, title, hint, rows, reload, colored }: { kind: CrmOpt
 function PipelineDialog({ pipeline, onClose, onSaved }: { pipeline: Pipeline | null; onClose: () => void; onSaved: (id: string) => void }) {
   const [name, setName] = React.useState(pipeline?.name ?? "")
   const [isDefault, setIsDefault] = React.useState(pipeline?.isDefault ?? false)
+  const unchanged = !useChanged([name, isDefault])
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   async function save(e: React.FormEvent) {
@@ -193,7 +196,7 @@ function PipelineDialog({ pipeline, onClose, onSaved }: { pipeline: Pipeline | n
         <form onSubmit={save} className="grid gap-4" noValidate>
           <Field label="Name" required error={error}><Input value={name} maxLength={60} onChange={(e) => { setName(e.target.value); setError(null) }} placeholder="e.g. Projects" autoFocus /></Field>
           {!pipeline?.isDefault && <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="size-4 accent-primary" checked={isDefault} onChange={(e) => setIsDefault(e.target.checked)} /> Open this pipeline first</label>}
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!pipeline && unchanged)}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

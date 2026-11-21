@@ -6,6 +6,13 @@ import { Check, ChevronDown, Plus, Search } from "lucide-react"
 import { GST_STATES } from "@contracts/validation"
 import { INDUSTRIES, industryByKey } from "@contracts/workspace"
 import { cn } from "@/lib/utils"
+import { FieldLabelContext } from "@/lib/placeholder"
+
+/** "Branch (optional)" → "branch"; acronyms like GSTIN stay as they are */
+const selectLabel = (l: string) => {
+  const t = l.replace(/\s*\((optional|required)\)\s*$/i, "").trim()
+  return /^[A-Z][a-z]/.test(t) ? t.charAt(0).toLowerCase() + t.slice(1) : t
+}
 
 // The one dropdown used across the product. Long lists get a search box; State and Industry
 // are ready-made below so every form shows the same list, A to Z.
@@ -45,7 +52,10 @@ export interface SearchSelectProps {
 const rank = (o: SelectOption) => (!o.value ? 0 : /^other\b/i.test(o.label) ? 2 : 1)
 const sorted = (options: SelectOption[]) => [...options].sort((a, b) => rank(a) - rank(b) || a.label.localeCompare(b.label))
 
-export function SearchSelect({ value, onChange, options, placeholder = "Choose…", searchPlaceholder = "Search…", searchable, sort, onBlur, disabled, className, onCreate, createLabel = "Add new", ...trigger }: SearchSelectProps) {
+export function SearchSelect({ value, onChange, options, placeholder: given, searchPlaceholder = "Search…", searchable, sort, onBlur, disabled, className, onCreate, createLabel = "Add new", ...trigger }: SearchSelectProps) {
+  // Inside a <Field>: "Select <label>" when the form gave no placeholder
+  const fieldLabel = React.useContext(FieldLabelContext)
+  const placeholder = given ?? (fieldLabel ? `Select ${selectLabel(fieldLabel)}` : "Choose…")
   const [open, setOpen] = React.useState(false)
   const [query, setQuery] = React.useState("")
   const [active, setActive] = React.useState(0)
@@ -83,7 +93,7 @@ export function SearchSelect({ value, onChange, options, placeholder = "Choose�
         aria-haspopup="listbox"
         {...trigger}
         className={cn(
-          "flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-transparent bg-muted px-3 text-left text-sm text-foreground transition-[color,box-shadow,border-color] outline-none focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground aria-invalid:border-destructive aria-invalid:bg-destructive/[0.03] data-popup-open:border-primary data-popup-open:ring-3 data-popup-open:ring-primary/20",
+          "flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-xl border border-input bg-background px-3 text-left text-sm shadow-xs hover:border-foreground/20 text-foreground transition-[color,box-shadow,border-color] outline-none focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/20 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground aria-invalid:border-destructive aria-invalid:bg-destructive/[0.03] data-popup-open:border-primary data-popup-open:ring-3 data-popup-open:ring-primary/20",
           className
         )}
       >

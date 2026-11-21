@@ -82,7 +82,7 @@ function Apply() {
   }
 
   return (
-    <Card>
+    <Card data-auth-wide>
       <CardHeader>
         <CardTitle className="text-xl">Work with AHEAD</CardTitle>
         <CardDescription>Tell us a little about you. AHEAD reviews every application.</CardDescription>

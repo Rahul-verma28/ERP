@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth"
 import { formatDateTime, formatPaise } from "@/lib/format"
 import type { Counter } from "@/lib/pos"
 import { useApi } from "@/lib/use-api"
+import { useChanged } from "@/lib/use-dirty"
 
 // Counters: each billing counter sells from a warehouse, puts cash and UPI/card into chosen
 // accounts, prints on its paper, and has its own discount limit and rules.
@@ -54,7 +55,7 @@ export default function CountersPage() {
                   <span className="block font-semibold">{c.name}</span>
                   <span className="text-xs text-muted-foreground">{c.shifts} shift{c.shifts === 1 ? "" : "s"} · today {formatPaise(c.todayPaise)}</span>
                 </span>
-                {!c.isActive ? <Pill color="slate">Off</Pill> : c.openShift ? <Pill color="emerald" dot>Open</Pill> : <Pill color="blue">Ready</Pill>}
+                {!c.isActive ? <Pill color="slate">Inactive</Pill> : c.openShift ? <Pill color="emerald" dot>Open</Pill> : <Pill color="blue">Ready</Pill>}
               </div>
               {c.openShift && <Link href={`/app/m/pos/shifts/${c.openShift.id}`} className="rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-800 hover:underline dark:bg-emerald-500/10 dark:text-emerald-300">{c.openShift.number} open by {c.openShift.by} since {formatDateTime(c.openShift.at)}</Link>}
               <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
@@ -83,6 +84,7 @@ function CounterDialog({ setup, counter, onClose, onSaved }: { setup: Setup; cou
     paper: counter?.paper ?? "80mm", receiptNote: counter?.receiptNote ?? "", maxDiscountPct: counter?.maxDiscountPct == null ? "" : String(counter.maxDiscountPct),
     allowCredit: counter?.allowCredit ?? true, needCustomer: counter?.needCustomer ?? false, isActive: counter?.isActive ?? true,
   })
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -143,12 +145,12 @@ function CounterDialog({ setup, counter, onClose, onSaved }: { setup: Setup; cou
         <div className="grid gap-2 rounded-xl border p-3 text-sm">
           <label className="flex items-start gap-2"><input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={f.allowCredit} onChange={(e) => set("allowCredit", e.target.checked)} /><span><b>Allow on account</b><span className="block text-muted-foreground">A known customer may pay part now and owe the rest, within their credit limit.</span></span></label>
           <label className="flex items-start gap-2"><input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={f.needCustomer} onChange={(e) => set("needCustomer", e.target.checked)} /><span><b>Ask the customer&apos;s name and phone on every bill</b><span className="block text-muted-foreground">Useful for warranty and to send the bill on WhatsApp.</span></span></label>
-          {counter && <label className="flex items-start gap-2"><input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={f.isActive} onChange={(e) => set("isActive", e.target.checked)} /><span><b>Counter is on</b><span className="block text-muted-foreground">Turn off a counter you no longer use. Its bills and shifts stay.</span></span></label>}
+          {counter && <label className="flex items-start gap-2"><input type="checkbox" className="mt-0.5 size-4 accent-primary" checked={f.isActive} onChange={(e) => set("isActive", e.target.checked)} /><span><b>Active</b><span className="block text-muted-foreground">Make a counter you no longer use inactive. Its bills and shifts stay.</span></span></label>}
         </div>
         <FormError message={error} />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={busy}>{busy && <Loader2 className="animate-spin" />} {counter ? "Save" : "Add counter"}</Button>
+          <Button onClick={() => void save()} disabled={busy || (!!counter && unchanged)}>{busy && <Loader2 className="animate-spin" />} {counter ? "Save" : "Add counter"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

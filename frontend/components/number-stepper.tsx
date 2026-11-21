@@ -42,7 +42,7 @@ export function NumberStepper({ value, onChange, min = 0, max, step = 1, decimal
     <div
       data-slot="number-stepper"
       className={cn(
-        "flex items-stretch overflow-hidden rounded-xl border bg-input/40 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30 has-[[aria-invalid=true]]:border-destructive",
+        "flex items-stretch overflow-hidden rounded-xl border border-input bg-background shadow-xs hover:border-foreground/20 focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20 focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/30 has-[[aria-invalid=true]]:border-destructive",
         size === "sm" ? "h-8" : "h-10",
         disabled && "opacity-60",
         className,

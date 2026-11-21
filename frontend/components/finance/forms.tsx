@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth"
 import { useSharedApi } from "@/lib/use-api"
 import { formatPaise } from "@/lib/format"
 import { KIND_LABEL, useFinAccounts, type AccountKind, type Expense, type FinAccount, type Income } from "@/lib/finance"
+import { useChanged } from "@/lib/use-dirty"
 
 // Finance forms: account, expense, other income, transfer; and the account and category pickers
 // that every money form uses, each with "add" inside the list.
@@ -74,8 +75,9 @@ function PaymentAccountInner({ label, method, value, onChange, className }: { la
 /** Expense or income head: pick one, or type a new one and add it */
 export function CategorySelect({ kind, value, onChange, ...rest }: { kind: "expense" | "income"; value: string; onChange: (v: string) => void; "aria-label"?: string; "aria-invalid"?: boolean }) {
   const { can } = useAuth()
-  const list = useSharedApi<{ data: { id: string; name: string }[] }>(`/finance/categories?kind=${kind}`)
-  const names = list.data?.data.map((c) => c.name) ?? []
+  const list = useSharedApi<{ data: { id: string; name: string; isActive?: boolean }[] }>(`/finance/categories?kind=${kind}`)
+  // Inactive heads are not offered for new entries; an entry already on one keeps it
+  const names = list.data?.data.filter((c) => c.isActive !== false || c.name === value).map((c) => c.name) ?? []
   return (
     <SearchSelect
       {...rest}
@@ -109,6 +111,8 @@ export function AccountDialog({ account, initialName = "", onClose, onSaved }: {
     name: account?.name ?? initialName, kind: (account?.kind ?? "bank") as AccountKind, bankName: account?.bankName ?? "", accountNo: account?.accountNo ?? "", ifsc: account?.ifsc ?? "", upiId: account?.upiId ?? "",
     openingPaise: account?.openingPaise ?? (null as number | null), openingDate: account?.openingDate?.slice(0, 10) ?? "", isDefault: account?.isDefault ?? false, notes: account?.notes ?? "",
   })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -181,7 +185,7 @@ export function AccountDialog({ account, initialName = "", onClose, onSaved }: {
           <FormError message={error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : account ? "Save account" : "Add account"}</Button>
+            <Button type="submit" disabled={busy || (!!account && unchanged)}>{busy ? "Saving…" : account ? "Save account" : "Add account"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -200,6 +204,8 @@ export function ExpenseDialog({ expense, copyOf, onClose, onSaved }: { expense?:
     accountId: src?.accountId ?? "", payee: src?.payee ?? "", reference: expense?.reference ?? "", notes: src?.notes ?? "", receiptUrl: expense?.receiptUrl ?? "",
     gstBill: !!src?.gstPaise, billNo: expense?.billNo ?? "", vendorGstin: src?.vendorGstin ?? "", gstRateBp: src?.gstRateBp ?? 1800,
   })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -278,7 +284,7 @@ export function ExpenseDialog({ expense, copyOf, onClose, onSaved }: { expense?:
           <FormError message={error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : expense ? "Save expense" : "Add expense"}</Button>
+            <Button type="submit" disabled={busy || (!!expense && unchanged)}>{busy ? "Saving…" : expense ? "Save expense" : "Add expense"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -292,6 +298,8 @@ export function IncomeDialog({ income, onClose, onSaved }: { income?: Income | n
   const today = todayInIndia()
   const accounts = useFinAccounts()
   const [f, setF] = React.useState({ category: income?.category ?? "", amountPaise: income?.amountPaise ?? (null as number | null), receivedOn: income?.receivedOn.slice(0, 10) ?? today, accountId: income?.accountId ?? "", payer: income?.payer ?? "", reference: income?.reference ?? "", notes: income?.notes ?? "" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -339,7 +347,7 @@ export function IncomeDialog({ income, onClose, onSaved }: { income?: Income | n
           <div className="sm:col-span-2"><FormError message={error} /></div>
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : income ? "Save income" : "Add income"}</Button>
+            <Button type="submit" disabled={busy || (!!income && unchanged)}>{busy ? "Saving…" : income ? "Save income" : "Add income"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -43,7 +43,7 @@ export default function SystemHealthPage() {
   }
 
   if (error) return <Failed error={error} onRetry={reload} />
-  if (!data) return <Loading rows={8} className="mx-auto max-w-6xl" />
+  if (!data) return <Loading rows={8} />
   const s = data.summary
   const problems = s.jobsFailing + s.eventsFailed + s.webhooks + (s.queueStuck ? 1 : 0)
 

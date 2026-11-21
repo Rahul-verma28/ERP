@@ -112,6 +112,8 @@ export function RoleForm({ roleId, fromId }: { roleId?: string; fromId?: string 
   const shownName = name ?? (data ? (isEdit ? data.name : `${data.name} (copy)`) : "")
   const shownDescription = description ?? (isEdit ? (data?.description ?? "") : "")
   const selected = Object.keys(current).filter((k) => k !== OWNER_ONLY).length
+  // Editing: Save works only once the name, description, permissions or field access changed
+  const unchanged = isEdit && (name === null || name === data?.name) && (description === null || description === (data?.description ?? "")) && (draft === null || JSON.stringify(draft) === JSON.stringify(data?.permissions ?? {})) && (fields === null || JSON.stringify(fields) === JSON.stringify(data?.fieldAccess ?? {}))
   const problem = rolePermissionProblem(Object.keys(current), catalog)
   const q = search.trim().toLowerCase()
   const visible = q ? features.filter((f) => f.label.toLowerCase().includes(q) || (MODULE_LABEL[f.module] ?? "").toLowerCase().includes(q) || f.actions.some((a) => a.action.includes(q))) : features.filter((f) => f.module === tab)
@@ -368,7 +370,7 @@ export function RoleForm({ roleId, fromId }: { roleId?: string; fromId?: string 
           <Link href="/app/users/roles" className={buttonVariants({ variant: "outline" })}>
             Cancel
           </Link>
-          <Button onClick={save} disabled={busy || !!problem}>
+          <Button onClick={save} disabled={busy || !!problem || unchanged}>
             <Check /> {busy ? "Saving…" : isEdit ? "Save changes" : "Create role"}
           </Button>
         </div>

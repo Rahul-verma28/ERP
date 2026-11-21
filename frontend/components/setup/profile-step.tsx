@@ -117,7 +117,7 @@ export function ProfileStep({ tenant, workspace, refresh, complete, back }: Step
         </Field>
       </div>
       <p className="text-xs text-muted-foreground">Time zone India (IST) · Currency Indian Rupee (₹) — change these in Settings › Business.</p>
-      <StepFooter back={back} onSkip={() => void complete("skipped")} saving={form.submitting} error={form.formError} />
+      <StepFooter back={back} onSkip={() => void complete("skipped")} saving={form.submitting} error={form.formError} dirty={form.dirty} />
     </form>
   )
 }

@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Clock, Layers, Moon, Users, Pencil, Plus, Star, Sun, Trash2 } from "lucide-react"
+import { Archive, ArchiveRestore, Clock, Layers, Moon, Users, Pencil, Plus, Star, Sun, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -18,6 +18,7 @@ import { SummaryCards } from "@/components/summary-cards"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useHrLookups, type Shift } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
 
 // Shifts: working hours, break and grace time. Late marks and overtime are worked out from them.
 
@@ -26,6 +27,8 @@ const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5))
 
 function ShiftDialog({ shift, onClose, onSaved }: { shift: Shift | null; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = React.useState({ name: shift?.name ?? "", startsAt: shift?.startsAt ?? "09:30", endsAt: shift?.endsAt ?? "18:30", breakMinutes: String(shift?.breakMinutes ?? 60), graceMinutes: String(shift?.graceMinutes ?? 15), isNight: shift?.isNight ?? false, isDefault: shift?.isDefault ?? false, isActive: shift?.isActive ?? true })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -70,7 +73,7 @@ function ShiftDialog({ shift, onClose, onSaved }: { shift: Shift | null; onClose
           <label className="flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm"><span><span className="font-medium">Default</span><span className="block text-xs text-muted-foreground">For new employees</span></span><Switch checked={f.isDefault} onCheckedChange={(v) => set("isDefault", v)} aria-label="Default shift" /></label>
           <p className="rounded-xl bg-muted/60 px-3 py-2 text-sm sm:col-span-2">Working time: <strong>{hm(work)}</strong> a day</p>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : shift ? "Save shift" : "Add shift"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!shift && unchanged)}>{busy ? "Saving…" : shift ? "Save shift" : "Add shift"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -92,7 +95,7 @@ export default function ShiftsPage() {
     { key: "grace", header: "Grace", csv: (s) => s.graceMinutes, cell: (s) => `${s.graceMinutes} min` },
     { key: "work", header: "Working time", csv: (s) => s.workingMinutes, cell: (s) => <span className="font-medium">{hm(s.workingMinutes)}</span> },
     { key: "employees", header: "People", align: "right", sort: (s) => s.employees, csv: (s) => s.employees, cell: (s) => <Pill color={s.employees ? "blue" : "slate"}>{s.employees} {s.employees === 1 ? "person" : "people"}</Pill> },
-    { key: "status", header: "Status", csv: (s) => (s.isActive ? "Active" : "Off"), cell: (s) => <Pill color={s.isActive ? "emerald" : "slate"} dot>{s.isActive ? "Active" : "Off"}</Pill> },
+    { key: "status", header: "Status", csv: (s) => (s.isActive ? "Active" : "Inactive"), cell: (s) => <Pill color={s.isActive ? "emerald" : "slate"} dot>{s.isActive ? "Active" : "Inactive"}</Pill> },
     {
       key: "actions", header: "Actions", hideable: false,
       cell: (s) => (
@@ -100,6 +103,7 @@ export default function ShiftsPage() {
           {can("hr.shift.edit") && <Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit ${s.name}`} onClick={() => setEditing(s)}><Pencil /></Button>}
           <ActionMenu label={`More actions for ${s.name}`} items={[
             can("hr.shift.edit") && !s.isDefault && { label: "Make default", icon: Star, onClick: async () => { try { await api.put(`/hr/shifts/${s.id}`, { ...s, isDefault: true }); toast.success(`${s.name} is the default`); reload() } catch (e) { toast.error(errorMessage(e)) } } },
+            can("hr.shift.edit") && !s.isDefault && { label: s.isActive ? "Make inactive" : "Make active", icon: s.isActive ? Archive : ArchiveRestore, onClick: async () => { try { await api.put(`/hr/shifts/${s.id}`, { ...s, isActive: !s.isActive }); toast.success(s.isActive ? `${s.name} is inactive` : `${s.name} is active again`); reload() } catch (e) { toast.error(errorMessage(e)) } } },
             "-",
             can("hr.shift.delete") && !s.isDefault && { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(s) },
           ]} />
@@ -114,13 +118,18 @@ export default function ShiftsPage() {
       <HrTabs tabs={TABS.attendance} active="shifts" />
       {look.data && <SummaryCards className="mb-4" items={[
         { label: "Total shifts", value: all.length, hint: `${all.reduce((n, x) => n + x.employees, 0)} people on a shift`, color: "blue", icon: Layers },
-        { label: "Active", value: all.filter((x) => x.isActive).length, hint: `${all.filter((x) => !x.isActive).length} turned off`, color: "emerald", icon: Users },
+        { label: "Active", value: all.filter((x) => x.isActive).length, hint: `${all.filter((x) => !x.isActive).length} inactive`, color: "emerald", icon: Users },
         { label: "Day shifts", value: all.filter((x) => !x.isNight).length, color: "amber", icon: Sun },
         { label: "Night shifts", value: all.filter((x) => x.isNight).length, color: "violet", icon: Moon },
       ]} />}
       <DataList<Shift>
         id="hr-shifts"
-        load={localList(async () => (await api.get<{ data: Shift[] }>("/hr/shifts")).data, (s, q) => s.name.toLowerCase().includes(q))}
+        load={localList(async () => (await api.get<{ data: Shift[] }>("/hr/shifts")).data, (s, q) => s.name.toLowerCase().includes(q), {
+          filter: (s, p) => (p.show === "active" ? s.isActive : p.show === "inactive" ? !s.isActive : true),
+          counts: (rows) => ({ all: rows.length, active: rows.filter((s) => s.isActive).length, inactive: rows.filter((s) => !s.isActive).length }),
+        })}
+        presetLabel="Show"
+        presets={[{ key: "active", label: "Active", params: { show: "active" }, countKey: "active" }, { key: "inactive", label: "Inactive", params: { show: "inactive" }, countKey: "inactive" }, { key: "all", label: "All", params: {}, countKey: "all" }]}
         params={{ v: String(version) }}
         header={{ title: "Shifts", description: "Working hours for each shift. Pick an employee's shift on their profile.", primary: add }}
         columns={columns}
@@ -130,7 +139,7 @@ export default function ShiftsPage() {
         emptyState={<EmptyState icon={Clock} title="No shifts yet" action={add} />}
       />
       {editing && <ShiftDialog shift={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); reload() }} />}
-      <ConfirmDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)} destructive title={`Delete ${deleting?.name}?`} description="Only a shift nobody works can be deleted." confirmLabel="Delete shift"
+      <ConfirmDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)} destructive title={`Delete ${deleting?.name}?`} description="Only a shift nobody works can be deleted. Otherwise make it inactive." confirmLabel="Delete shift"
         onConfirm={async () => { try { await api.delete(`/hr/shifts/${deleting!.id}`); toast.success("Shift deleted"); reload() } catch (e) { toast.error(errorMessage(e)) } }} />
     </>
   )

@@ -18,6 +18,7 @@ import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
+import { InlineSave } from "@/components/save-bar"
 
 // Customer portal setup: switch it on, choose its link and which parts customers see. Customers
 // sign in with their mobile number; or send one customer a sign-in link from their page.
@@ -36,11 +37,15 @@ export default function PortalSetupPage() {
   const { can } = useAuth()
   const res = useApi<Settings>(can("billing.invoice.view") ? "/portal/settings" : null)
   const [f, setF] = React.useState<Settings | null>(null)
+  // What is saved: the last save, else what loaded. Save works only when the form differs from it
+  const [base, setBase] = React.useState<Settings | null>(null)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [showQr, setShowQr] = React.useState(false)
   const s = f ?? res.data ?? null
+  const saved = base ?? res.data ?? null
+  const dirty = !!f && JSON.stringify(f) !== JSON.stringify(saved)
   if (!can("billing.invoice.view")) return <PageHeader title="Customer portal" description="You don't have access to this. Ask your admin." />
   if (!s) return <PageLoading />
   const canEdit = can("tenant.settings.edit")
@@ -59,6 +64,7 @@ export default function PortalSetupPage() {
     try {
       const saved = await api.put<Settings>("/portal/settings", { ...s, slug: slug || null, title: s!.title.trim(), intro: s!.intro?.trim() || null })
       setF(saved)
+      setBase(saved)
       void res.reload()
       toast.success(saved.enabled ? "Saved. The portal is live." : "Saved. The portal is off.")
     } catch (err) {
@@ -91,7 +97,7 @@ export default function PortalSetupPage() {
             })}
           </FormSection>
           <FormError message={error} />
-          {canEdit && <div className="flex justify-end"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></div>}
+          {canEdit && <InlineSave dirty={dirty} saving={busy} onDiscard={() => { setF(null); setErrors({}); setError(null) }} onSave={() => void save({ preventDefault() {} } as React.FormEvent)} />}
         </form>
 
         <div className="grid content-start gap-5">

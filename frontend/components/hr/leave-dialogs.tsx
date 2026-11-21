@@ -16,6 +16,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate } from "@/lib/format"
 import { useHrLookups, type LeaveApp } from "@/lib/hr"
 import { cn } from "@/lib/utils"
+import { useChanged } from "@/lib/use-dirty"
 
 // Leave forms: apply (or change a waiting request), and approve or reject.
 
@@ -26,6 +27,8 @@ export function LeaveDialog({ leave, employeeId: fixed, onClose, onSaved }: { le
   const look = useHrLookups()
   const own = !can("hr.leave.approve")
   const [f, setF] = React.useState({ employeeId: leave?.employeeId ?? fixed ?? "", leaveTypeId: leave?.leaveTypeId ?? "", fromDate: leave?.fromDate.slice(0, 10) ?? todayInIndia(), toDate: leave?.toDate.slice(0, 10) ?? todayInIndia(), halfDay: leave?.halfDay ?? false, reason: leave?.reason ?? "" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const bal = useApi<Balance>(f.employeeId || own ? `/hr/leave-balances${f.employeeId ? `?employeeId=${f.employeeId}` : ""}` : null)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
@@ -89,7 +92,7 @@ export function LeaveDialog({ leave, employeeId: fixed, onClose, onSaved }: { le
           <div className="sm:col-span-2"><FormError message={error} /></div>
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : leave ? "Save" : own ? "Request leave" : "Add leave"}</Button>
+            <Button type="submit" disabled={busy || (!!leave && unchanged)}>{busy ? "Saving…" : leave ? "Save" : own ? "Request leave" : "Add leave"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

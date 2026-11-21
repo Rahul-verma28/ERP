@@ -6,7 +6,6 @@ import { usePathname, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Bell, Check, ChevronDown, ChevronsUpDown, CreditCard, Lock, LogOut, Menu, Search, Settings, ShieldCheck, UserRound, X, type LucideIcon } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -20,7 +19,7 @@ import {
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { DASHBOARD_NAV, HRM_NAV, MODULE_NAV, MODULE_SUBS, NAV_SECTIONS, PERFORMANCE_NAV, POS_NAV, PURCHASE_NAV, RECRUITMENT_NAV, SALES_NAV, USER_NAV, type NavEntry, type SubNav } from "@/lib/nav"
-import { ReadOnlyBanner } from "@/components/page-states"
+import { ReadOnlyBanner, ViewOnlyTag } from "@/components/page-states"
 import { CommandPalette } from "@/components/command-palette"
 import { SidePanel } from "@/components/side-panel"
 import { ThemeSwitch } from "@/components/workspace-branding"
@@ -48,10 +47,39 @@ export function NavLink({ href, active, children, onClick }: { href: string; act
 /** Every link in a menu, folders opened up */
 const flatSubs = (subs: SubNav[]): SubNav[] => subs.flatMap((s) => (s.children ? flatSubs(s.children) : [s]))
 
+/** The plan module a menu link belongs to: its permission's module, else the menu's own */
+const GROUP_MODULE: Record<string, string> = { pos: "billing", purchase: "inventory", hrm: "hr", performance: "hr", recruitment: "hr", users: "tenant", salesgroup: "sales" }
+const subModule = (groupId: string, s: SubNav) => s.permission?.split(".")[0] ?? GROUP_MODULE[groupId] ?? groupId
+
+/** Every menu link with the module it belongs to, to tell which module a page is in */
+const ALL_LINKS: { href: string; also: string[]; module: string }[] = [
+  ...SALES_NAV.subs.map((s) => ["salesgroup", s] as const),
+  ...POS_NAV.subs.map((s) => ["pos", s] as const),
+  ...PURCHASE_NAV.subs.map((s) => ["purchase", s] as const),
+  ...[HRM_NAV, PERFORMANCE_NAV, RECRUITMENT_NAV].flatMap((g) => g.subs.map((s) => ["hrm", s] as const)),
+  ...(Object.entries(MODULE_SUBS) as [string, SubNav[]][]).flatMap(([k, subs]) => subs.map((s) => [k, s] as const)),
+].flatMap(([g, s]) => flatSubs([s]).map((l) => ({ href: l.href.split("?")[0], also: l.also ?? [], module: subModule(g, l) })))
+
+/** The module the page at this path belongs to (the longest matching menu link wins) */
+export function moduleForPath(pathname: string): string | null {
+  const hit = ALL_LINKS.flatMap((l) => [l.href, ...l.also].filter((p) => pathname === p || pathname.startsWith(`${p}/`)).map((p) => ({ module: l.module, len: p.length }))).sort((a, b) => b.len - a.len)[0]
+  return hit?.module ?? /^\/app\/m\/([a-z]+)/.exec(pathname)?.[1] ?? null
+}
+
 const subLinkClass = (active: boolean) => cn("rounded-lg px-2.5 py-1.5 text-[13.5px] text-sidebar-foreground/75 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground", active && "bg-sidebar-accent font-semibold text-sidebar-accent-foreground")
 
 /** A folder inside a menu (Attendance → Attendances, Shifts): open while you are inside it */
-function NavFolder({ sub, activeHref, forceOpen, onNavigate }: { sub: SubNav; activeHref: string | null; forceOpen: boolean; onNavigate?: () => void }) {
+/** A link in a module menu, with the view-only eye when its module is view only on the plan */
+function SubLink({ s, activeHref, onNavigate, viewOnly }: { s: SubNav; activeHref: string | null; onNavigate?: () => void; viewOnly?: boolean }) {
+  return (
+    <Link href={s.href} onClick={onNavigate} aria-current={s.href === activeHref ? "page" : undefined} className={cn(subLinkClass(s.href === activeHref), "flex items-center gap-2")}>
+      <span className="flex-1 truncate">{s.label}</span>
+      {viewOnly && <ViewOnlyTag variant="icon" />}
+    </Link>
+  )
+}
+
+function NavFolder({ sub, activeHref, forceOpen, onNavigate, viewOnly }: { sub: SubNav; activeHref: string | null; forceOpen: boolean; onNavigate?: () => void; viewOnly?: (s: SubNav) => boolean }) {
   const inside = flatSubs(sub.children ?? []).some((c) => c.href === activeHref)
   const [open, setOpen] = React.useState(inside)
   const shown = forceOpen || open || inside
@@ -63,7 +91,7 @@ function NavFolder({ sub, activeHref, forceOpen, onNavigate }: { sub: SubNav; ac
       </button>
       {shown && (
         <div className="grid gap-px py-0.5 pl-3">
-          {(sub.children ?? []).map((c) => <Link key={c.href} href={c.href} onClick={onNavigate} aria-current={c.href === activeHref ? "page" : undefined} className={subLinkClass(c.href === activeHref)}>{c.label}</Link>)}
+          {(sub.children ?? []).map((c) => <SubLink key={c.href} s={c} activeHref={activeHref} onNavigate={onNavigate} viewOnly={viewOnly?.(c)} />)}
         </div>
       )}
     </div>
@@ -71,8 +99,12 @@ function NavFolder({ sub, activeHref, forceOpen, onNavigate }: { sub: SubNav; ac
 }
 
 /** A module with sub-modules: opens in place, and shows where you are */
-function NavGroup({ id, label, icon: Icon, subs, open, onToggle, activeHref, onNavigate, searching }: { id: string; label: string; icon: LucideIcon; subs: SubNav[]; open: boolean; onToggle: (id: string) => void; activeHref: string | null; onNavigate?: () => void; searching?: boolean }) {
+function NavGroup({ id, label, icon: Icon, subs, open, onToggle, activeHref, onNavigate, searching, viewOnly }: { id: string; label: string; icon: LucideIcon; subs: SubNav[]; open: boolean; onToggle: (id: string) => void; activeHref: string | null; onNavigate?: () => void; searching?: boolean; viewOnly?: (s: SubNav) => boolean }) {
   const inside = flatSubs(subs).some((s) => s.href === activeHref)
+  // The whole menu is view only: one eye on the menu; only some pages: an eye on each of those
+  const leaves = flatSubs(subs)
+  const allViewOnly = !!viewOnly && leaves.length > 0 && leaves.every(viewOnly)
+  const linkViewOnly = allViewOnly ? undefined : viewOnly
   return (
     <div>
       <button
@@ -83,13 +115,14 @@ function NavGroup({ id, label, icon: Icon, subs, open, onToggle, activeHref, onN
       >
         <Icon className="size-4" />
         <span className="flex-1 truncate">{label}</span>
+        {allViewOnly && <ViewOnlyTag variant="icon" />}
         <ChevronDown className={cn("size-4 transition-transform duration-200", open && "rotate-180")} />
       </button>
       {open && (
         <div className="ui-rise grid gap-px py-1 pl-8">
           {subs.map((s) => s.children
-            ? <NavFolder key={s.label} sub={s} activeHref={activeHref} forceOpen={!!searching} onNavigate={onNavigate} />
-            : <Link key={s.href} href={s.href} onClick={onNavigate} aria-current={s.href === activeHref ? "page" : undefined} className={subLinkClass(s.href === activeHref)}>{s.label}</Link>)}
+            ? <NavFolder key={s.label} sub={s} activeHref={activeHref} forceOpen={!!searching} onNavigate={onNavigate} viewOnly={linkViewOnly} />
+            : <SubLink key={s.href} s={s} activeHref={activeHref} onNavigate={onNavigate} viewOnly={linkViewOnly?.(s)} />)}
         </div>
       )}
     </div>
@@ -130,7 +163,8 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const group = (id: string, label: string, icon: LucideIcon, subs: SubNav[]) => {
     const shown = matchGroup(label, subs)
     if (!shown.length) return null
-    return <NavGroup key={id} id={id} label={label} icon={icon} subs={shown} open={!!q || openId === id} onToggle={toggle} activeHref={current?.href ?? null} onNavigate={onNavigate} searching={!!q} />
+    const viewOnly = (s: SubNav) => me?.modules?.[subModule(id, s) as ModuleKey]?.status === "read_only"
+    return <NavGroup key={id} id={id} label={label} icon={icon} subs={shown} open={!!q || openId === id} onToggle={toggle} activeHref={current?.href ?? null} onNavigate={onNavigate} searching={!!q} viewOnly={viewOnly} />
   }
 
   const entry = (e: NavEntry): React.ReactNode => {
@@ -171,7 +205,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <m.icon className="size-4" />
         <span className="flex-1 truncate">{label}</span>
         {ent?.status === "inactive" && <Lock className="size-3.5 text-muted-foreground" aria-label="Not in your plan" />}
-        {ent?.status === "read_only" && <Badge variant="outline" className="h-5 px-1.5 text-[10px]">Read-only</Badge>}
+        {ent?.status === "read_only" && <ViewOnlyTag variant="icon" />}
       </NavLink>
     )
   }
@@ -398,7 +432,7 @@ function Banners() {
       )}
       {sub?.status === "free" && Object.values(me.modules ?? {}).some((m) => m.status === "read_only") && (
         <div className="bg-muted px-4 py-2 text-center text-sm">
-          You&apos;re on the Free plan. Paid-module data is read-only and can be exported anytime.{" "}
+          You&apos;re on the Free plan. Paid modules are view only: your data stays and can be exported anytime.{" "}
           {can("tenant.billing.view") && (
             <Link href="/app/billing" className="font-medium underline underline-offset-4">
               Upgrade to restore it
@@ -512,13 +546,11 @@ export function PageHeader({ title, description, actions }: { title: React.React
   )
 }
 
-const MODULE_PATH = new RegExp("^/app/m/([a-z]+)")
-
 /** Banner on a module that became read-only after the trial (wireframe 0.4). */
 function ReadOnlyNotice() {
   const pathname = usePathname()
   const { me, can } = useAuth()
-  const key = MODULE_PATH.exec(pathname)?.[1] as ModuleKey | undefined
+  const key = moduleForPath(pathname) as ModuleKey | null
   if (!key || me?.modules?.[key]?.status !== "read_only") return null
   const nav = MODULE_NAV.find((m) => m.key === key)
   return <ReadOnlyBanner name={nav?.label ?? "This module"} canUpgrade={can("tenant.billing.view")} />

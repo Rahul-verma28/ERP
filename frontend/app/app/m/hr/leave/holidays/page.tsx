@@ -18,6 +18,7 @@ import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate } from "@/lib/format"
 import { DAY_NAMES } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
 
 // Holidays for the year: leave doesn't count them, attendance shows them, payroll pays them.
 
@@ -30,6 +31,8 @@ const days = (h: { fromDate: string; toDate: string }) => Math.round((new Date(h
 
 function HolidayDialog({ holiday, onClose, onSaved }: { holiday: Holiday | null; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = React.useState({ name: holiday?.name ?? "", fromDate: holiday?.fromDate.slice(0, 10) ?? todayInIndia(), toDate: holiday?.toDate.slice(0, 10) ?? "", kind: holiday ? typeName(holiday.kind) : "Festival", paid: holiday?.paid ?? true, optional: holiday?.optional ?? false, notes: holiday?.notes ?? "" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -67,7 +70,7 @@ function HolidayDialog({ holiday, onClose, onSaved }: { holiday: Holiday | null;
           <label className="flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm"><span className="font-medium">Paid</span><Switch checked={f.paid} onCheckedChange={(v) => set("paid", v)} aria-label="Paid" /></label>
           <label className="flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm"><span><span className="font-medium">Optional</span><span className="block text-xs text-muted-foreground">Staff choose to take it</span></span><Switch checked={f.optional} onCheckedChange={(v) => set("optional", v)} aria-label="Optional" /></label>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : holiday ? "Save" : "Add holiday"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!holiday && unchanged)}>{busy ? "Saving…" : holiday ? "Save" : "Add holiday"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

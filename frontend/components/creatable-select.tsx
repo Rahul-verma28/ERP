@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Check, FolderOpen, Pencil, PlusCircle, Trash2, X } from "lucide-react"
+import { Archive, ArchiveRestore, Check, FolderOpen, Pencil, PlusCircle, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -24,6 +24,8 @@ export interface ManagedRow {
   tag?: string
   /** This row cannot be removed */
   locked?: boolean
+  /** Made inactive: kept, but not offered in the dropdown */
+  inactive?: boolean
 }
 
 const message = (e: unknown) => (e instanceof ApiError ? (e.fields.name ?? e.message) : errorMessage(e))
@@ -55,7 +57,7 @@ function NameRow({ initial, placeholder, onSave, onCancel }: { initial: string; 
   )
 }
 
-export function ManageDialog({ noun, plural, rows, typed, selected, canAdd, canEdit, canRemove, removeLabel = "Delete", removeQuestion, onAdd, onRename, onRemove, onApply, onClose, onOpenForm }: {
+export function ManageDialog({ noun, plural, rows, typed, selected, canAdd, canEdit, canRemove, removeLabel = "Delete", removeQuestion, onAdd, onRename, onRemove, onApply, onClose, onOpenForm, onSetActive }: {
   noun: string
   plural: string
   rows: ManagedRow[]
@@ -74,6 +76,8 @@ export function ManageDialog({ noun, plural, rows, typed, selected, canAdd, canE
   onClose: () => void
   /** Records with more than a name: add and edit open their full form instead of the inline name row */
   onOpenForm?: (id: string | null) => void
+  /** Make a row inactive (hidden from the dropdown, kept on records) or active again */
+  onSetActive?: (id: string, active: boolean) => Promise<void>
 }) {
   const [adding, setAdding] = React.useState(!!typed && !onOpenForm)
   const [editing, setEditing] = React.useState<string | null>(null)
@@ -102,8 +106,9 @@ export function ManageDialog({ noun, plural, rows, typed, selected, canAdd, canE
               <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
                 <span className="flex min-w-0 items-center gap-2 text-sm">
                   <FolderOpen className="size-4 shrink-0 text-primary" aria-hidden />
-                  <span className="truncate">{r.name}</span>
+                  <span className={r.inactive ? "truncate text-muted-foreground" : "truncate"}>{r.name}</span>
                   {r.tag && <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">{r.tag}</span>}
+                  {r.inactive && <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Inactive</span>}
                   {r.id === selected && <Check className="size-4 text-primary" aria-label="Selected" />}
                 </span>
                 {removing === r.id ? (
@@ -114,8 +119,9 @@ export function ManageDialog({ noun, plural, rows, typed, selected, canAdd, canE
                   </span>
                 ) : (
                   <span className="flex items-center gap-3">
-                    <button type="button" className={link} onClick={() => onApply(r.id)}>Apply this {noun}</button>
+                    {!r.inactive && <button type="button" className={link} onClick={() => onApply(r.id)}>Apply this {noun}</button>}
                     {canEdit && <button type="button" className={link} onClick={() => { if (onOpenForm) return onOpenForm(r.id); setEditing(r.id); setAdding(false) }}><Pencil className="size-3.5" /> Edit</button>}
+                    {canEdit && onSetActive && !r.locked && <button type="button" className={link} onClick={() => { setError(null); onSetActive(r.id, !!r.inactive).catch((e) => setError(message(e))) }}>{r.inactive ? <><ArchiveRestore className="size-3.5" /> Make active</> : <><Archive className="size-3.5" /> Make inactive</>}</button>}
                     {canRemove && !r.locked && <button type="button" className={link} onClick={() => setRemoving(r.id)}><Trash2 className="size-3.5" /> {removeLabel}</button>}
                   </span>
                 )}
@@ -144,7 +150,7 @@ function ManagedSelect({ noun, plural, rows, placeholder, canManage, dialog, ...
   const [open, setOpen] = React.useState<string | null>(null)
   return (
     <>
-      <SearchSelect {...props} options={rows.map((r) => ({ value: r.id, label: r.name }))} placeholder={placeholder ?? `Select ${noun}`} searchPlaceholder={`Search ${plural}…`} searchable onCreate={canManage ? setOpen : undefined} createLabel={`Manage or add ${plural}`} />
+      <SearchSelect {...props} options={rows.filter((r) => !r.inactive || r.id === props.value).map((r) => ({ value: r.id, label: r.name }))} placeholder={placeholder ?? `Select ${noun}`} searchPlaceholder={`Search ${plural}…`} searchable onCreate={canManage ? setOpen : undefined} createLabel={`Manage or add ${plural}`} />
       {open !== null && dialog(open, () => setOpen(null))}
     </>
   )
@@ -157,8 +163,8 @@ interface Named {
 
 export function CategorySelect(props: SelectProps) {
   const { can } = useAuth()
-  const list = useApi<{ data: Named[] }>("/item-categories")
-  const rows = list.data?.data ?? []
+  const list = useApi<{ data: (Named & { isActive?: boolean })[] }>("/item-categories")
+  const rows = (list.data?.data ?? []).map((c) => ({ id: c.id, name: c.name, inactive: c.isActive === false }))
   const canAdd = can("catalog.category.create")
   const canEdit = can("catalog.category.edit")
   const canRemove = can("catalog.category.delete")
@@ -184,6 +190,7 @@ export function CategorySelect(props: SelectProps) {
           onApply={(id) => { props.onChange(id); close() }}
           onAdd={async (name) => { const c = await api.post<Named>("/item-categories", { name }); await list.reload(); props.onChange(c.id); toast.success(`${name} added`) }}
           onRename={async (id, name) => { await api.patch(`/item-categories/${id}`, { name }); await list.reload() }}
+          onSetActive={async (id, active) => { await api.patch(`/item-categories/${id}`, { isActive: active }); await list.reload(); toast.success(active ? "Category is active again" : "Category is inactive") }}
           onRemove={async (id) => { await api.delete(`/item-categories/${id}`); await list.reload(); if (props.value === id) props.onChange("") }}
         />
       )}

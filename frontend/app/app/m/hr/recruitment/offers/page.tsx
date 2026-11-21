@@ -22,6 +22,7 @@ import { useAuth } from "@/lib/auth"
 import { useSharedApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useHrLookups, type HrRecord } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
 
 // Offers: position, salary and joining date for a candidate; the letter comes from the template in
 // Recruitment → System Setup. An accepted offer becomes an employee in one click.
@@ -37,6 +38,8 @@ function OfferDialog({ row, onClose, onSaved }: { row: Row | null; onClose: () =
   // Two weeks from today, a usual notice period
   const joining = new Date(new Date(`${todayInIndia()}T00:00:00Z`).getTime() + 15 * 86_400_000).toISOString().slice(0, 10)
   const [f, setF] = React.useState({ candidateId: d?.candidateId ?? "", position: d?.position ?? "", designationId: d?.designationId ?? "", departmentId: d?.departmentId ?? "", salaryPaise: d?.salaryPaise ?? (null as number | null), joiningOn: d?.joiningOn ?? joining, expiresOn: d?.expiresOn ?? "", benefits: d?.benefits ?? "", notes: d?.notes ?? "" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -86,7 +89,7 @@ function OfferDialog({ row, onClose, onSaved }: { row: Row | null; onClose: () =
           <Field label="Benefits" className="sm:col-span-2"><Textarea rows={2} maxLength={2000} value={f.benefits} onChange={(e) => set("benefits", e.target.value)} placeholder="e.g. PF, ESI, Diwali bonus, two-wheeler allowance" /></Field>
           <Field label="Note to self" className="sm:col-span-2"><Input value={f.notes} maxLength={2000} onChange={(e) => set("notes", e.target.value)} placeholder="Not on the letter" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : row ? "Save offer" : "Make offer"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!d && unchanged)}>{busy ? "Saving…" : row ? "Save offer" : "Make offer"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

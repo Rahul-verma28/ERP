@@ -36,7 +36,7 @@ export default function PlatformInvoicePage({ params }: { params: Promise<{ id: 
   const rate = inv.seller.gstRateBp / 100
 
   return (
-    <div className="mx-auto w-full max-w-6xl">
+    <div className="w-full">
       <div className="mb-4 flex items-center justify-between print:hidden">
         <Link href={`/console/payments/${inv.orderId}`} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-4" /> Order

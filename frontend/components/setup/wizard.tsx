@@ -4,7 +4,8 @@ import * as React from "react"
 import type { SetupState, SetupStepKey, WorkspacePreferences, WorkspaceProfile } from "@contracts/workspace"
 import { ArrowLeft, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { FormError } from "@/components/form"
+import { DiscardChangesDialog, FormError } from "@/components/form"
+import { useUnsavedChanges } from "@/lib/use-unsaved"
 
 // Shared types and chrome for the setup wizard steps (wireframes 2.1–2.7).
 
@@ -51,15 +52,24 @@ export function StepHeader({ title, description }: { title: string; description?
 }
 
 /** Back · Skip for now · Save & continue — the wizard's sticky footer. */
-export function StepFooter({ back, onSkip, saving, error, saveLabel = "Save & continue", note }: { back: (() => void) | null; onSkip?: () => void; saving: boolean; error?: string | null; saveLabel?: string; note?: React.ReactNode }) {
+export function StepFooter({ back, onSkip, saving, error, saveLabel = "Save & continue", note, dirty }: { back: (() => void) | null; onSkip?: () => void; saving: boolean; error?: string | null; saveLabel?: string; note?: React.ReactNode; /** Settings: Save works only once something changed */ dirty?: boolean }) {
   const mode = React.useContext(StepMode)
-  if (mode === "settings") {
+  if (mode === "settings") return <SettingsFooter saving={saving} error={error} note={note} dirty={dirty} />
+  return <WizardFooter back={back} onSkip={onSkip} saving={saving} error={error} saveLabel={saveLabel} note={note} />
+}
+
+function SettingsFooter({ saving, error, note, dirty }: { saving: boolean; error?: string | null; note?: React.ReactNode; dirty?: boolean }) {
+  const guard = useUnsavedChanges(!!dirty && !saving)
+  {
     return (
       <div className="mt-2 grid gap-2">
         <FormError message={error} />
+        <DiscardChangesDialog open={guard.leaving} onKeep={guard.stay} onDiscard={guard.leave} />
         <div className="flex items-center justify-end gap-2">
           {note && <span className="mr-auto text-xs text-muted-foreground">{note}</span>}
-          <Button type="submit" disabled={saving}>
+          {dirty === false && !note && <span className="mr-auto text-xs text-muted-foreground">No changes to save</span>}
+          {dirty && <span className="mr-auto flex items-center gap-2 text-xs font-medium text-amber-700 dark:text-amber-400"><span className="size-1.5 rounded-full bg-amber-500" />Not saved yet</span>}
+          <Button type="submit" disabled={saving || dirty === false}>
             {saving ? (
               <>
                 <Loader2 className="animate-spin" /> Saving…
@@ -72,6 +82,9 @@ export function StepFooter({ back, onSkip, saving, error, saveLabel = "Save & co
       </div>
     )
   }
+}
+
+function WizardFooter({ back, onSkip, saving, error, saveLabel, note }: { back: (() => void) | null; onSkip?: () => void; saving: boolean; error?: string | null; saveLabel: string; note?: React.ReactNode }) {
   return (
     <div className="sticky bottom-0 -mx-4 mt-auto grid gap-2 border-t bg-background/95 px-4 py-4 backdrop-blur sm:-mx-8 sm:px-8">
       <FormError message={error} />

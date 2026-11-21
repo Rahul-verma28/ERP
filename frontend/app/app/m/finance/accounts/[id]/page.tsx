@@ -61,7 +61,7 @@ export default function AccountPage() {
       <DetailHeader
         title={a.name}
         icon={Icon}
-        pills={<>{a.isDefault && <Pill color="blue">Default</Pill>}<Pill color={a.isActive ? "emerald" : "slate"} dot>{a.isActive ? "Open" : "Closed"}</Pill></>}
+        pills={<>{a.isDefault && <Pill color="blue">Default</Pill>}<Pill color={a.isActive ? "emerald" : "slate"} dot>{a.isActive ? "Active" : "Inactive"}</Pill></>}
         subtitle={[KIND_LABEL[a.kind], a.bankName, masked(a.accountNo), a.ifsc, a.upiId].filter(Boolean).join(" · ")}
         actions={<>
           {write && a.isActive && <Button variant="outline" onClick={() => setOpen("transfer")}><ArrowRightLeft /> Move money</Button>}

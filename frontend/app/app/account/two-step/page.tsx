@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import QRCode from "qrcode"
 import { Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/ui/input-group"
 import { FormError } from "@/components/form"
 import { OtpInput } from "@/components/onboarding"
 import { BackupCodes } from "@/components/backup-codes"
@@ -139,7 +139,7 @@ function TwoStepSetup() {
           <label className="text-xs font-semibold" htmlFor="mfa-pw">
             Password
           </label>
-          <Input id="mfa-pw" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" disabled={step !== 1} autoFocus aria-invalid={step === 1 && !!error} />
+          <PasswordInput id="mfa-pw" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" disabled={step !== 1} autoFocus aria-invalid={step === 1 && !!error} />
           {step === 1 && <FormError message={error} />}
           <Button type="submit" className="mt-auto" disabled={step !== 1 || busy}>
             {busy && step === 1 ? "Checking…" : "Continue"}

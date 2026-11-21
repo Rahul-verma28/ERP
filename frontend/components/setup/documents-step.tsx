@@ -143,7 +143,7 @@ export function DocumentsStep({ tenant, workspace, refresh, complete, back }: St
 
         <InvoicePreview prefs={{ ...workspace.preferences, documents: { ...workspace.preferences.documents, template: v.template as "classic", terms: v.terms } }} number={previewNumber(v.invoicePrefix || "INV/{FY}/", fy, Number(v.invoiceStartAt) || 1)} tenant={tenant} upi={v.upiId} showQr={v.showUpiQr} bank={accountOk ? { holder: v.bankHolder, account: v.bankAccount, ifsc: v.ifsc } : null} brand={me?.tenant?.branding.brandColor} />
       </div>
-      <StepFooter back={back} onSkip={() => void complete("skipped")} saving={form.submitting} error={form.formError} />
+      <StepFooter back={back} onSkip={() => void complete("skipped")} saving={form.submitting} error={form.formError} dirty={form.dirty} />
     </form>
   )
 }

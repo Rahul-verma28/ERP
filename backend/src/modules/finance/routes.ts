@@ -39,7 +39,8 @@ router.patch('/finance/accounts/:id', requirePermission('finance.expense.edit'),
 
 // ── Categories ──
 router.get('/expense-categories', VIEW, tx(async (req, res) => {
-  res.json({ data: (await fin.listCategories(req.ctx!, 'expense')).map((c) => c.name) });
+  // Pickers: inactive heads are not offered for new entries
+  res.json({ data: (await fin.listCategories(req.ctx!, 'expense')).filter((c) => c.isActive).map((c) => c.name) });
 }));
 router.get('/finance/categories', VIEW, validate(z.object({ kind: z.enum(['expense', 'income']) }), 'query'), tx(async (req, res) => {
   res.json({ data: await fin.listCategories(req.ctx!, req.query.kind as 'expense' | 'income') });
@@ -47,11 +48,12 @@ router.get('/finance/categories', VIEW, validate(z.object({ kind: z.enum(['expen
 router.post('/finance/categories', requirePermission('finance.expense.create'), validate(fin.CategoryInput), tx(async (req, res) => {
   res.status(201).json(await fin.createCategory(req.ctx!, req.body));
 }));
-const CategoryPatch = z.object({ name: fin.CategoryInput.shape.name.optional(), budgetPaise: rec.BudgetInput.shape.budgetPaise.optional() }).refine((b) => b.name !== undefined || b.budgetPaise !== undefined, 'Nothing to change');
+const CategoryPatch = z.object({ name: fin.CategoryInput.shape.name.optional(), budgetPaise: rec.BudgetInput.shape.budgetPaise.optional(), isActive: z.boolean().optional() }).refine((b) => b.name !== undefined || b.budgetPaise !== undefined || b.isActive !== undefined, 'Nothing to change');
 router.patch('/finance/categories/:id', requirePermission('finance.expense.edit'), validate(IdParam, 'params'), validate(CategoryPatch), tx(async (req, res) => {
   const id = String(req.params.id);
   if (req.body.name !== undefined) await fin.renameCategory(req.ctx!, id, req.body.name);
   if (req.body.budgetPaise !== undefined) await rec.setBudget(req.ctx!, id, req.body.budgetPaise);
+  if (req.body.isActive !== undefined) await db().finCategory.updateMany({ where: { id, tenantId: req.ctx!.tenantId }, data: { isActive: req.body.isActive } });
   res.json(await db().finCategory.findFirst({ where: { id, tenantId: req.ctx!.tenantId } }));
 }));
 router.delete('/finance/categories/:id', requirePermission('finance.expense.delete'), validate(IdParam, 'params'), tx(async (req, res) => {

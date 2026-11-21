@@ -320,7 +320,7 @@ function UsageCards({ client: c }: { client: ClientDetail }) {
     { label: "Users", used: c.usage.activeUsers, max: limits?.users, hint: "Active people" },
     { label: "Branches", used: c.usage.branches, max: limits?.branches },
     { label: "Invoices this month", used: c.usage.thisMonth.invoices ?? 0, max: limits?.invoicesPerMonth },
-    { label: "Modules on", used: c.modules.filter((m) => m.status === "active").length, max: c.modules.length, hint: c.modules.some((m) => m.status === "read_only") ? "Some are read-only" : undefined },
+    { label: "Modules on", used: c.modules.filter((m) => m.status === "active").length, max: c.modules.length, hint: c.modules.some((m) => m.status === "read_only") ? "Some are view only" : undefined },
   ]
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

@@ -135,9 +135,11 @@ export async function createBranch(tenantId: string, input: z.infer<typeof Branc
   return b;
 }
 
-export async function updateBranch(id: string, patch: Partial<z.infer<typeof BranchInput>>) {
+export async function updateBranch(id: string, patch: Partial<z.infer<typeof BranchInput>> & { isActive?: boolean }) {
   const before = await db().branch.findUnique({ where: { id } });
   if (!before) throw notFound('Branch');
+  // The main branch is where everything lands by default: it stays active
+  if (patch.isActive === false && before.isDefault) throw new AppError('VALIDATION_FAILED', 'The main branch can\'t be made inactive. Make another branch the main one first.');
   const b = await db().branch.update({ where: { id }, data: patch });
   await audit({ action: 'branch.update', entity: 'branch', entityId: id, before, after: patch });
   return b;

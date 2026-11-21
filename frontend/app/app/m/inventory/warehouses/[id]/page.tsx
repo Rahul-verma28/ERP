@@ -87,7 +87,7 @@ function WarehousePage() {
       <DetailHeader
         title={w.name}
         icon={Warehouse}
-        pills={<>{w.isDefault && <Pill color="blue">Default</Pill>}<Pill color={w.isActive ? "emerald" : "slate"} dot>{w.isActive ? "Active" : "Closed"}</Pill></>}
+        pills={<>{w.isDefault && <Pill color="blue">Default</Pill>}<Pill color={w.isActive ? "emerald" : "slate"} dot>{w.isActive ? "Active" : "Inactive"}</Pill></>}
         subtitle={address || "No address yet"}
         extra={!w.stateCode && <span className="text-xs font-medium text-destructive">Add the state: e-way bills need it</span>}
         actions={<>
@@ -96,7 +96,7 @@ function WarehousePage() {
           <ActionMenu items={[
             can("inventory.transfer.create") && w.isActive && { label: "New transfer", icon: ArrowLeftRight, href: "/app/m/inventory/new?kind=transfer" },
             can("inventory.warehouse.edit") && w.isActive && !w.isDefault && { label: "Make default", icon: Star, onClick: () => void act({ isDefault: true }, `${w.name} is the default`) },
-            can("inventory.warehouse.edit") && !w.isDefault && (w.isActive ? { label: "Close warehouse", icon: Archive, onClick: () => void act({ isActive: false }, `${w.name} closed`) } : { label: "Reopen", icon: ArchiveRestore, onClick: () => void act({ isActive: true }, `${w.name} reopened`) }),
+            can("inventory.warehouse.edit") && !w.isDefault && (w.isActive ? { label: "Make inactive", icon: Archive, onClick: () => void act({ isActive: false }, `${w.name} is inactive`) } : { label: "Make active", icon: ArchiveRestore, onClick: () => void act({ isActive: true }, `${w.name} is active again`) }),
           ]} />
         </>}
       />

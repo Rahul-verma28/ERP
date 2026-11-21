@@ -144,7 +144,7 @@ export function TaxesStep({ tenant, workspace, refresh, complete, back }: StepPr
         <div className="rounded-3xl border p-5 text-sm text-muted-foreground">Nothing to set here for now.</div>
       )}
       <p className="text-xs text-muted-foreground">Not sure? Leave the defaults — your CA can change them any time.</p>
-      <StepFooter back={back} onSkip={() => void complete("skipped")} saving={form.submitting} error={form.formError} saveLabel={registered ? "Save & continue" : "Continue"} />
+      <StepFooter back={back} onSkip={() => void complete("skipped")} saving={form.submitting} error={form.formError} saveLabel={registered ? "Save & continue" : "Continue"} dirty={form.dirty} />
     </form>
   )
 }

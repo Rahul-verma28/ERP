@@ -17,6 +17,8 @@ import { api, ApiError, errorMessage } from "@/lib/api"
 import { useSharedApi } from "@/lib/use-api"
 import { EMPLOYMENT_LABEL, useCurrentEmployees, type EmploymentType } from "@/lib/hr"
 import { cn } from "@/lib/utils"
+import { useChanged } from "@/lib/use-dirty"
+import { activeOr } from "@/lib/active"
 
 // Recruitment forms: job opening, candidate, interview, and hiring a candidate as an employee.
 
@@ -36,6 +38,8 @@ export function useJobs() {
 export function JobDialog({ job, onClose, onSaved }: { job: Job | null; onClose: () => void; onSaved: () => void }) {
   const branches = useSharedApi<{ data: { id: string; name: string }[] }>("/branches")
   const [f, setF] = React.useState({ title: job?.title ?? "", departmentId: job?.departmentId ?? "", branchId: job?.branchId ?? "", location: job?.location ?? "", employmentType: job?.employmentType ?? "full_time", positions: String(job?.positions ?? 1), minExp: job?.minExp == null ? "" : String(job.minExp), maxExp: job?.maxExp == null ? "" : String(job.maxExp), minSalaryPaise: job?.minSalaryPaise ?? null, maxSalaryPaise: job?.maxSalaryPaise ?? null, skills: job?.skills ?? [], skill: "", description: job?.description ?? "", closesOn: job?.closesOn?.slice(0, 10) ?? "", status: job?.status ?? "open" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -73,7 +77,7 @@ export function JobDialog({ job, onClose, onSaved }: { job: Job | null; onClose:
           <Field label="Type"><NativeSelect value={f.employmentType} aria-label="Type" onChange={(e) => set("employmentType", e.target.value as EmploymentType)}>{(Object.keys(EMPLOYMENT_LABEL) as EmploymentType[]).map((k) => <option key={k} value={k}>{EMPLOYMENT_LABEL[k]}</option>)}</NativeSelect></Field>
           <Field label="Department"><DepartmentSelect value={f.departmentId} onChange={(v) => set("departmentId", v)} aria-label="Department" /></Field>
           <Field label="Openings" error={errors.positions}><NumberStepper min={1} max={500} value={f.positions} onChange={(v) => set("positions", v)} aria-label="Openings" /></Field>
-          {(branches.data?.data.length ?? 0) > 1 && <Field label="Branch"><SearchSelect value={f.branchId} onChange={(v) => set("branchId", v)} options={[{ value: "", label: "Any branch" }, ...(branches.data?.data ?? []).map((b) => ({ value: b.id, label: b.name }))]} aria-label="Branch" /></Field>}
+          {(branches.data?.data.length ?? 0) > 1 && <Field label="Branch"><SearchSelect value={f.branchId} onChange={(v) => set("branchId", v)} options={[{ value: "", label: "Any branch" }, ...activeOr(branches.data?.data ?? [], f.branchId).map((b) => ({ value: b.id, label: b.name }))]} aria-label="Branch" /></Field>}
           <Field label="Location"><ListSelect list="jobLocations" value={f.location} onChange={(v) => set("location", v)} aria-label="Location" /></Field>
           <Field label="Experience from (years)"><NumberStepper max={50} value={f.minExp} onChange={(v) => set("minExp", v)} placeholder="Any" aria-label="Minimum experience" /></Field>
           <Field label="Experience up to (years)" error={errors.maxExp}><NumberStepper max={50} value={f.maxExp} onChange={(v) => set("maxExp", v)} placeholder="Any" aria-label="Maximum experience" /></Field>
@@ -89,7 +93,7 @@ export function JobDialog({ job, onClose, onSaved }: { job: Job | null; onClose:
           <Field label="Status"><NativeSelect value={f.status} aria-label="Status" onChange={(e) => set("status", e.target.value as Job["status"])}>{Object.entries(JOB_STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</NativeSelect></Field>
           <Field label="About the job" className="sm:col-span-2"><Textarea rows={3} maxLength={5000} value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="What they will do, timings, what you offer" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : job ? "Save job" : "Open job"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!job && unchanged)}>{busy ? "Saving…" : job ? "Save job" : "Open job"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -99,6 +103,8 @@ export function JobDialog({ job, onClose, onSaved }: { job: Job | null; onClose:
 export function CandidateDialog({ candidate, jobId, onClose, onSaved }: { candidate: Candidate | null; jobId?: string; onClose: () => void; onSaved: () => void }) {
   const jobs = useJobs()
   const [f, setF] = React.useState({ jobId: candidate?.jobId ?? jobId ?? "", name: candidate?.name ?? "", phone: candidate?.phone ?? "", email: candidate?.email ?? "", source: candidate?.source ?? "", experience: candidate?.experience == null ? "" : String(candidate.experience), currentCtcPaise: candidate?.currentCtcPaise ?? null, expectedCtcPaise: candidate?.expectedCtcPaise ?? null, resumeUrl: candidate?.resumeUrl ?? "", rating: candidate?.rating ?? 0, notes: candidate?.notes ?? "" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -145,7 +151,7 @@ export function CandidateDialog({ candidate, jobId, onClose, onSaved }: { candid
           <Field label="Your rating" className="sm:col-span-2"><span className="flex gap-1">{[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" aria-label={`${n} of 5`} aria-pressed={f.rating === n} onClick={() => set("rating", f.rating === n ? 0 : n)} className={cn("size-8 rounded-lg border text-sm font-semibold", n <= f.rating && "border-amber-400 bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200")}>{n}</button>)}</span></Field>
           <Field label="Notes" className="sm:col-span-2"><Textarea rows={2} maxLength={3000} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Anything from the call or CV" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : candidate ? "Save" : "Add candidate"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!candidate && unchanged)}>{busy ? "Saving…" : candidate ? "Save" : "Add candidate"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -156,6 +162,8 @@ export function InterviewDialog({ interview, candidateId, onClose, onSaved }: { 
   const cands = useSharedApi<{ data: Candidate[] }>("/hr/candidates")
   const emps = useCurrentEmployees()
   const [f, setF] = React.useState({ candidateId: interview?.candidateId ?? candidateId ?? "", round: interview?.round ?? "HR round", onDate: interview?.onDate.slice(0, 10) ?? todayInIndia(), atTime: interview?.atTime ?? "11:00", mode: interview?.mode ?? "in_person", interviewerIds: interview?.interviewerIds ?? [] })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [pick, setPick] = React.useState("")
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
@@ -199,7 +207,7 @@ export function InterviewDialog({ interview, candidateId, onClose, onSaved }: { 
             </div>
           </Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : interview ? "Save" : "Schedule"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!interview && unchanged)}>{busy ? "Saving…" : interview ? "Save" : "Schedule"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -23,6 +23,8 @@ import { useAuth } from "@/lib/auth"
 import { useSharedApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { EMPLOYMENT_LABEL, useHrLookups, type Employee, type EmploymentType } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
+import { activeOr } from "@/lib/active"
 
 // Add or edit an employee in four short steps, with a live card on the side.
 
@@ -58,6 +60,7 @@ export function EmployeeForm({ employee }: { employee?: Employee | null }) {
   const branches = useSharedApi<{ data: { id: string; name: string }[] }>("/branches")
   const members = useSharedApi<{ members: { id: string; status: string; user: { name: string; email: string; mobile: string } }[] }>(can("tenant.member.view") ? "/members" : null)
   const [f, setF] = React.useState<Form>(() => blank(employee))
+  const unchanged = !useChanged(f)
   const [step, setStep] = React.useState(0)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
@@ -168,7 +171,7 @@ export function EmployeeForm({ employee }: { employee?: Employee | null }) {
                 <Field label="Designation" error={errors.designationId}><DesignationSelect value={f.designationId} departmentId={f.departmentId} onChange={(v) => set("designationId", v)} aria-label="Designation" /></Field>
                 <Field label="Reports to" error={errors.managerId}><EmployeeSelect value={f.managerId} exclude={employee?.id} onChange={(v) => set("managerId", v)} placeholder="Their manager (optional)" aria-label="Reports to" /></Field>
                 <Field label="Shift" error={errors.shiftId} hint="Leave empty for the default shift"><ShiftSelect value={f.shiftId} onChange={(v) => set("shiftId", v)} aria-label="Shift" /></Field>
-                {(branches.data?.data.length ?? 0) > 1 && <Field label="Branch" error={errors.branchId}><SearchSelect value={f.branchId} onChange={(v) => set("branchId", v)} options={[{ value: "", label: "No branch" }, ...(branches.data?.data ?? []).map((b) => ({ value: b.id, label: b.name }))]} aria-label="Branch" /></Field>}
+                {(branches.data?.data.length ?? 0) > 1 && <Field label="Branch" error={errors.branchId}><SearchSelect value={f.branchId} onChange={(v) => set("branchId", v)} options={[{ value: "", label: "No branch" }, ...activeOr(branches.data?.data ?? [], f.branchId).map((b) => ({ value: b.id, label: b.name }))]} aria-label="Branch" /></Field>}
                 <Field label="Probation ends" error={errors.probationEndsOn}><Input type="date" value={f.probationEndsOn} min={f.joinedOn} onChange={(e) => set("probationEndsOn", e.target.value)} /></Field>
                 {can("tenant.member.view") && (
                   <Field label="Their login" error={errors.memberId} hint="Link a user so they can clock in, apply leave and see payslips" className="sm:col-span-2">
@@ -241,8 +244,8 @@ export function EmployeeForm({ employee }: { employee?: Employee | null }) {
           <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-5">
             {at > 0 ? <Button type="button" variant="outline" onClick={() => setStep(at - 1)}><ChevronLeft /> Previous</Button> : <span />}
             <div className="flex gap-2">
-              {employee && !last && <Button type="button" variant="outline" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save changes"}</Button>}
-              {!last ? <Button type="button" onClick={next}>Next <ChevronRight /></Button> : <Button type="button" disabled={busy} onClick={save}>{busy ? "Saving…" : employee ? "Save changes" : "Add employee"}</Button>}
+              {employee && !last && <Button type="button" variant="outline" disabled={busy || unchanged} onClick={save}>{busy ? "Saving…" : "Save changes"}</Button>}
+              {!last ? <Button type="button" onClick={next}>Next <ChevronRight /></Button> : <Button type="button" disabled={busy || (!!employee && unchanged)} onClick={save}>{busy ? "Saving…" : employee ? "Save changes" : "Add employee"}</Button>}
             </div>
           </div>
         </section>

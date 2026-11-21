@@ -21,6 +21,7 @@ import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
 import { tone, useCrmSetup, type CrmProduct, type Deal, type Lead, type Stage } from "@/lib/crm"
 import { cn } from "@/lib/utils"
+import { useChanged } from "@/lib/use-dirty"
 
 // CRM forms and small pieces, shared by the lead and deal lists, boards and pages.
 
@@ -163,6 +164,7 @@ export function LeadDialog({ lead, onClose, onSaved, initialStageId }: { lead?: 
     valuePaise: lead?.valuePaise ?? null, leadSource: lead?.leadSource ?? "", pipelineId: lead?.pipelineId ?? stagePipeline?.id ?? def?.id ?? "", stageId: lead?.stageId ?? initialStageId ?? "",
     ownerId: lead ? (lead.ownerId ?? "") : (me?.user?.id ?? ""), followUpOn: lead?.followUpOn?.slice(0, 10) ?? "", labels: lead?.labels ?? [], notes: lead?.notes ?? "",
   })
+  const leadUnchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [dup, setDup] = React.useState<{ id: string; name: string } | null>(null)
@@ -250,7 +252,7 @@ export function LeadDialog({ lead, onClose, onSaved, initialStageId }: { lead?: 
           <FormError message={error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : lead ? "Save lead" : "Add lead"}</Button>
+            <Button type="submit" disabled={busy || (!!lead && leadUnchanged)}>{busy ? "Saving…" : lead ? "Save lead" : "Add lead"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -439,6 +441,7 @@ export function DealDialog({ deal, fromLead, initialContact, initialStageId, onC
     expectedCloseOn: deal?.expectedCloseOn?.slice(0, 10) ?? "", ownerId: deal ? (deal.ownerId ?? "") : (fromLead?.ownerId ?? me?.user?.id ?? ""), source: deal?.source ?? fromLead?.leadSource ?? "",
     labels: deal?.labels ?? fromLead?.labels ?? [], notes: deal?.notes ?? "", makeCustomer: !!fromLead, stateCode: "", copyProducts: true,
   })
+  const dealUnchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -513,7 +516,7 @@ export function DealDialog({ deal, fromLead, initialContact, initialStageId, onC
           <FormError message={error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : deal ? "Save deal" : fromLead ? "Convert to deal" : "Add deal"}</Button>
+            <Button type="submit" disabled={busy || (!!deal && dealUnchanged)}>{busy ? "Saving…" : deal ? "Save deal" : fromLead ? "Convert to deal" : "Add deal"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -21,6 +21,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { Cancelled, useForm } from "@/lib/use-form"
 import { cn } from "@/lib/utils"
+import { activeOr } from "@/lib/active"
 
 // Adding or editing a lead or a customer. They ask for different things:
 // a lead is someone who may buy, so a name and a way to reach them is enough;
@@ -208,7 +209,7 @@ function LeadForm({ contact, initialName, onClose, onSaved }: Props) {
           <FormError message={form.formError} />
           <DialogFooter className="gap-2">
             <Button type="button" variant="outline" onClick={close}>Cancel</Button>
-            <Button type="submit" disabled={form.submitting || (!!duplicate && !contact && !allowDuplicate)}>{form.submitting ? "Saving…" : contact ? "Save changes" : `Add ${label.toLowerCase()}`}</Button>
+            <Button type="submit" disabled={form.submitting || (!!contact && !form.dirty) || (!!duplicate && !contact && !allowDuplicate)}>{form.submitting ? "Saving…" : contact ? "Save changes" : `Add ${label.toLowerCase()}`}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -322,7 +323,7 @@ function CustomerForm({ contact, initialName, onClose, onSaved }: Props) {
   const suggestion = !form.errors.email && v.email ? emailSuggestion(v.email) : null
   const gstinOk = v.registered && v.gstin && !gstinRule(v.gstin) && !gstinStateMismatch(v.gstin, v.stateCode)
   const close = () => (form.dirty ? setDiscardOpen(true) : onClose())
-  const lists = priceLists.data?.data ?? []
+  const lists = activeOr(priceLists.data?.data ?? [], v.priceListId)
 
   return (
     <Dialog open onOpenChange={(o) => !o && close()}>
@@ -439,7 +440,7 @@ function CustomerForm({ contact, initialName, onClose, onSaved }: Props) {
           <FormError message={form.formError} />
           <DialogFooter className="sticky bottom-0 gap-2 border-t bg-popover pt-3">
             <Button type="button" variant="outline" onClick={close}>Cancel</Button>
-            <Button type="submit" disabled={form.submitting || (!!duplicate && !contact && !allowDuplicate)}>{form.submitting ? "Saving…" : contact ? "Save changes" : `Add ${label.toLowerCase()}`}</Button>
+            <Button type="submit" disabled={form.submitting || (!!contact && !form.dirty) || (!!duplicate && !contact && !allowDuplicate)}>{form.submitting ? "Saving…" : contact ? "Save changes" : `Add ${label.toLowerCase()}`}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

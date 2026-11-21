@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils"
 import { TAB_WIDGETS, type WidgetCtx } from "./tabs"
 import { FinishSetupCard } from "./finish-setup"
 import { HandoverCard } from "./handover-card"
+import { ViewOnlyTag } from "@/components/page-states"
 
 // Dashboard v2 (wireframes 5.1–5.8): one range for every tab, a tab per module the person
 // can see, per-person widget layout.
@@ -159,7 +160,7 @@ function DashboardView({ config }: { config: DashboardConfig }) {
             className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-[11px] px-3.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground", active === t.key && "bg-primary text-primary-foreground hover:text-primary-foreground")}
           >
             {t.label}
-            {t.readOnly && <span className="rounded-full bg-muted px-1.5 py-px text-[10px] text-foreground/80">Read-only</span>}
+            {t.readOnly && <ViewOnlyTag variant="icon" className={active === t.key ? "bg-white/20 text-current dark:text-current" : undefined} />}
           </button>
         ))}
       </div>
@@ -170,7 +171,7 @@ function DashboardView({ config }: { config: DashboardConfig }) {
 
       {activeTab.readOnly && (
         <div className="rounded-[10px] border border-amber-300 bg-amber-50 px-3 py-2.5 text-xs text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
-          {activeTab.label} is read-only on your current plan, so new entries can&apos;t be added. Figures already recorded stay visible.{" "}
+          {activeTab.label} is view only on your current plan, so new entries can&apos;t be added. Figures already recorded stay visible.{" "}
           {can("tenant.billing.view") ? (
             <Link href="/app/billing" className="font-semibold text-primary underline">
               Upgrade

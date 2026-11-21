@@ -21,6 +21,7 @@ import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { useChanged } from "@/lib/use-dirty"
 
 // Goals: a target per person with a deadline and progress. Past the deadline unfinished = overdue.
 
@@ -30,6 +31,8 @@ const STATUS: Record<string, { label: string; color: string }> = { not_started: 
 function GoalDialog({ goal, onClose, onSaved }: { goal: Goal | null; onClose: () => void; onSaved: () => void }) {
   const today = todayInIndia()
   const [f, setF] = React.useState({ employeeId: goal?.employeeId ?? "", title: goal?.title ?? "", goalType: goal?.goalType ?? "", target: goal?.target ?? "", description: goal?.description ?? "", startsOn: goal?.startsOn.slice(0, 10) ?? today, endsOn: goal?.endsOn.slice(0, 10) ?? "", progress: String(goal?.progress ?? 0) })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -71,7 +74,7 @@ function GoalDialog({ goal, onClose, onSaved }: { goal: Goal | null; onClose: ()
           <Field label="Progress" className="sm:col-span-2"><NumberStepper max={100} step={10} suffix="%" value={f.progress} onChange={(v) => set("progress", v)} aria-label="Progress" /></Field>
           <Field label="Details" className="sm:col-span-2"><Textarea rows={2} maxLength={2000} value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Optional" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : goal ? "Save goal" : "Set goal"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!goal && unchanged)}>{busy ? "Saving…" : goal ? "Save goal" : "Set goal"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

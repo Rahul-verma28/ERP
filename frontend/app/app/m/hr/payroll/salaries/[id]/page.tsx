@@ -21,6 +21,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { EMP_STATUS, monthLabel, type Employee, type SalaryItem } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
 
 // Set salary for one employee: basic pay up top, then allowances, deductions, loans and
 // overtime — each added, changed or removed right here.
@@ -37,6 +38,8 @@ function ItemDialog({ e, kind, index, onClose, onSaved }: { e: Employee; kind: K
   const items = e.salaryItems ?? []
   const cur = index === null ? null : items[index]
   const [f, setF] = React.useState({ name: cur?.name ?? "", calc: cur?.calc ?? ("fixed" as "fixed" | "percent"), amount: cur ? Number(cur.amount) : (null as number | null) })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -77,7 +80,7 @@ function ItemDialog({ e, kind, index, onClose, onSaved }: { e: Employee; kind: K
           </Field>
           {f.calc === "percent" && <p className="rounded-xl bg-muted/60 px-3 py-2 text-sm sm:col-span-2">Comes to <strong className="tabular-nums">{formatPaise(value)}</strong> on today&apos;s basic of {formatPaise(e.basicPaise)}</p>}
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!cur && unchanged)}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

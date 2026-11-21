@@ -166,7 +166,7 @@ export default function PlansPage() {
   const couponTable = useClientTable(coupons, { code: (c) => c.code, used: (c) => c.redeemed, until: (c) => c.validTo ?? "9999", status: (c) => (c.active ? 1 : 0) })
 
   if (error) return <Failed error={error} onRetry={reload} />
-  if (!data) return <Loading rows={6} className="mx-auto max-w-6xl" />
+  if (!data) return <Loading rows={6} />
 
   const modulesOf = (p: PlanRow) => (p.key === "free" ? data.modules.filter((m) => m.freeTier).map((m) => m.key) : p.fullModules)
   const planColumns: Column<PlanRow>[] = [

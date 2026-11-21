@@ -20,6 +20,7 @@ import { formatPaise } from "@/lib/format"
 import type { Service } from "@/lib/bookings"
 import { cn } from "@/lib/utils"
 import QRCode from "qrcode"
+import { InlineSave } from "@/components/save-bar"
 
 // Online booking: one link customers open to pick a service, a person, a day and a free time.
 // Turn it on, choose the link and how slots are offered, and share it on WhatsApp or as a QR code.
@@ -31,11 +32,15 @@ export default function OnlineBookingPage() {
   const res = useApi<Settings>("/booking-settings")
   const services = useApi<{ data: Service[] }>("/booking-services")
   const [f, setF] = React.useState<Settings | null>(null)
+  // What is saved: the last save, else what loaded. Save works only when the form differs from it
+  const [base, setBase] = React.useState<Settings | null>(null)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [showQr, setShowQr] = React.useState(false)
   const s = f ?? res.data ?? null
+  const saved = base ?? res.data ?? null
+  const dirty = !!f && JSON.stringify(f) !== JSON.stringify(saved)
   if (!can("bookings.resource.edit")) return <PageHeader title="Online booking" description="Only people who manage bookings can change this. Ask your admin." />
   if (!s) return <PageLoading />
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => { setF({ ...s, [k]: v }); setErrors((e) => ({ ...e, [k]: "" })); setError(null) }
@@ -53,6 +58,7 @@ export default function OnlineBookingPage() {
     try {
       const saved = await api.put<Settings>("/booking-settings", { ...s, title: s!.title.trim(), intro: s!.intro?.trim() || null })
       setF(saved)
+      setBase(saved)
       toast.success(saved.enabled ? "Booking page is live" : "Saved. The page is off.")
     } catch (err) { if (err instanceof ApiError) setErrors(err.fields); setError(errorMessage(err)) } finally { setBusy(false) }
   }
@@ -80,7 +86,7 @@ export default function OnlineBookingPage() {
             <label className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm"><span><span className="font-medium">Confirm on its own</span><span className="block text-xs text-muted-foreground">Off: you confirm each one</span></span><Switch checked={s.autoConfirm} onCheckedChange={(v) => set("autoConfirm", v)} aria-label="Confirm on its own" /></label>
           </FormSection>
           <FormError message={error} />
-          <div className="flex justify-end gap-2"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></div>
+          <InlineSave dirty={dirty} saving={busy} onDiscard={() => { setF(null); setErrors({}); setError(null) }} onSave={() => void save({ preventDefault() {} } as React.FormEvent)} />
         </form>
 
         <div className="grid content-start gap-5">

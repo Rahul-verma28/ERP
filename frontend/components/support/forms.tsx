@@ -16,6 +16,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { CHANNEL, PRIORITY, useAgents, useSupportSettings, type Article, type Channel, type Ticket, type TicketPriority } from "@/lib/support"
+import { useChanged } from "@/lib/use-dirty"
 
 // Every Customer Service form: a new ticket (or its details), resolving one, and a knowledge base
 // article or saved reply. Each groups its fields, marks what is required, checks it before sending
@@ -41,6 +42,8 @@ export function TicketDialog({ ticket, defaults, onClose, onSaved }: { ticket?: 
     channel: ticket?.channel ?? ("phone" as Channel), assigneeId: ticket ? ticket.assigneeId ?? "" : agents.some((a) => a.id === me?.user.id) ? me?.user.id ?? "" : "",
     guestName: "", guestPhone: "", guestEmail: "", invoiceId: ticket?.invoiceId ?? defaults?.invoiceId ?? "", serial: ticket?.serial ?? "", labels: ticket?.labels ?? [],
   })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [item, setItem] = React.useState<{ id: string; name: string } | null>(ticket?.item ? { id: ticket.item.id, name: ticket.item.name } : null)
   const invoices = useApi<{ data: { id: string; number: string | null; issueDate: string; totalPaise: number }[] }>(contact?.id ? `/invoices?contactId=${contact.id}&limit=30` : null)
   const { errors, setErrors, error, setError, fail } = useErrors()
@@ -123,7 +126,7 @@ export function TicketDialog({ ticket, defaults, onClose, onSaved }: { ticket?: 
             <Field label="Serial / IMEI" hint="Finds the sale and the warranty" className="sm:col-span-2"><Input value={f.serial} maxLength={60} onChange={(e) => set("serial", e.target.value)} /></Field>
           </FormSection>
           <FormError message={error} />
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : edit ? "Save ticket" : "Create ticket"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!ticket && unchanged)}>{busy ? "Saving…" : edit ? "Save ticket" : "Create ticket"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -166,6 +169,8 @@ export function ResolveDialog({ ticket, to, onClose, onSaved }: { ticket: { id: 
 export function ArticleDialog({ article, kind, onClose, onSaved }: { article?: Article | null; kind: "article" | "reply"; onClose: () => void; onSaved: () => void }) {
   const settings = useSupportSettings().data
   const [f, setF] = React.useState({ title: article?.title ?? "", body: article?.body ?? "", category: article?.category ?? "", tags: article?.tags ?? [], kind: article?.kind ?? kind, published: article?.published ?? true })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const { errors, setErrors, error, setError, fail } = useErrors()
   const [busy, setBusy] = React.useState(false)
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => { setF((x) => ({ ...x, [k]: v })); setErrors((e) => ({ ...e, [k]: "" })); setError(null) }
@@ -205,7 +210,7 @@ export function ArticleDialog({ article, kind, onClose, onSaved }: { article?: A
             {!reply && <label className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm sm:col-span-2"><span><span className="font-medium">Published</span><span className="block text-xs text-muted-foreground">Customers see it on the request form</span></span><Switch checked={f.published} onCheckedChange={(v) => set("published", v)} /></label>}
           </FormSection>
           <FormError message={error} />
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!article && unchanged)}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -75,7 +75,7 @@ export default function BillingPage() {
           </CardTitle>
           <CardDescription>
             {s.status === "trialing" && s.trialEndsAt && `All modules unlocked until ${formatDate(s.trialEndsAt)}. After that you move to the Free plan — nothing is deleted.`}
-            {s.status === "free" && "Free core modules stay active. Paid-module data is read-only until you upgrade."}
+            {s.status === "free" && "Free core modules stay active. Paid modules are view only until you upgrade."}
             {s.status === "active" && s.currentPeriodEnd && `Renews on ${formatDate(s.currentPeriodEnd)}.`}
             {s.status === "incomplete" && "Your workspace is ready. Modules open as soon as the payment below is received."}
             {s.status === "past_due" && "The last renewal is unpaid. Everything keeps working during the grace period."}

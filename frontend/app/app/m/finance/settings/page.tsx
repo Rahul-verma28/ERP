@@ -2,13 +2,13 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Check, Pencil, Plus, Target, Trash2, X } from "lucide-react"
+import { Archive, ArchiveRestore, Check, Pencil, Plus, Target, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, MoneyInput } from "@/components/common"
 import { ErrorState, PageLoading } from "@/components/page-states"
-import { Section } from "@/components/page-parts"
+import { Pill, Section } from "@/components/page-parts"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useSharedApi } from "@/lib/use-api"
@@ -16,7 +16,7 @@ import { formatPaise } from "@/lib/format"
 
 // Finance setup: the categories expenses and other income are filed under. Accounts live on Cash & Bank.
 
-interface Category { id: string; name: string; kind: "expense" | "income"; budgetPaise: number | null }
+interface Category { id: string; name: string; kind: "expense" | "income"; budgetPaise: number | null; isActive?: boolean }
 
 function Categories({ kind }: { kind: "expense" | "income" }) {
   const { can } = useAuth()
@@ -70,7 +70,7 @@ function Categories({ kind }: { kind: "expense" | "income" }) {
                 {renaming?.id === c.id ? (
                   <form className="flex flex-1 items-center gap-1" onSubmit={(e) => { e.preventDefault(); void rename() }}>
                     <Input autoFocus aria-label="New name" maxLength={60} value={renaming.name} onChange={(e) => setRenaming({ id: c.id, name: e.target.value })} onKeyDown={(e) => e.key === "Escape" && setRenaming(null)} />
-                    <Button type="submit" size="icon-sm" disabled={busy} aria-label="Save name"><Check /></Button>
+                    <Button type="submit" size="icon-sm" disabled={busy || !renaming.name.trim() || renaming.name.trim() === c.name} aria-label="Save name"><Check /></Button>
                     <Button type="button" variant="ghost" size="icon-sm" aria-label="Cancel" onClick={() => setRenaming(null)}><X /></Button>
                   </form>
                 ) : budget?.id === c.id ? (
@@ -78,15 +78,16 @@ function Categories({ kind }: { kind: "expense" | "income" }) {
                     <span className="text-sm font-medium">{c.name}</span>
                     <span className="ml-auto w-40"><MoneyInput value={budget.value} autoFocus onChange={(v) => setBudget({ id: c.id, value: v })} aria-label={`Monthly budget for ${c.name}`} /></span>
                     <span className="text-xs text-muted-foreground">/ month</span>
-                    <Button type="submit" size="icon-sm" disabled={busy} aria-label="Save budget"><Check /></Button>
+                    <Button type="submit" size="icon-sm" disabled={busy || (budget.value || null) === (c.budgetPaise ?? null)} aria-label="Save budget"><Check /></Button>
                     <Button type="button" variant="ghost" size="icon-sm" aria-label="Cancel" onClick={() => setBudget(null)}><X /></Button>
                   </form>
                 ) : (
                   <>
-                    <span className="text-sm font-medium">{c.name}</span>
+                    <span className={c.isActive === false ? "flex items-center gap-2 text-sm font-medium text-muted-foreground" : "flex items-center gap-2 text-sm font-medium"}>{c.name}{c.isActive === false && <Pill color="slate">Inactive</Pill>}</span>
                     <span className="flex items-center gap-0.5">
                       {kind === "expense" && can("finance.expense.edit") && <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground" title="Monthly budget" onClick={() => setBudget({ id: c.id, value: c.budgetPaise })}><Target />{c.budgetPaise ? `${formatPaise(c.budgetPaise)}/mo` : "Budget"}</Button>}
                       {can("finance.expense.edit") && <Button variant="ghost" size="icon-sm" title="Rename" aria-label={`Rename ${c.name}`} onClick={() => setRenaming({ id: c.id, name: c.name })}><Pencil /></Button>}
+                      {can("finance.expense.edit") && <Button variant="ghost" size="icon-sm" title={c.isActive === false ? "Make active" : "Make inactive"} aria-label={`${c.isActive === false ? "Make active" : "Make inactive"}: ${c.name}`} disabled={busy} onClick={() => void run(() => api.patch(`/finance/categories/${c.id}`, { isActive: c.isActive === false }), c.isActive === false ? `${c.name} is active again` : `${c.name} is inactive`)}>{c.isActive === false ? <ArchiveRestore /> : <Archive />}</Button>}
                       {can("finance.expense.delete") && <Button variant="ghost" size="icon-sm" title="Delete" aria-label={`Delete ${c.name}`} onClick={() => setDeleting(c)}><Trash2 /></Button>}
                     </span>
                   </>
@@ -107,7 +108,7 @@ function Categories({ kind }: { kind: "expense" | "income" }) {
         onOpenChange={(o) => !o && setDeleting(null)}
         destructive
         title={`Delete ${deleting?.name}?`}
-        description="Only a category no entry uses can be deleted. If entries use it, rename it instead."
+        description="Only a category no entry uses can be deleted. If entries use it, make it inactive instead: old entries keep it, new ones can't pick it."
         confirmLabel="Delete category"
         onConfirm={async () => { await run(() => api.delete(`/finance/categories/${deleting!.id}`), "Category deleted") }}
       />

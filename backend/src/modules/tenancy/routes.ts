@@ -201,7 +201,7 @@ router.get('/branches', requirePermission('tenant.branch.view'), tx(async (_req,
 router.post('/branches', requirePermission('tenant.branch.create'), validate(tenancy.BranchInput), tx(async (req, res) => {
   res.status(201).json(await tenancy.createBranch(req.ctx!.tenantId, req.body));
 }));
-router.patch('/branches/:id', requirePermission('tenant.branch.edit'), validate(id, 'params'), validate(tenancy.BranchInput.partial()), tx(async (req, res) => {
+router.patch('/branches/:id', requirePermission('tenant.branch.edit'), validate(id, 'params'), validate(tenancy.BranchInput.partial().extend({ isActive: z.boolean().optional() })), tx(async (req, res) => {
   res.json(await tenancy.updateBranch(String(req.params.id), req.body));
 }));
 

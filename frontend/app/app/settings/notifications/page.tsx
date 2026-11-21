@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
+import { InlineSave } from "@/components/save-bar"
 import { Textarea } from "@/components/ui/textarea"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { ErrorState, NoAccess } from "@/components/page-states"
@@ -84,11 +85,9 @@ function Editor({ data, tab, event, setEvent, onSaved }: { data: Data; tab: "cus
       setSaving(false)
     }
   }
-  /** Channel switches save straight away; templates save from the editor */
-  const quick = (next: NotificationSettings, message: string) => {
-    setS(next)
-    void save(next, message)
-  }
+  /** Switches change the draft; Save sends it once */
+  const quick = (next: NotificationSettings) => setS(next)
+  const saveRow = editable && <InlineSave className="mt-3" dirty={dirty} saving={saving} onDiscard={() => setS(data.settings)} onSave={() => void save()} />
 
   if (tab === "team") {
     return (
@@ -111,7 +110,7 @@ function Editor({ data, tab, event, setEvent, onSaved }: { data: Data; tab: "cus
                       aria-label={`${e.label} · ${ch === "inApp" ? "in-app" : "email"}`}
                       checked={s.team[e.key][ch]}
                       disabled={!editable || saving}
-                      onCheckedChange={(on) => quick({ ...s, team: { ...s.team, [e.key]: { ...s.team[e.key], [ch]: on } } }, `${e.label}: ${ch === "inApp" ? "in-app" : "email"} ${on ? "on" : "off"}`)}
+                      onCheckedChange={(on) => quick({ ...s, team: { ...s.team, [e.key]: { ...s.team[e.key], [ch]: on } } })}
                     />
                   </td>
                 ))}
@@ -121,6 +120,7 @@ function Editor({ data, tab, event, setEvent, onSaved }: { data: Data; tab: "cus
         </table>
         <p className="mt-2.5 text-xs text-muted-foreground">Each person can mute alerts for themselves in My account › My notifications. Customer messages can&apos;t be muted there.</p>
         <FormError message={error} />
+        {saveRow}
       </section>
     )
   }
@@ -213,7 +213,7 @@ function Editor({ data, tab, event, setEvent, onSaved }: { data: Data; tab: "cus
                       aria-label={`${e.label} email`}
                       checked={s.customer[e.key].email}
                       disabled={!editable || saving}
-                      onChange={(ev) => quick({ ...s, customer: { ...s.customer, [e.key]: { ...s.customer[e.key], email: ev.target.checked } } }, `${e.label} email ${ev.target.checked ? "on" : "off"}`)}
+                      onChange={(ev) => quick({ ...s, customer: { ...s.customer, [e.key]: { ...s.customer[e.key], email: ev.target.checked } } })}
                     />
                   </td>
                   <td className="py-2.5 text-center">
@@ -234,6 +234,7 @@ function Editor({ data, tab, event, setEvent, onSaved }: { data: Data; tab: "cus
         </div>
         <p className="mt-2.5 text-xs text-muted-foreground">SMS and WhatsApp switch on once a provider is connected (DLT-registered templates for SMS). Appointment messages go out when bookings arrive in your plan.</p>
         <FormError message={error} />
+        {saveRow}
       </section>
       <TemplateEditor key={event} event={event} settings={s} defaults={data.defaults} editable={editable} onSave={(t) => {
         const next = { ...s, customer: { ...s.customer, [event]: { ...s.customer[event], ...t } } }

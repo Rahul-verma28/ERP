@@ -22,6 +22,8 @@ import { useAuth } from "@/lib/auth"
 import { useSharedApi } from "@/lib/use-api"
 import { formatDate } from "@/lib/format"
 import { ACTION_STATUS, type ActionKind, type HrAction, type ListKey } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
+import { activeOr } from "@/lib/active"
 
 // Career and conduct records, one page per kind. Approving a promotion or transfer changes the
 // employee; an accepted resignation or approved termination sets their last day.
@@ -50,6 +52,8 @@ function ActionDialog({ kind, record, onClose, onSaved }: { kind: ActionKind; re
     typeName: record?.typeName ?? "", subject: record?.subject ?? "", description: record?.description ?? "", severity: record?.severity ?? "medium",
     branchId: record?.toData?.branchId ?? "", departmentId: record?.toData?.departmentId ?? "", designationId: record?.toData?.designationId ?? "", documentUrl: record?.documentUrl ?? "",
   })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -95,7 +99,7 @@ function ActionDialog({ kind, record, onClose, onSaved }: { kind: ActionKind; re
           {k.move && <>
             <Field label="New department" error={errors["to.departmentId"]}><DepartmentSelect value={f.departmentId} onChange={(v) => set("departmentId", v)} aria-label="New department" /></Field>
             <Field label="New designation" required={kind === "promotion"} error={errors["to.designationId"]}><DesignationSelect value={f.designationId} departmentId={f.departmentId} onChange={(v) => set("designationId", v)} aria-label="New designation" /></Field>
-            {(branches.data?.data.length ?? 0) > 1 && <Field label="New branch" className="sm:col-span-2"><SearchSelect value={f.branchId} onChange={(v) => set("branchId", v)} options={[{ value: "", label: "Same branch" }, ...(branches.data?.data ?? []).map((b) => ({ value: b.id, label: b.name }))]} aria-label="New branch" /></Field>}
+            {(branches.data?.data.length ?? 0) > 1 && <Field label="New branch" className="sm:col-span-2"><SearchSelect value={f.branchId} onChange={(v) => set("branchId", v)} options={[{ value: "", label: "Same branch" }, ...activeOr(branches.data?.data ?? [], f.branchId).map((b) => ({ value: b.id, label: b.name }))]} aria-label="New branch" /></Field>}
           </>}
           {k.list && <Field label={k.typeLabel!} required error={errors.typeName}><ListSelect list={k.list} value={f.typeName} onChange={(v) => set("typeName", v)} aria-label={k.typeLabel} /></Field>}
           {k.severity && <Field label="Severity"><NativeSelect value={f.severity} aria-label="Severity" onChange={(e) => set("severity", e.target.value)}><option value="low">Minor</option><option value="medium">Moderate</option><option value="high">Major</option></NativeSelect></Field>}
@@ -105,7 +109,7 @@ function ActionDialog({ kind, record, onClose, onSaved }: { kind: ActionKind; re
           <Field label={k.reasonRequired ? "Reason" : "Details"} required={k.reasonRequired} error={errors.description} className="sm:col-span-2"><Textarea rows={3} maxLength={2000} value={f.description} onChange={(e) => set("description", e.target.value)} placeholder={kind === "award" ? "What they did, e.g. Highest sales in Diwali week" : "What happened, briefly"} /></Field>
           <Field label="Letter or document link" error={errors.documentUrl} className="sm:col-span-2" hint="Optional: a link to the signed letter"><Input value={f.documentUrl} maxLength={500} onChange={(e) => set("documentUrl", e.target.value)} placeholder="https://…" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : record ? "Save" : `Record ${k.one}`}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!record && unchanged)}>{busy ? "Saving…" : record ? "Save" : `Record ${k.one}`}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -3,10 +3,13 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { Building2, LogOut, Menu, UserRound, X } from "lucide-react"
+import { Building2, Loader2, LogOut, Menu, UserRound, X } from "lucide-react"
+import { toast } from "sonner"
+import { errorMessage } from "@/lib/api"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { WorkspaceSwitcher } from "@/components/app-shell"
 import { ConsolePalette } from "@/components/console/console-palette"
 import { useNav, type NavItem } from "@/components/console/console-nav"
 import { NotificationsBell } from "@/components/console/notifications-bell"
@@ -34,6 +37,8 @@ function Brand() {
   const { me } = useAuth()
   const base = useConsoleBase()
   const partner = me?.console?.partner
+  // AHEAD team members who also run a business get the same switcher as in the business app
+  if (!partner && me?.memberships.length) return <WorkspaceSwitcher />
   return (
     <Link href={base} className="flex items-center gap-3 px-2 py-1">
       <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-[var(--console-brand)] text-white shadow-sm">
@@ -88,10 +93,22 @@ function Nav({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function AccountMenu() {
-  const { me, signOut } = useAuth()
+  const { me, signOut, switchTenant } = useAuth()
   const router = useRouter()
   const base = useConsoleBase()
+  const [switching, setSwitching] = React.useState<string | null>(null)
   if (!me) return null
+  // Opening a business moves this session into it first; only then does /app open
+  const openBusiness = async (tenantId: string) => {
+    setSwitching(tenantId)
+    try {
+      await switchTenant(tenantId)
+      router.replace("/app")
+    } catch (e) {
+      toast.error(errorMessage(e))
+      setSwitching(null)
+    }
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="rounded-full outline-offset-2" aria-label="Account menu">
@@ -113,9 +130,19 @@ function AccountMenu() {
           <UserRound className="size-4" /> My account
         </DropdownMenuItem>
         {me.memberships.length > 0 && (
-          <DropdownMenuItem onClick={() => router.push("/app")}>
-            <Building2 className="size-4" /> Open my business
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Open a business</DropdownMenuLabel>
+              {me.memberships.map((m) => (
+                <DropdownMenuItem key={m.tenantId} disabled={!!switching} onClick={() => void openBusiness(m.tenantId)}>
+                  <Building2 className="size-4" />
+                  <span className="flex-1 truncate">{m.name}</span>
+                  {switching === m.tenantId && <Loader2 className="size-3.5 animate-spin" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+          </>
         )}
         <DropdownMenuSeparator />
         <DropdownMenuItem

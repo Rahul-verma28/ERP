@@ -42,13 +42,13 @@ export default function WarehousesPage() {
           meta: (rows) => ({ sums: { value: rows.reduce((a, w) => a + w.valuePaise, 0), items: rows.reduce((a, w) => a + w.itemsInStock, 0), moves: rows.reduce((a, w) => a + (w.moves30 ?? 0), 0) } }),
         })}
         presetLabel="Show"
-        presets={[{ key: "active", label: "Active", params: { show: "active" }, countKey: "active" }, { key: "closed", label: "Closed", params: { show: "closed" }, countKey: "closed" }, { key: "all", label: "All", params: {}, countKey: "all" }]}
+        presets={[{ key: "active", label: "Active", params: { show: "active" }, countKey: "active" }, { key: "closed", label: "Inactive", params: { show: "closed" }, countKey: "closed" }, { key: "all", label: "All", params: {}, countKey: "all" }]}
         tabs
         top={(res) => {
           const c = (res.counts ?? {}) as Record<string, number>
           const t = (res.sums ?? {}) as Record<string, number>
           return <SummaryCards items={[
-            { label: "Warehouses", value: c.active ?? 0, hint: `${c.closed ?? 0} closed`, color: "blue", icon: Warehouse },
+            { label: "Warehouses", value: c.active ?? 0, hint: `${c.closed ?? 0} inactive`, color: "blue", icon: Warehouse },
             { label: "Stock value", value: formatPaise(t.value ?? 0), hint: "At cost, all warehouses", color: "emerald", icon: IndianRupee },
             { label: "Item lines in stock", value: t.items ?? 0, hint: "Item × warehouse with stock", color: "violet", icon: Boxes },
             { label: "Stock moves", value: t.moves ?? 0, hint: "In the last 30 days", color: "amber", icon: Activity },
@@ -75,7 +75,7 @@ export default function WarehousesPage() {
           { key: "items", header: "Items in stock", align: "right", sort: (g) => g.itemsInStock, cell: (g) => <span className="tabular-nums">{g.itemsInStock}<span className="block text-[11px] text-muted-foreground">{(g.units ?? 0).toLocaleString("en-IN")} units</span></span> },
           { key: "value", header: "Value", align: "right", sort: (g) => g.valuePaise, cell: (g) => <span className="font-medium tabular-nums">{formatPaise(g.valuePaise)}</span> },
           { key: "moves", header: "Last 30 days", align: "right", sort: (g) => g.moves30 ?? 0, cell: (g) => <span className="tabular-nums">{g.moves30 ? `${g.moves30} moves` : "—"}{g.lastMoveOn && <span className="block text-[11px] text-muted-foreground">Last {formatDate(g.lastMoveOn)}</span>}</span> },
-          { key: "status", header: "Status", cell: (g) => <Badge variant={g.isActive ? "secondary" : "outline"}>{g.isActive ? "Active" : "Closed"}</Badge> },
+          { key: "status", header: "Status", cell: (g) => <Badge variant={g.isActive ? "secondary" : "outline"}>{g.isActive ? "Active" : "Inactive"}</Badge> },
           {
             key: "actions", header: "Actions", hideable: false,
             cell: (g: StockLocation) => (
@@ -84,7 +84,7 @@ export default function WarehousesPage() {
                 <ActionMenu label={`More actions for ${g.name}`} items={[
                   { label: "Open", icon: Eye, href: `/app/m/inventory/warehouses/${g.id}` },
                   can("inventory.warehouse.edit") && g.isActive && !g.isDefault && { label: "Make default", icon: Star, onClick: () => void act(g, { isDefault: true }, `${g.name} is the default`) },
-                  can("inventory.warehouse.edit") && !g.isDefault && (g.isActive ? { label: "Close warehouse", icon: Archive, onClick: () => void act(g, { isActive: false }, `${g.name} closed`) } : { label: "Reopen", icon: ArchiveRestore, onClick: () => void act(g, { isActive: true }, `${g.name} reopened`) }),
+                  can("inventory.warehouse.edit") && !g.isDefault && (g.isActive ? { label: "Make inactive", icon: Archive, onClick: () => void act(g, { isActive: false }, `${g.name} is inactive`) } : { label: "Make active", icon: ArchiveRestore, onClick: () => void act(g, { isActive: true }, `${g.name} is active again`) }),
                 ]} />
               </span>
             ),

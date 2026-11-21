@@ -91,7 +91,7 @@ function ItemPage() {
   async function setActive(active: boolean) {
     try {
       await api.patch(`/items/${item!.id}`, { isActive: active, version: item!.version })
-      toast.success(active ? "Item restored" : "Item archived")
+      toast.success(active ? "Item is active again" : "Item is inactive")
       void reload()
     } catch (e) {
       toast.error(errorMessage(e))
@@ -109,7 +109,7 @@ function ItemPage() {
         icon={product ? Package : Wrench}
         pills={<>
           <Pill color={product ? "blue" : "violet"}>{product ? "Product" : "Service"}</Pill>
-          {!item.isActive && <Pill color="slate">Archived</Pill>}
+          {!item.isActive && <Pill color="slate">Inactive</Pill>}
           {item.tracking && item.tracking !== "none" && <Pill color="cyan">{item.tracking === "batch" ? "Batch tracked" : "Serial tracked"}</Pill>}
           {low && <Pill color="amber" dot>Low stock</Pill>}
         </>}
@@ -122,7 +122,7 @@ function ItemPage() {
             canStock && can("inventory.transfer.create") && { label: "Move to another warehouse", icon: ArrowLeftRight, onClick: () => setStock("move") },
             "-",
             can("catalog.item.create") && { label: "Make a copy", icon: Copy, href: `/app/m/catalog/new?copy=${item.id}` },
-            can("catalog.item.edit") && (item.isActive ? { label: "Archive", icon: Archive, onClick: () => void setActive(false) } : { label: "Restore", icon: ArchiveRestore, onClick: () => void setActive(true) }),
+            can("catalog.item.edit") && (item.isActive ? { label: "Make inactive", icon: Archive, onClick: () => void setActive(false) } : { label: "Make active", icon: ArchiveRestore, onClick: () => void setActive(true) }),
             "-",
             can("catalog.item.delete") && { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(true) },
           ]} />
@@ -241,7 +241,7 @@ function ItemPage() {
         onOpenChange={setDeleting}
         destructive
         title={`Delete ${item.name}?`}
-        description="If it is on any bill or stock record it is archived instead, so your history stays correct."
+        description="If it is on any bill or stock record it is made inactive instead, so your history stays correct."
         confirmLabel="Delete"
         onConfirm={async () => {
           try {

@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { PRIORITY, type SupportSettings, type TicketPriority } from "@/lib/support"
 import { cn } from "@/lib/utils"
+import { InlineSave } from "@/components/save-bar"
 
 // Customer Service setup on one page: what tickets can be about, how fast each priority must be
 // answered and fixed, the warranty, who gets new tickets, closing and ratings, and the online
@@ -30,11 +31,15 @@ export default function SupportSetupPage() {
   const { can } = useAuth()
   const res = useApi<SupportSettings>("/support/settings")
   const [f, setF] = React.useState<SupportSettings | null>(null)
+  // What is saved: the last save, else what loaded. Save works only when the form differs from it
+  const [base, setBase] = React.useState<SupportSettings | null>(null)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [showQr, setShowQr] = React.useState(false)
   const s = f ?? res.data ?? null
+  const saved = base ?? res.data ?? null
+  const dirty = !!f && JSON.stringify(f) !== JSON.stringify(saved)
   if (!can("support.sla.edit")) return <PageHeader title="Customer service setup" description="Only people who manage customer service can change this. Ask your admin." />
   if (!s) return <PageLoading />
   const set = <K extends keyof SupportSettings>(k: K, v: SupportSettings[K]) => { setF({ ...s, [k]: v }); setErrors((e) => ({ ...e, [k]: "" })); setError(null) }
@@ -62,6 +67,7 @@ export default function SupportSetupPage() {
     try {
       const saved = await api.put<SupportSettings>("/support/settings", { ...s, slug: slug || null, title: s!.title.trim(), intro: s!.intro?.trim() || null, categories: s!.categories.map((c) => ({ ...c, label: c.label.trim() })) })
       setF(saved)
+      setBase(saved)
       void res.reload()
       toast.success(saved.formEnabled ? "Saved. The request form is live." : "Saved")
     } catch (err) {
@@ -128,7 +134,7 @@ export default function SupportSetupPage() {
             <Field label="A line for customers" className="sm:col-span-2" count={[s.intro?.length ?? 0, 400]}><Textarea rows={2} maxLength={400} value={s.intro ?? ""} onChange={(e) => set("intro", e.target.value)} placeholder="e.g. Keep your invoice number handy. We reply within a working day." /></Field>
           </FormSection>
           <FormError message={error} />
-          <div className="flex justify-end gap-2"><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></div>
+          <InlineSave dirty={dirty} saving={busy} onDiscard={() => { setF(null); setErrors({}); setError(null) }} onSave={() => void save({ preventDefault() {} } as React.FormEvent)} />
         </form>
 
         <div className="grid content-start gap-5">

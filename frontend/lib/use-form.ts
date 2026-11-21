@@ -98,7 +98,9 @@ export function useForm<T extends Values>(opts: UseFormOptions<T>) {
   })
 
   /** Start over from `next` (e.g. what the API returned after saving) or the original values. */
+  const resets = React.useRef(0)
   const reset = React.useCallback((next?: T) => {
+    resets.current++
     const v = next ?? optsRef.current.initial
     setInitial(v)
     setValues(v)
@@ -152,7 +154,10 @@ export function useForm<T extends Values>(opts: UseFormOptions<T>) {
     }
     setSubmitting(true)
     try {
+      const before = resets.current
       await o.onSubmit(cleaned, (Object.keys(cleaned) as (keyof T)[]).filter((k) => !same(cleaned[k], initial[k])))
+      // What was saved is now the starting point (unless the form reset itself on purpose)
+      if (resets.current === before) setInitial(cleaned)
       return true
     } catch (err) {
       if (err instanceof Cancelled) return false

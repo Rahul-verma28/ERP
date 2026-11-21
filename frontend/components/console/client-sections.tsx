@@ -18,6 +18,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatDateTime, formatNumber } from "@/lib/format"
 import { MODULE_SHORT, ORDER_STATUS_LABEL, type AccountHealth, type Catalog, type ClientDetail, type ClientSummary, type ClientUser, type OrderStatus, type TimelineEvent, type TimelineKind } from "@/lib/console"
 import { cn } from "@/lib/utils"
+import { ViewOnlyTag } from "@/components/page-states"
 
 // The one-page client view: plan & payments, activity & notes, owner, next step, setup and users.
 // Counts and status only — never the client's business records.
@@ -93,7 +94,7 @@ export function ModulesPanel({ client }: { client: ClientDetail }) {
               {s === "active" ? (
                 <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"><span className="size-1.5 rounded-full bg-emerald-500" />On</span>
               ) : s === "read_only" ? (
-                <span className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-400">Read-only</span>
+                <ViewOnlyTag />
               ) : (
                 <span className="shrink-0 text-xs">Off</span>
               )}

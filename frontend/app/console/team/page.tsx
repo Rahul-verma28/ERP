@@ -19,6 +19,7 @@ import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import type { ConsoleMember, ConsoleRole } from "@/lib/console"
+import { useChanged } from "@/lib/use-dirty"
 
 // People (Console v3): AHEAD's team, salespeople and vendors, or a partner's own staff. A new
 // person gets a login link and sets their own password. Edits save at once; only turning
@@ -120,6 +121,7 @@ function AddDialog({ open, onOpenChange, roles, onSaved }: { open: boolean; onOp
 
 function EditDialog({ member, self, roles, onClose, onSave }: { member: ConsoleMember; self: boolean; roles: ConsoleRole[]; onClose: () => void; onSave: (body: Patch) => Promise<boolean> }) {
   const [form, setForm] = React.useState({ roleKey: member.role.key, reportsTo: member.reportsTo?.userId ?? "", status: (member.status === "deactivated" ? "deactivated" : "active") as "active" | "deactivated" })
+  const unchanged = !useChanged(form)
   const [busy, setBusy] = React.useState(false)
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -151,8 +153,8 @@ function EditDialog({ member, self, roles, onClose, onSave }: { member: ConsoleM
           {!self && (
             <Field label="Access">
               <NativeSelect value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as "active" | "deactivated" })}>
-                <option value="active">Can sign in</option>
-                <option value="deactivated">Turned off — signs them out</option>
+                <option value="active">Active</option>
+                <option value="deactivated">Inactive (signs them out)</option>
               </NativeSelect>
             </Field>
           )}
@@ -160,7 +162,7 @@ function EditDialog({ member, self, roles, onClose, onSave }: { member: ConsoleM
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || unchanged}>
               {busy ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
@@ -209,7 +211,7 @@ export default function TeamPage() {
     { key: "mfa", header: "Two-step", sortable: true, cell: (m) => (m.user.mfaEnabled ? <Chip tone="green">On</Chip> : <Chip tone="amber">Off</Chip>) },
     { key: "lastLogin", header: "Last signed in", sortable: true, cell: (m) => <span className="text-muted-foreground">{m.user.lastLoginAt ? ago(m.user.lastLoginAt) : "Not yet"}</span> },
     { key: "joined", header: "Added", sortable: true, cell: (m) => <span className="text-muted-foreground">{formatDate(m.joinedAt)}</span> },
-    { key: "status", header: "Status", sortable: true, cell: (m) => (m.status === "active" ? <Chip tone="green">Active</Chip> : <Chip tone="red">Turned off</Chip>) },
+    { key: "status", header: "Status", sortable: true, cell: (m) => (m.status === "active" ? <Chip tone="green">Active</Chip> : <Chip tone="red">Inactive</Chip>) },
   ]
   const actions = (m: ConsoleMember): RowAction[] => {
     const self = m.user.id === me?.user.id
@@ -217,8 +219,8 @@ export default function TeamPage() {
     return [
       { label: "Edit role and access", icon: Pencil, onClick: () => setEditing(m), hidden: locked },
       { label: "Send new login link", icon: KeyRound, onClick: () => setLinkFor(m), hidden: m.status !== "active" || !canConsole("platform.member.create") },
-      { label: "Turn off", icon: UserX, danger: true, separator: true, onClick: () => void save(m, { status: "deactivated" }), hidden: locked || self || m.status !== "active" },
-      { label: "Turn back on", icon: UserCheck, separator: true, onClick: () => void save(m, { status: "active" }), hidden: locked || m.status === "active" },
+      { label: "Make inactive", icon: UserX, danger: true, separator: true, onClick: () => void save(m, { status: "deactivated" }), hidden: locked || self || m.status !== "active" },
+      { label: "Make active", icon: UserCheck, separator: true, onClick: () => void save(m, { status: "active" }), hidden: locked || m.status === "active" },
       { label: "Copy email", icon: Copy, separator: true, onClick: () => navigator.clipboard.writeText(m.user.email).then(() => toast.success("Email copied")) },
     ]
   }
@@ -240,7 +242,7 @@ export default function TeamPage() {
     body.status === "deactivated" ? new Promise<boolean>((resolve) => setTurnOff({ member: m, body, resolve })) : send(m, body)
 
   if (members.error) return <Failed error={members.error} onRetry={members.reload} />
-  if (!members.data || !roles.data) return <Loading rows={5} className="mx-auto max-w-6xl" />
+  if (!members.data || !roles.data) return <Loading rows={5} />
   const everyone = members.data.data
   const active = everyone.filter((m) => m.status === "active")
   const assignable = roles.data.data.filter((r) => r.key !== "super_admin" || isSuper)
@@ -277,7 +279,7 @@ export default function TeamPage() {
         filters={
           <>
             <FilterSelect value={roleFilter} onChange={setRoleFilter} label="Role" options={[["", "Any role"], ...roles.data.data.filter((r) => everyone.some((m) => m.role.key === r.key)).map((r) => [r.key, r.name] as [string, string])]} />
-            <FilterSelect value={statusFilter} onChange={setStatusFilter} label="Access" options={[["", "Any access"], ["active", "Can sign in"], ["deactivated", "Turned off"]]} />
+            <FilterSelect value={statusFilter} onChange={setStatusFilter} label="Access" options={[["", "Any status"], ["active", "Active"], ["deactivated", "Inactive"]]} />
           </>
         }
         empty={<span className="inline-flex items-center gap-2"><Users className="size-4" /> Nobody here yet</span>}

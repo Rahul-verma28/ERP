@@ -255,12 +255,14 @@ router.post('/item-categories', requirePermission('catalog.category.create'), va
   res.status(201).json(await db().itemCategory.create({ data: { tenantId: req.ctx!.tenantId, name: req.body.name } }));
 }));
 
-router.patch('/item-categories/:id', requirePermission('catalog.category.edit'), validate(IdParam, 'params'), validate(z.object({ name: z.string().trim().min(1).max(80) })), tx(async (req, res) => {
+// Rename, or make inactive (hidden from new choices; items keep it)
+const CategoryPatch = z.object({ name: z.string().trim().min(1).max(80).optional(), isActive: z.boolean().optional() }).refine((b) => b.name !== undefined || b.isActive !== undefined, 'Nothing to change');
+router.patch('/item-categories/:id', requirePermission('catalog.category.edit'), validate(IdParam, 'params'), validate(CategoryPatch), tx(async (req, res) => {
   const id = String(req.params.id);
-  if (await db().itemCategory.findFirst({ where: { name: { equals: req.body.name, mode: 'insensitive' }, id: { not: id } }, select: { id: true } })) {
+  if (req.body.name !== undefined && (await db().itemCategory.findFirst({ where: { name: { equals: req.body.name, mode: 'insensitive' }, id: { not: id } }, select: { id: true } }))) {
     throw new AppError('VALIDATION_FAILED', 'This category already exists.', { fields: { name: 'Already added' } });
   }
-  res.json(await db().itemCategory.update({ where: { id }, data: { name: req.body.name } }));
+  res.json(await db().itemCategory.update({ where: { id }, data: { name: req.body.name, isActive: req.body.isActive } }));
 }));
 
 router.delete('/item-categories/:id', requirePermission('catalog.category.delete'), validate(IdParam, 'params'), tx(async (req, res) => {
@@ -352,6 +354,8 @@ export async function importItems(ctx: Pick<TenantCtx, 'tenantId' | 'userId'>, i
 // ── Price lists ──
 
 const PriceListInput = z.object({ name: z.string().trim().min(2, 'Use at least 2 characters').max(80), discountBp: z.number().int().min(0).max(10_000).default(0) });
+// Edit, or make inactive: customers already on it keep their prices; it can't be given to new ones
+const PriceListPatch = PriceListInput.extend({ isActive: z.boolean().optional() }).partial();
 
 router.get('/price-lists', requirePermission('catalog.price_list.view'), tx(async (req, res) => {
   res.json(await listPriceLists(req.ctx!));
@@ -364,7 +368,7 @@ router.post('/price-lists', requirePermission('catalog.price_list.create'), vali
   await audit({ action: 'catalog.price_list.create', entity: 'price_list', entityId: list.id, after: req.body });
   res.status(201).json(list);
 }));
-router.patch('/price-lists/:id', requirePermission('catalog.price_list.edit'), validate(IdParam, 'params'), validate(PriceListInput), tx(async (req, res) => {
+router.patch('/price-lists/:id', requirePermission('catalog.price_list.edit'), validate(IdParam, 'params'), validate(PriceListPatch), tx(async (req, res) => {
   const list = await db().priceList.update({ where: { id: String(req.params.id) }, data: req.body });
   await audit({ action: 'catalog.price_list.edit', entity: 'price_list', entityId: list.id, after: req.body });
   res.json(list);

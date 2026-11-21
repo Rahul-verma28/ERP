@@ -22,6 +22,7 @@ import { useAuth } from "@/lib/auth"
 import { useSharedApi } from "@/lib/use-api"
 import { formatDate } from "@/lib/format"
 import type { HrRecord } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
 
 // Candidate assessments: tests and tasks a candidate does, with the score and who checked it.
 
@@ -33,6 +34,8 @@ function AssessmentDialog({ row, onClose, onSaved }: { row: Row | null; onClose:
   const cands = useSharedApi<{ data: Candidate[] }>("/hr/candidates")
   const d = row?.data
   const [f, setF] = React.useState({ candidateId: d?.candidateId ?? "", title: d?.title ?? "", onDate: d?.onDate ?? todayInIndia(), conductedById: d?.conductedById ?? "", score: d?.score == null ? "" : String(d.score), maxScore: d?.maxScore == null ? "10" : String(d.maxScore), remarks: d?.remarks ?? "" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -72,7 +75,7 @@ function AssessmentDialog({ row, onClose, onSaved }: { row: Row | null; onClose:
           <Field label="Checked by" className="sm:col-span-2"><EmployeeSelect value={f.conductedById} onChange={(v) => set("conductedById", v)} placeholder="Who checked it (optional)" aria-label="Checked by" /></Field>
           <Field label="Remarks" className="sm:col-span-2"><Textarea rows={2} maxLength={2000} value={f.remarks} onChange={(e) => set("remarks", e.target.value)} placeholder="e.g. Fast at billing, needs to learn returns" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!d && unchanged)}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

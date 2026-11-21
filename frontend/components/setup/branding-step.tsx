@@ -63,7 +63,7 @@ export function BrandingStep({ workspace, refresh, complete, back }: StepProps) 
           />
         </Field>
       </section>
-      <StepFooter back={back} onSkip={() => void complete("skipped")} saving={saving} error={error ?? colorError} />
+      <StepFooter back={back} onSkip={() => void complete("skipped")} saving={saving} error={error ?? colorError} dirty={JSON.stringify(b) !== JSON.stringify(workspace.preferences.branding)} />
     </form>
   )
 }

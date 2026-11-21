@@ -20,6 +20,7 @@ import { useDebounced } from "@/lib/use-list"
 import { formatDateTime } from "@/lib/format"
 import { STAGES, STAGE_LABEL, type Followup, type Prospect, type Stage } from "@/lib/console"
 import { cn } from "@/lib/utils"
+import { useChanged } from "@/lib/use-dirty"
 
 // Leads: businesses that might become clients, where each one stands, and who to call next.
 // When a lead signs up with the same mobile, it links to the new client by itself.
@@ -40,6 +41,8 @@ function LeadDialog({ lead, onClose, onSaved }: { lead: Prospect | null; onClose
     lostReason: lead?.lostReason ?? "",
   })
   const [next, setNext] = React.useState({ title: "", due: tomorrowAt11() })
+  // Editing: something changed, or a next follow-up was typed
+  const unchanged = !useChanged(form) && !next.title.trim()
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [busy, setBusy] = React.useState(false)
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setForm({ ...form, [k]: e.target.value })
@@ -144,7 +147,7 @@ function LeadDialog({ lead, onClose, onSaved }: { lead: Prospect | null; onClose
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || (!!lead && unchanged)}>
               {busy ? "Saving…" : lead ? "Save" : "Add lead"}
             </Button>
           </DialogFooter>

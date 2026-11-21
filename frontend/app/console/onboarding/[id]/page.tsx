@@ -42,7 +42,7 @@ function Wizard({ params }: { params: Promise<{ id: string }> }) {
   const { data, error, reload, setData } = useApi<OnboardingDetail>(`/console/onboarding/${id}`)
 
   if (error) return <Failed error={error} onRetry={reload} />
-  if (!data) return <Loading rows={6} className="mx-auto max-w-6xl" />
+  if (!data) return <Loading rows={6} />
 
   const asked = search.get("step") as Step | null
   const step: Step = asked && ["branding", "config", "import", "handover"].includes(asked) ? asked : data.progress.nextStep ?? "handover"

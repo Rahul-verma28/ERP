@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/ui/input-group"
 import { Field, FormError } from "@/components/form"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -111,7 +112,7 @@ function InviteForm({ token, p }: { token: string; p: Preview }) {
           )}
           {(p.hasAccount || otpSent) && (
             <Field label={p.hasAccount ? "Your password" : "Create a password"} hint={p.hasAccount ? undefined : "At least 8 characters"}>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
+              <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
             </Field>
           )}
           <FormError message={error} />

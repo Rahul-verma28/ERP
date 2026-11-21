@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/ui/input-group"
 import { Field, FormError } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -133,7 +134,7 @@ function SetupForm({ token, info }: { token: string; info: LinkInfo }) {
           )}
           {sent && info.needsPassword && (
             <Field label="Choose a password" hint="At least 8 characters, with a letter and a number" error={fields.password}>
-              <Input id="start-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
+              <PasswordInput id="start-password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
             </Field>
           )}
           <FormError message={error} />

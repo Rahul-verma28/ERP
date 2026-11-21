@@ -67,7 +67,7 @@ export default function UsersPage() {
         {canEdit && !locked && <Button variant="ghost" size="icon-sm" title="Role and branches" aria-label={`Change access for ${r.name}`} onClick={() => setEditing(r)}><KeyRound /></Button>}
         {canEdit && !locked && (
           <ActionMenu items={[
-            r.status === "active" ? { label: "Turn off login", icon: UserX, destructive: true, onClick: () => setConfirm({ row: r, what: "off" }) } : { label: "Turn on login", icon: UserCheck, onClick: () => setConfirm({ row: r, what: "on" }) },
+            r.status === "active" ? { label: "Make inactive", icon: UserX, destructive: true, onClick: () => setConfirm({ row: r, what: "off" }) } : { label: "Make active", icon: UserCheck, onClick: () => setConfirm({ row: r, what: "on" }) },
             r.status === "active" && !!r.devices && { label: `Sign out of ${r.devices} device${r.devices === 1 ? "" : "s"}`, icon: LogOut, onClick: () => setConfirm({ row: r, what: "signout" }) },
             r.mfaEnabled && { label: "Reset two-step…", icon: RotateCcw, onClick: () => setResetFor(r) },
           ]} />
@@ -78,9 +78,9 @@ export default function UsersPage() {
 
   const presets: ViewPreset[] = [
     { key: "all", label: "Everyone", params: {}, countKey: "all" },
-    { key: "active", label: "Can sign in", params: { show: "active" }, countKey: "active" },
+    { key: "active", label: "Active", params: { show: "active" }, countKey: "active" },
     { key: "invited", label: "Invited", params: { show: "invited" }, countKey: "invited" },
-    { key: "deactivated", label: "Login off", params: { show: "deactivated" }, countKey: "deactivated" },
+    { key: "deactivated", label: "Inactive", params: { show: "deactivated" }, countKey: "deactivated" },
     { key: "nomfa", label: "No two-step", params: { show: "nomfa" }, countKey: "nomfa" },
   ]
   const add = canInvite ? <Button className="h-10 rounded-xl px-4 font-semibold" onClick={() => setInviting(true)}><UserPlus /> Invite user</Button> : undefined
@@ -108,7 +108,7 @@ export default function UsersPage() {
             { label: "Can sign in", value: c.active ?? 0, hint: `${s.signedInWeek ?? 0} signed in this week`, color: "emerald", icon: UserCheck },
             { label: "Invited", value: c.invited ?? 0, hint: s.expiredInvites ? `${s.expiredInvites} expired: send again` : "Waiting to join", color: "violet", icon: MailPlus },
             { label: "Two-step on", value: `${s.mfaPct ?? 0}%`, hint: c.nomfa ? `${c.nomfa} without it` : "Everyone is protected", color: c.nomfa ? "amber" : "emerald", icon: c.nomfa ? ShieldAlert : ShieldCheck, href: "/app/settings/security" },
-            { label: "Login off", value: c.deactivated ?? 0, hint: "Kept for the record", color: "slate", icon: UserX },
+            { label: "Inactive", value: c.deactivated ?? 0, hint: "Can't sign in · kept for the record", color: "slate", icon: UserX },
           ]} />
         }}
         columns={[
@@ -116,7 +116,7 @@ export default function UsersPage() {
           { key: "mobile", header: "Mobile", defaultHidden: true, csv: (r) => r.mobile ?? "", cell: (r) => <span className="tabular-nums">{r.mobile ?? "—"}</span> },
           { key: "role", header: "Role", sort: (r) => r.role.name, csv: (r) => r.role.name, cell: (r) => <span className="flex items-center gap-1.5">{r.role.name}{r.role.custom && <Pill>Custom</Pill>}{r.seatFree && <Pill color="emerald" title="Self-service employee logins don't use a paid seat">Free seat</Pill>}</span> },
           { key: "branches", header: "Branches", csv: (r) => (r.branches.length ? r.branches.map((b) => b.name).join(", ") : "All"), cell: (r) => (branches.length < 2 ? <span className="text-muted-foreground">—</span> : r.branches.length ? <span className="text-sm">{r.branches.map((b) => b.name).join(", ")}</span> : <span className="text-muted-foreground">All</span>) },
-          { key: "status", header: "Status", sort: (r) => r.status, csv: (r) => r.status, cell: (r) => r.kind === "invite" ? <Pill color={r.expired ? "rose" : "violet"}>{r.expired ? "Invite expired" : `Invited · till ${formatDate(r.expiresAt!)}`}</Pill> : <span className="flex flex-wrap gap-1"><Pill color={r.status === "active" ? "emerald" : "slate"} dot>{r.status === "active" ? "Can sign in" : "Login off"}</Pill>{r.status === "active" && (r.mfaEnabled ? <Pill color="blue">Two-step</Pill> : <Pill color="amber">No two-step</Pill>)}</span> },
+          { key: "status", header: "Status", sort: (r) => r.status, csv: (r) => r.status, cell: (r) => r.kind === "invite" ? <Pill color={r.expired ? "rose" : "violet"}>{r.expired ? "Invite expired" : `Invited · till ${formatDate(r.expiresAt!)}`}</Pill> : <span className="flex flex-wrap gap-1"><Pill color={r.status === "active" ? "emerald" : "slate"} dot>{r.status === "active" ? "Active" : "Inactive"}</Pill>{r.status === "active" && (r.mfaEnabled ? <Pill color="blue">Two-step</Pill> : <Pill color="amber">No two-step</Pill>)}</span> },
           { key: "work", header: "Open work", csv: (r) => (r.work ? `${r.work.tasks} tasks, ${r.work.tickets} tickets, ${r.work.appointments} appointments, ${r.work.leads} leads` : ""), cell: (r) => (r.work ? <span className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">{r.work.tasks > 0 && <span className={r.work.lateTasks ? "text-destructive" : ""}>{r.work.tasks} tasks{r.work.lateTasks ? ` (${r.work.lateTasks} late)` : ""}</span>}{r.work.tickets > 0 && <span>{r.work.tickets} tickets</span>}{r.work.appointments > 0 && <span>{r.work.appointments} bookings</span>}{r.work.leads > 0 && <span>{r.work.leads} leads</span>}{!r.work.tasks && !r.work.tickets && !r.work.appointments && !r.work.leads && "—"}</span> : <span className="text-muted-foreground">—</span>) },
           { key: "last", header: "Last sign-in", sort: (r) => r.lastLoginAt ?? "", csv: (r) => r.lastLoginAt ?? "", cell: (r) => (r.kind === "invite" ? <span className="text-xs text-muted-foreground">Invited by {r.invitedBy ?? "someone"}</span> : <span className="text-sm text-muted-foreground">{r.lastLoginAt ? formatDateTime(r.lastLoginAt) : "Never"}</span>) },
           { key: "joined", header: "Joined", defaultHidden: true, sort: (r) => r.joinedAt, csv: (r) => r.joinedAt.slice(0, 10), cell: (r) => formatDate(r.joinedAt) },
@@ -133,14 +133,14 @@ export default function UsersPage() {
         open={!!confirm}
         onOpenChange={(o) => !o && setConfirm(null)}
         destructive={confirm?.what !== "on"}
-        title={confirm?.what === "off" ? `Turn off ${confirm.row.name}'s login?` : confirm?.what === "on" ? `Turn on ${confirm.row.name}'s login?` : confirm?.what === "signout" ? `Sign ${confirm?.row.name} out everywhere?` : `Cancel the invitation to ${confirm?.row.name}?`}
+        title={confirm?.what === "off" ? `Make ${confirm.row.name} inactive?` : confirm?.what === "on" ? `Make ${confirm.row.name} active again?` : confirm?.what === "signout" ? `Sign ${confirm?.row.name} out everywhere?` : `Cancel the invitation to ${confirm?.row.name}?`}
         description={confirm?.what === "off" ? "They are signed out at once and can't sign in to this business. Their records stay. Their seat is freed." : confirm?.what === "on" ? "They can sign in again with their role. It takes a seat on your plan." : confirm?.what === "signout" ? "Every device they use for this business is signed out. They can sign in again." : "The link stops working. You can invite them again later."}
-        confirmLabel={confirm?.what === "off" ? "Turn off" : confirm?.what === "on" ? "Turn on" : confirm?.what === "signout" ? "Sign out" : "Cancel invitation"}
+        confirmLabel={confirm?.what === "off" ? "Make inactive" : confirm?.what === "on" ? "Make active" : confirm?.what === "signout" ? "Sign out" : "Cancel invitation"}
         onConfirm={async () => {
           const c = confirm!
           if (c.what === "revoke") await act(() => api.delete(`/invitations/${c.row.id}`), "Invitation cancelled")
           else if (c.what === "signout") await act(() => api.post(`/members/${c.row.id}/sign-out`), `${c.row.name} is signed out`)
-          else await act(() => api.patch(`/members/${c.row.id}`, { status: c.what === "off" ? "deactivated" : "active", version: c.row.version }), c.what === "off" ? "Login turned off" : "Login turned on")
+          else await act(() => api.patch(`/members/${c.row.id}`, { status: c.what === "off" ? "deactivated" : "active", version: c.row.version }), c.what === "off" ? "Made inactive: login is off" : "Active again: login is on")
         }}
       />
       {resetFor && <ResetTwoStepDialog member={resetFor} onClose={() => setResetFor(null)} />}

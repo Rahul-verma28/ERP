@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth"
 import { useHrLookups, type LeaveType } from "@/lib/hr"
 import { tone } from "@/lib/tones"
 import { cn } from "@/lib/utils"
+import { useChanged } from "@/lib/use-dirty"
 
 // Leave types: an add/edit form on the left, every type on the right — name, what it is for,
 // days a year, paid or unpaid, and whether it can be applied for.
@@ -26,6 +27,7 @@ const blank = { name: "", code: "", description: "", daysPerYear: "12", paid: tr
 
 function LeaveTypeForm({ editing, onDone }: { editing: LeaveType | null; onDone: () => void }) {
   const [f, setF] = React.useState(() => (editing ? { name: editing.name, code: editing.code, description: editing.description ?? "", daysPerYear: String(editing.daysPerYear), paid: editing.paid, carryForward: editing.carryForward, color: editing.color, isActive: editing.isActive } : blank))
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -67,14 +69,14 @@ function LeaveTypeForm({ editing, onDone }: { editing: LeaveType | null; onDone:
       <label className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm"><span><span className="font-medium">Carry forward</span><span className="block text-xs text-muted-foreground">Unused days move to next year</span></span><Switch checked={f.carryForward} onCheckedChange={(v) => set("carryForward", v)} aria-label="Carry forward" /></label>
       <FormError message={error} />
       <div className="flex gap-2">
-        <Button type="submit" className="flex-1" disabled={busy}>{busy ? "Saving…" : editing ? "Save leave type" : "Add leave type"}</Button>
+        <Button type="submit" className="flex-1" disabled={busy || (!!editing && unchanged)}>{busy ? "Saving…" : editing ? "Save leave type" : "Add leave type"}</Button>
         {editing && <Button type="button" variant="outline" onClick={onDone}>Cancel</Button>}
       </div>
     </form>
   )
 }
 
-const PRESETS: ViewPreset[] = [{ key: "all", label: "All", params: {} }, { key: "paid", label: "Paid", params: { pay: "paid" } }, { key: "unpaid", label: "Unpaid", params: { pay: "unpaid" } }]
+const PRESETS: ViewPreset[] = [{ key: "active", label: "Active", params: { show: "active" }, countKey: "active" }, { key: "inactive", label: "Inactive", params: { show: "inactive" }, countKey: "inactive" }, { key: "paid", label: "Paid", params: { pay: "paid" }, countKey: "paid" }, { key: "unpaid", label: "Unpaid", params: { pay: "unpaid" }, countKey: "unpaid" }, { key: "all", label: "All", params: {}, countKey: "all" }]
 
 export function LeaveTypes() {
   const { can } = useAuth()
@@ -85,22 +87,25 @@ export function LeaveTypes() {
   const [deleting, setDeleting] = React.useState<LeaveType | null>(null)
   const reload = () => { setVersion((v) => v + 1); void look.reload() }
   async function toggle(t: LeaveType) {
-    try { await api.put(`/hr/leave-types/${t.id}`, { ...t, isActive: !t.isActive }); toast.success(t.isActive ? `${t.name} turned off` : `${t.name} turned on`); reload() } catch (e) { toast.error(errorMessage(e)) }
+    try { await api.put(`/hr/leave-types/${t.id}`, { ...t, isActive: !t.isActive }); toast.success(t.isActive ? `${t.name} is inactive` : `${t.name} is active again`); reload() } catch (e) { toast.error(errorMessage(e)) }
   }
   const columns: Column<LeaveType>[] = [
     { key: "name", header: "Leave type", hideable: false, sort: (t) => t.name, csv: (t) => t.name, cell: (t) => <span className="flex items-center gap-3"><span className={cn("grid size-9 shrink-0 place-items-center rounded-xl text-white", tone(t.color).dot)}><CalendarDays className="size-4" /></span><span className="min-w-0"><span className="block font-medium">{t.name} <span className="font-mono text-xs text-muted-foreground">{t.code}</span></span><span className="block max-w-80 truncate text-xs text-muted-foreground">{t.description || "—"}</span></span></span> },
     { key: "days", header: "Days / year", align: "right", sort: (t) => t.daysPerYear, csv: (t) => t.daysPerYear, cell: (t) => <span className="font-medium tabular-nums">{t.daysPerYear ? `${t.daysPerYear} days` : "No limit"}</span> },
     { key: "pay", header: "Payment type", csv: (t) => (t.paid ? "Paid" : "Unpaid"), cell: (t) => <Pill color={t.paid ? "emerald" : "amber"}>{t.paid ? "Paid" : "Unpaid"}</Pill> },
     { key: "carry", header: "Carry forward", defaultHidden: true, csv: (t) => (t.carryForward ? "Yes" : "No"), cell: (t) => (t.carryForward ? "Yes" : "No") },
-    { key: "status", header: "Status", csv: (t) => (t.isActive ? "Active" : "Off"), cell: (t) => <Pill color={t.isActive ? "emerald" : "slate"} dot>{t.isActive ? "Active" : "Off"}</Pill> },
-    { key: "actions", header: "Actions", hideable: false, cell: (t) => edit ? <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}><Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit ${t.name}`} onClick={() => setEditing(t)}><Pencil /></Button><ActionMenu label="More actions" items={[{ label: t.isActive ? "Turn off" : "Turn on", icon: t.isActive ? Pause : Play, onClick: () => void toggle(t) }, "-", { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(t) }]} /></span> : null },
+    { key: "status", header: "Status", csv: (t) => (t.isActive ? "Active" : "Inactive"), cell: (t) => <Pill color={t.isActive ? "emerald" : "slate"} dot>{t.isActive ? "Active" : "Inactive"}</Pill> },
+    { key: "actions", header: "Actions", hideable: false, cell: (t) => edit ? <span className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}><Button variant="ghost" size="icon-sm" title="Edit" aria-label={`Edit ${t.name}`} onClick={() => setEditing(t)}><Pencil /></Button><ActionMenu label="More actions" items={[{ label: t.isActive ? "Make inactive" : "Make active", icon: t.isActive ? Pause : Play, onClick: () => void toggle(t) }, "-", { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(t) }]} /></span> : null },
   ]
   return (
     <div className="grid items-start gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
       {edit && <div className="xl:sticky xl:top-4"><LeaveTypeForm key={editing?.id ?? "new"} editing={editing} onDone={() => { setEditing(null); reload() }} /></div>}
       <DataList<LeaveType>
         id="hr-leave-types"
-        load={localList(async (p) => (await api.get<{ data: LeaveType[] }>("/hr/leave-types")).data.filter((t) => (p.pay === "paid" ? t.paid : p.pay === "unpaid" ? !t.paid : true)), (t, q) => `${t.name} ${t.code} ${t.description ?? ""}`.toLowerCase().includes(q))}
+        load={localList(async () => (await api.get<{ data: LeaveType[] }>("/hr/leave-types")).data, (t, q) => `${t.name} ${t.code} ${t.description ?? ""}`.toLowerCase().includes(q), {
+          filter: (t, p) => (p.pay === "paid" ? t.paid : p.pay === "unpaid" ? !t.paid : true) && (p.show === "active" ? t.isActive : p.show === "inactive" ? !t.isActive : true),
+          counts: (rows) => ({ all: rows.length, active: rows.filter((t) => t.isActive).length, inactive: rows.filter((t) => !t.isActive).length, paid: rows.filter((t) => t.paid).length, unpaid: rows.filter((t) => !t.paid).length }),
+        })}
         params={{ v: String(version) }}
         header={{ title: "Leave types", description: "Leave categories, days allowed a year, and whether they are paid." }}
         columns={columns}
@@ -111,7 +116,7 @@ export function LeaveTypes() {
         exportName="leave-types"
         emptyState={<EmptyState icon={CalendarDays} title="No leave types" />}
       />
-      <ConfirmDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)} destructive title={`Delete ${deleting?.name}?`} description="Only a type nobody has applied for can be deleted. Otherwise turn it off." confirmLabel="Delete"
+      <ConfirmDialog open={!!deleting} onOpenChange={(o) => !o && setDeleting(null)} destructive title={`Delete ${deleting?.name}?`} description="Only a type nobody has applied for can be deleted. Otherwise make it inactive." confirmLabel="Delete"
         onConfirm={async () => { try { await api.delete(`/hr/leave-types/${deleting!.id}`); toast.success("Deleted"); reload() } catch (e) { toast.error(errorMessage(e)) } }} />
     </div>
   )

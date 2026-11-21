@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { SearchSelect, type SelectOption } from "@/components/search-select"
+import { FieldLabelContext } from "@/lib/placeholder"
 
 /**
  * Label + control + one line under it, with ids wired for accessibility. The line shows,
@@ -50,14 +51,17 @@ export function Field({
           </span>
         )}
       </Label>
-      {React.cloneElement(children, {
-        id,
-        "aria-invalid": !!error || undefined,
-        "aria-describedby": describedBy,
-        "aria-required": required || undefined,
-        // Green border once a value passed its checks (wireframe 0.3)
-        ...(line === "success" ? { "data-valid": "true" } : {}),
-      })}
+      {/* The label also gives boxes without their own placeholder a hint of what to type */}
+      <FieldLabelContext.Provider value={label}>
+        {React.cloneElement(children, {
+          id,
+          "aria-invalid": !!error || undefined,
+          "aria-describedby": describedBy,
+          "aria-required": required || undefined,
+          // Green border once a value passed its checks (wireframe 0.3)
+          ...(line === "success" ? { "data-valid": "true" } : {}),
+        })}
+      </FieldLabelContext.Provider>
       <div className="flex min-h-4 items-start justify-between gap-2 text-xs leading-4">
         {line === "error" && (
           <p id={`${id}-error`} className="text-xs text-destructive">
@@ -130,7 +134,7 @@ export function NativeSelect({ className, children, ...props }: React.ComponentP
   return (
     <select
       className={cn(
-        "h-10 w-full rounded-xl border border-transparent bg-muted px-3 text-sm text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/20 aria-invalid:border-destructive disabled:bg-muted disabled:text-muted-foreground",
+        "h-10 w-full rounded-xl border border-input bg-background px-3 text-sm shadow-xs text-foreground outline-none transition-[color,box-shadow,border-color] focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/20 aria-invalid:border-destructive disabled:bg-muted disabled:text-muted-foreground",
         className
       )}
       {...props}

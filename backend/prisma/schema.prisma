@@ -336,6 +336,8 @@ model Branch {
   stateCode String?  @map("state_code") @db.Char(2)
   gstin     String?  @db.VarChar(15)
   isDefault Boolean  @default(false) @map("is_default")
+  /// Inactive: hidden from new choices, kept on old records
+  isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -1216,6 +1218,8 @@ model ItemCategory {
   id        String   @id @default(uuid(7)) @db.Uuid
   tenantId  String   @map("tenant_id") @db.Uuid
   name      String
+  /// Inactive: hidden from new choices, kept on old records
+  isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   @@unique([tenantId, name])
@@ -1327,6 +1331,8 @@ model PriceList {
   tenantId   String   @map("tenant_id") @db.Uuid
   name       String
   discountBp Int      @default(0) @map("discount_bp")
+  /// Inactive: hidden from new choices, kept on old records
+  isActive  Boolean  @default(true) @map("is_active")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -2326,6 +2332,8 @@ model FinCategory {
   position Int    @default(0)
   /// Expense heads only: the most to spend in a month
   budgetPaise BigInt? @map("budget_paise")
+  /// Inactive: hidden from new choices, kept on old records
+  isActive  Boolean  @default(true) @map("is_active")
 
   @@unique([tenantId, kind, name])
   @@map("fin_categories")

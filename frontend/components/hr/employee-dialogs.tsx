@@ -16,6 +16,7 @@ import { todayInIndia } from "@contracts/validation"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { formatPaise } from "@/lib/format"
 import { useHrLookups, type Employee, type SalaryItem } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
 
 // Employee dialogs: mark as leaving, and the salary structure (basic, allowances, deductions, PF/ESI/PT).
 
@@ -74,6 +75,7 @@ export function SalaryDialog({ employee, onClose, onSaved }: { employee: Employe
   const [payType, setPayType] = React.useState(employee.payType)
   const [flags, setFlags] = React.useState({ pf: employee.pf, esi: employee.esi, pt: employee.pt })
   const [rows, setRows] = React.useState<Row[]>((employee.salaryItems ?? []).map((i: SalaryItem) => ({ kind: i.kind, name: i.name, calc: i.calc, amount: Number(i.amount) })))
+  const unchanged = !useChanged([basic, payType, flags, rows])
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -180,7 +182,7 @@ export function SalaryDialog({ employee, onClose, onSaved }: { employee: Employe
           </aside>
           <DialogFooter className="lg:col-span-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save salary"}</Button>
+            <Button type="submit" disabled={busy || unchanged}>{busy ? "Saving…" : "Save salary"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

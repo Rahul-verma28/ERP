@@ -85,6 +85,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const switchTenant = React.useCallback(
     async (tenantId: string) => {
       const { accessToken } = await api.post<{ accessToken: string }>("/auth/switch-tenant", { tenantId })
+      // Close the pages of the old place first: anything they load with the new token fails
+      // ("Switch to the AHEAD Console", "No active business") and flashes an error
+      setStatus("loading")
       setAccessToken(accessToken)
       await reload()
     },
@@ -93,6 +96,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const switchToConsole = React.useCallback(async () => {
     const { accessToken } = await api.post<{ accessToken: string }>("/auth/switch-console")
+    setStatus("loading")
     setAccessToken(accessToken)
     await reload()
   }, [reload])

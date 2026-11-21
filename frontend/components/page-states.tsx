@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertCircle, Lock, SearchX, ShieldAlert } from "lucide-react"
+import { AlertCircle, Eye, Lock, SearchX, ShieldAlert } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError } from "@/lib/api"
@@ -71,12 +71,39 @@ export function ModuleLocked({ name, description, canUpgrade }: { name: string; 
   )
 }
 
-/** Banner on modules that became read-only after the trial. */
+const VIEW_ONLY_HINT = "View only on your plan: you can see and export, upgrade to add or change"
+
+/**
+ * The one mark for a module that is view only on the plan (was "Read-only" text in a few places
+ * and nothing in others). icon: the sidebar's small eye; pill: an eye with "View only".
+ */
+export function ViewOnlyTag({ variant = "pill", className }: { variant?: "icon" | "pill"; className?: string }) {
+  if (variant === "icon")
+    return (
+      <span title={VIEW_ONLY_HINT} className={cn("grid size-5 shrink-0 place-items-center rounded-md bg-amber-500/12 text-amber-600 dark:text-amber-400", className)}>
+        <Eye className="size-3" aria-hidden />
+        <span className="sr-only">View only</span>
+      </span>
+    )
+  return (
+    <span title={VIEW_ONLY_HINT} className={cn("inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-500/12 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400", className)}>
+      <Eye className="size-3" aria-hidden /> View only
+    </span>
+  )
+}
+
+/** Banner on a module that is view only on the current plan (after the trial, or a plan change). */
 export function ReadOnlyBanner({ name, canUpgrade }: { name: string; canUpgrade: boolean }) {
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
-      <span>
-        <strong>{name} is read-only.</strong> Your data is safe — upgrade to add or change records.
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/8 px-4 py-3 text-sm">
+      <span className="flex items-start gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
+          <Eye className="size-4" />
+        </span>
+        <span>
+          <strong className="block">{name} is view only on your plan</strong>
+          <span className="text-muted-foreground">Everything you entered is safe and can be seen or exported. {canUpgrade ? "Upgrade to add or change records." : "Ask your business owner to upgrade to add or change records."}</span>
+        </span>
       </span>
       {canUpgrade && (
         <Link href="/app/billing" className={buttonVariants({ size: "sm" })}>

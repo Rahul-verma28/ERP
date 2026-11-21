@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
+import { BrandMark } from "@/components/auth/auth-shell"
 import { Check } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -18,18 +18,17 @@ export interface RailStep {
 /** Dark left panel with the step list (signup). */
 export function SignupRail({ steps, footer, narrow }: { steps: RailStep[]; footer?: React.ReactNode; narrow?: boolean }) {
   return (
-    <aside className={cn("hidden shrink-0 flex-col gap-9 bg-[#1B2A5C] text-white transition-[width] duration-300 lg:flex", narrow ? "w-[300px] px-8 py-10" : "w-[400px] p-10")}>
-      <Link href="/" className="text-xl font-extrabold tracking-wider">
-        AHEAD
-      </Link>
-      <ol className="grid gap-[22px]" aria-label="Signup steps">
+    <aside className={cn("relative hidden shrink-0 flex-col gap-9 overflow-hidden bg-[#0b0f24] text-white transition-[width] duration-300 lg:flex", narrow ? "w-[300px] px-8 py-10" : "w-[420px] p-10")}>
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_10%_0%,rgba(37,51,146,0.55),transparent_55%),radial-gradient(ellipse_at_90%_100%,rgba(88,56,190,0.45),transparent_55%)]" />
+      <BrandMark light className="relative" />
+      <ol className="relative grid gap-[22px]" aria-label="Signup steps">
         {steps.map((s, i) => (
           <li key={s.key} className="flex items-start gap-3" aria-current={s.state === "current" ? "step" : undefined}>
             <span
               className={cn(
                 "grid size-7 shrink-0 place-items-center rounded-full border-[1.5px] text-xs font-bold",
                 s.state === "done" && "border-emerald-500 bg-emerald-500 text-white",
-                s.state === "current" && "border-white bg-white text-[#1B2A5C]",
+                s.state === "current" && "border-white bg-white text-[#141a3a]",
                 s.state === "todo" && "border-[#6E7FB8] text-[#C9D2F0]"
               )}
             >
@@ -42,7 +41,7 @@ export function SignupRail({ steps, footer, narrow }: { steps: RailStep[]; foote
           </li>
         ))}
       </ol>
-      {footer && <div className="mt-auto border-t border-[#34447A] pt-5 text-sm leading-relaxed text-[#C9D2F0]">{footer}</div>}
+      {footer && <div className="relative mt-auto border-t border-white/10 pt-5 text-sm leading-relaxed text-indigo-100/70">{footer}</div>}
     </aside>
   )
 }

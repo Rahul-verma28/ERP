@@ -16,11 +16,14 @@ import { HrTabs, TABS } from "@/components/hr/pickers"
 import { saveHrConfig } from "@/components/hr/list-editor"
 import { useAuth } from "@/lib/auth"
 import { FREQUENCY, useHrLookups, type Cycle } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
 
 // Review cycles: how often people are reviewed. Picked when setting up a review.
 
 function CycleDialog({ cycle, all, onClose, onSaved }: { cycle: Cycle | null; all: Cycle[]; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = React.useState({ name: cycle?.name ?? "", frequency: cycle?.frequency ?? "quarterly", description: cycle?.description ?? "", active: cycle?.active ?? true })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   async function save(e: React.FormEvent) {
@@ -43,7 +46,7 @@ function CycleDialog({ cycle, all, onClose, onSaved }: { cycle: Cycle | null; al
           <Field label="How often"><NativeSelect value={f.frequency} aria-label="How often" onChange={(e) => setF({ ...f, frequency: e.target.value as Cycle["frequency"] })}>{Object.entries(FREQUENCY).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</NativeSelect></Field>
           <Field label="Description"><Textarea rows={2} maxLength={300} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Optional, e.g. Done in April for pay revisions" /></Field>
           <FormError message={error} />
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!cycle && unchanged)}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

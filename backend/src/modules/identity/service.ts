@@ -107,8 +107,12 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
   const mfa = await mfaRequirement(userId);
   const announcement = banner?.text && (!banner.until || new Date(banner.until) > new Date()) ? { text: banner.text, tone: banner.tone } : null;
 
+  const ws = workspace === 'console' && consoleInfo ? ('console' as const) : ('tenant' as const);
+  // Two-step blocks only the place that requires it: the Console's rule never locks a business,
+  // and one business's rule never locks another business or the Console
+  const mustSetUpMfa = ws === 'console' ? mfa.consoleBlocked : !!tenantId && mfa.blockedTenantIds.includes(tenantId);
   const base = {
-    workspace: workspace === 'console' && consoleInfo ? ('console' as const) : ('tenant' as const),
+    workspace: ws,
     user: {
       id: user.id, name: user.name, email: user.email, mobile: user.mobile,
       emailVerified: !!user.emailVerifiedAt, mobileVerified: !!user.mobileVerifiedAt,
@@ -120,7 +124,7 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
       mfaRequired: mfa.requiredBy.length > 0,
       requiredBy: mfa.requiredBy.map((r) => r.name),
       deadline: mfa.deadline,
-      mustSetUpMfa: mfa.mustSetUp,
+      mustSetUpMfa,
     },
     memberships: memberships.map((m) => ({ tenantId: m.tenantId, name: m.tenant.name, status: m.tenant.status, logoUrl: m.tenant.logoUrl, roleName: m.role.name })),
     /** Present only for AHEAD team members; drives the workspace switcher */

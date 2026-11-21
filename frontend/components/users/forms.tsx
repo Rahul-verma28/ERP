@@ -12,6 +12,8 @@ import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import type { Role } from "@/lib/types"
+import { useChanged } from "@/lib/use-dirty"
+import { activeOr } from "@/lib/active"
 
 // Users forms: invite someone (role and branches), and change a person's role or branches. Each
 // checks its fields before sending and shows the API's errors where they belong.
@@ -24,7 +26,8 @@ export function useAssignableRoles() {
 }
 
 /** Which branches a person works in: all of them, or the ones ticked */
-function BranchPicker({ branches, value, onChange, error }: { branches: { id: string; name: string }[]; value: string[] | null; onChange: (v: string[] | null) => void; error?: string }) {
+function BranchPicker({ branches: all, value, onChange, error }: { branches: { id: string; name: string; isActive?: boolean }[]; value: string[] | null; onChange: (v: string[] | null) => void; error?: string }) {
+  const branches = activeOr(all, value)
   if (branches.length < 2) return <p className="text-xs text-muted-foreground sm:col-span-2">One branch, so everyone works in it.</p>
   return (
     <div className="grid gap-2 sm:col-span-2">
@@ -119,6 +122,7 @@ export function AccessDialog({ member, branches, onClose, onSaved }: { member: {
   const { roles, name } = useAssignableRoles()
   const [roleId, setRoleId] = React.useState(member.role.id)
   const [branchIds, setBranchIds] = React.useState<string[] | null>(member.branches.length ? member.branches.map((b) => b.id) : null)
+  const unchanged = !useChanged([roleId, branchIds])
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -147,7 +151,7 @@ export function AccessDialog({ member, branches, onClose, onSaved }: { member: {
           </Field>
           <div className="grid gap-4 sm:grid-cols-2"><BranchPicker branches={branches} value={branchIds} onChange={(v) => { setBranchIds(v); setErrors({}) }} error={errors.branchIds} /></div>
           <FormError message={error} />
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save access"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || unchanged}>{busy ? "Saving…" : "Save access"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

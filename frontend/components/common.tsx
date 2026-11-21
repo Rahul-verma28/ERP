@@ -64,6 +64,7 @@ export function MoneyInput({
         id={id}
         inputMode="decimal"
         value={shown}
+        placeholder="0.00"
         className="pl-7 text-right tabular-nums"
         onFocus={() => {
           setText(paiseToRupees(value))

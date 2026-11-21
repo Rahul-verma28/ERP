@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { MoneyInput } from "@/components/common"
@@ -10,6 +9,7 @@ import { Field, NativeSelect } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
+import { InlineSave } from "@/components/save-bar"
 
 // How stock behaves in this business.
 
@@ -21,6 +21,7 @@ export default function InventorySettingsPage() {
   const [busy, setBusy] = React.useState(false)
   const current = ws.data?.preferences.inventory
   const v = form ?? (current ? { blockNegative: current.blockNegative, adjustmentApprovalPaise: current.adjustmentApprovalPaise, backdateDays: String(current.backdateDays), valuation: current.valuation, nearExpiryDays: String(current.nearExpiryDays), purchaseOrders: current.purchaseOrders } : null)
+  const dirty = !!form && !!current && JSON.stringify(form) !== JSON.stringify({ blockNegative: current.blockNegative, adjustmentApprovalPaise: current.adjustmentApprovalPaise, backdateDays: String(current.backdateDays), valuation: current.valuation, nearExpiryDays: String(current.nearExpiryDays), purchaseOrders: current.purchaseOrders })
   if (!can("tenant.settings.view") || !v) return null
   const editable = can("tenant.settings.edit")
   async function save() {
@@ -68,7 +69,7 @@ export default function InventorySettingsPage() {
             <Input inputMode="numeric" value={v.nearExpiryDays} onChange={(e) => setForm({ ...v, nearExpiryDays: e.target.value.replace(/\D/g, "").slice(0, 3) })} disabled={!editable} />
           </Field>
         </div>
-        {editable && form && <div className="flex justify-end"><Button disabled={busy} onClick={save}>{busy ? "Saving…" : "Save rules"}</Button></div>}
+        {editable && <InlineSave dirty={dirty} saving={busy} onDiscard={() => { setForm(null); setErrors({}) }} onSave={() => void save()} saveLabel="Save rules" />}
       </CardContent>
     </Card>
   )

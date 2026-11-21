@@ -14,6 +14,8 @@ import { useApi } from "@/lib/use-api"
 import { formatDate } from "@/lib/format"
 import { MODULE_SHORT, type Catalog, type ClientDetail, type ModuleSwitch, type PlanChangePreview } from "@/lib/console"
 import { cn } from "@/lib/utils"
+import { ConfirmDialog } from "@/components/common"
+import { ViewOnlyTag } from "@/components/page-states"
 
 // Business › Plan & billing (blueprint Phase D): modules with per-business switches, change
 // plan for a paying business (pro-rated upgrade now, or at the renewal date), and the change
@@ -109,7 +111,7 @@ export function ModulesWithSwitches({ client, canSwitch, onChanged }: { client: 
               {s === "active" ? (
                 <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-400"><span className="size-1.5 rounded-full bg-emerald-500" />On</span>
               ) : s === "read_only" ? (
-                <span className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-400">Read-only</span>
+                <ViewOnlyTag />
               ) : (
                 <span className="shrink-0 text-xs">Off</span>
               )}
@@ -219,6 +221,7 @@ export function ChangePlanPaidDialog({ client, onClose, onDone }: { client: Clie
 
 export function PendingChangeNotice({ client, canEdit, onDone }: { client: ClientDetail; canEdit: boolean; onDone: () => void }) {
   const c = client.pendingChange
+  const [asking, setAsking] = React.useState(false)
   if (!c) return null
   async function cancel() {
     try {
@@ -234,7 +237,8 @@ export function PendingChangeNotice({ client, canEdit, onDone }: { client: Clien
       <CalendarClock className="size-4 text-primary" />
       <span className="flex-1">Moves to <b>{c.planName}</b> · {c.cycle} on {formatDate(c.effectiveAt)}, when it renews.</span>
       <Chip tone="blue">Scheduled</Chip>
-      {canEdit && <Button size="sm" variant="outline" onClick={cancel}>Cancel change</Button>}
+      {canEdit && <Button size="sm" variant="outline" onClick={() => setAsking(true)}>Cancel change</Button>}
+      <ConfirmDialog open={asking} onOpenChange={setAsking} title="Cancel the plan change?" description={`The business stays on its current plan. The move to ${c.planName} won't happen.`} confirmLabel="Cancel change" destructive onConfirm={cancel} />
     </div>
   )
 }

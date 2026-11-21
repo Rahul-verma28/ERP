@@ -8,6 +8,7 @@ import { DATE_FORMATS, type PersonalPreferences } from "@contracts/account"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/ui/input-group"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { OtpInput } from "@/components/onboarding"
@@ -288,7 +289,7 @@ function ChangeContactDialog({ kind, account, onClose, onDone }: { kind: "email"
             <Input mask={kind === "email" ? "email" : "mobile"} value={value} onChange={(e) => setValue(e.target.value)} type={kind === "email" ? "email" : "tel"} autoComplete="off" disabled={!!token} autoFocus placeholder={kind === "email" ? "" : account.profile.mobile.slice(3)} />
           </Field>
           <Field label="Your password" required error={errors.password}>
-            <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" disabled={!!token} />
+            <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" disabled={!!token} />
           </Field>
           {token && (
             <div className="grid gap-1.5">

@@ -12,6 +12,7 @@ import { FormSection } from "@/components/contact-dialog"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import type { StockLocation } from "@/lib/inventory"
+import { useChanged } from "@/lib/use-dirty"
 
 // The one warehouse form, used on Manage Warehouses and from every warehouse dropdown.
 // Where it is must be complete: e-way bills and stock transfers name the place goods leave from.
@@ -33,6 +34,7 @@ export function WarehouseFormDialog({ warehouse, initialName = "", onClose, onSa
     status: warehouse && !warehouse.isActive ? "closed" : "active",
     isDefault: false,
   })
+  const unchanged = !useChanged(form)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -130,7 +132,7 @@ export function WarehouseFormDialog({ warehouse, initialName = "", onClose, onSa
           <FormError message={error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : warehouse ? "Save warehouse" : "Add warehouse"}</Button>
+            <Button type="submit" disabled={busy || (!!warehouse && unchanged)}>{busy ? "Saving…" : warehouse ? "Save warehouse" : "Add warehouse"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

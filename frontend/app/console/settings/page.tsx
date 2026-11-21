@@ -85,11 +85,11 @@ function Settings() {
   if (rows && rows !== seen) {
     setSeen(rows)
     setDraft(Object.fromEntries(rows.map((r) => [r.key, r.value])))
-    return <Loading rows={8} className="mx-auto max-w-6xl" />
+    return <Loading rows={8} />
   }
 
   if (settings.error) return <Failed error={settings.error} onRetry={settings.reload} />
-  if (!rows) return <Loading rows={8} className="mx-auto max-w-6xl" />
+  if (!rows) return <Loading rows={8} />
 
   const asked = params.get("section") as SectionKey | null
   const section = SECTIONS.find((s) => s.key === asked) ?? SECTIONS[0]

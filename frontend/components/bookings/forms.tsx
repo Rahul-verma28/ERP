@@ -25,6 +25,7 @@ import { formatDate, formatDateTime, formatPaise } from "@/lib/format"
 import { usePeople } from "@/lib/tasks"
 import { cn } from "@/lib/utils"
 import { RESOURCE_KIND, SOURCE, STATUS, WEEKDAYS, isOpen, reminderLink, timeOf, type Appointment, type Resource, type Service, type Slot, type StaffRow } from "@/lib/bookings"
+import { useChanged } from "@/lib/use-dirty"
 
 // Every Bookings form, and the one window that shows an appointment with all it can do.
 
@@ -60,6 +61,8 @@ export function AppointmentDialog({ appt, defaults, onClose, onSaved }: {
     staffId: appt?.staffId ?? defaults?.staffId ?? "", resourceId: appt?.resourceId ?? "", start: toLocal(start), minutes: String(appt?.durationMin ?? 30),
     source: appt?.source ?? "walk_in", pricePaise: appt?.pricePaise ?? null as number | null, status: appt?.status === "confirmed" ? "confirmed" : "scheduled", notes: appt?.notes ?? "", outsideHours: false,
   })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const { errors, setErrors, error, setError, fail } = useErrors()
   const [busy, setBusy] = React.useState(false)
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => { setF((x) => ({ ...x, [k]: v })); setErrors((e) => ({ ...e, [k]: "" })); setError(null) }
@@ -160,7 +163,7 @@ export function AppointmentDialog({ appt, defaults, onClose, onSaved }: {
             <Field label="Notes" className="sm:col-span-2"><Textarea rows={2} maxLength={2000} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Anything the staff should know" /></Field>
           </FormSection>
           <FormError message={error} />
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : edit ? "Save" : kind === "appointment" ? "Book" : "Add event"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!appt && unchanged)}>{busy ? "Saving…" : edit ? "Save" : kind === "appointment" ? "Book" : "Add event"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -313,6 +316,8 @@ export function ServiceDialog({ service: s, onClose, onSaved }: { service: Servi
 
 export function ResourceDialog({ resource: r, onClose, onSaved }: { resource?: Resource | null; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = React.useState({ name: r?.name ?? "", kind: r?.kind ?? "room", capacity: String(r?.capacity ?? 1), color: r?.color ?? "slate", notes: r?.notes ?? "", isActive: r?.isActive ?? true })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const { errors, setErrors, error, setError, fail } = useErrors()
   const [busy, setBusy] = React.useState(false)
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => { setF((x) => ({ ...x, [k]: v })); setErrors((e) => ({ ...e, [k]: "" })); setError(null) }
@@ -343,7 +348,7 @@ export function ResourceDialog({ resource: r, onClose, onSaved }: { resource?: R
           <Field label="Notes" className="sm:col-span-2"><Textarea rows={2} maxLength={500} value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
           <label className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm sm:col-span-2"><span className="font-medium">Open for booking</span><Switch checked={f.isActive} onCheckedChange={(v) => set("isActive", v)} aria-label="Open for booking" /></label>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!r && unchanged)}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -53,7 +53,7 @@ export default function AccountsPage() {
     { key: "out", header: "Out this month", align: "right", csv: (a) => a.outThisMonthPaise / 100, cell: (a) => <span className="text-rose-700 tabular-nums dark:text-rose-300">{formatPaise(a.outThisMonthPaise)}</span> },
     { key: "entries", header: "Entries", align: "right", defaultHidden: true, sort: (a) => a.entries ?? 0, csv: (a) => a.entries ?? 0, cell: (a) => <span className="tabular-nums">{a.entries ?? 0}</span> },
     { key: "balance", header: "Balance", align: "right", sort: (a) => a.balancePaise, csv: (a) => a.balancePaise / 100, cell: (a) => <span className={cn("font-semibold tabular-nums", a.balancePaise < 0 && "text-destructive")}>{formatPaise(a.balancePaise)}</span> },
-    { key: "status", header: "Status", csv: (a) => (a.isActive ? "Open" : "Closed"), cell: (a) => <Pill color={a.isActive ? "emerald" : "slate"} dot>{a.isActive ? "Open" : "Closed"}</Pill> },
+    { key: "status", header: "Status", csv: (a) => (a.isActive ? "Active" : "Inactive"), cell: (a) => <Pill color={a.isActive ? "emerald" : "slate"} dot>{a.isActive ? "Active" : "Inactive"}</Pill> },
     {
       key: "actions", header: "Actions", hideable: false,
       cell: (a) => (
@@ -64,7 +64,7 @@ export default function AccountsPage() {
             a.isActive && can("finance.expense.create") && { label: "Move money from here", icon: ArrowRightLeft, onClick: () => setMoving(a.id) },
             edit && a.isActive && !a.isDefault && a.kind !== "cash" && { label: "Make default", icon: Star, onClick: () => void act(a, { isDefault: true }, `${a.name} is the default`) },
             "-",
-            edit && !a.isDefault && (a.isActive ? { label: "Close account", icon: Archive, onClick: () => void act(a, { isActive: false }, `${a.name} closed`) } : { label: "Reopen", icon: ArchiveRestore, onClick: () => void act(a, { isActive: true }, `${a.name} reopened`) }),
+            edit && !a.isDefault && (a.isActive ? { label: "Make inactive", icon: Archive, onClick: () => void act(a, { isActive: false }, `${a.name} is inactive`) } : { label: "Make active", icon: ArchiveRestore, onClick: () => void act(a, { isActive: true }, `${a.name} is active again`) }),
           ]} />
         </span>
       ),
@@ -87,7 +87,7 @@ export default function AccountsPage() {
           },
         })}
         presetLabel="Show"
-        presets={[{ key: "open", label: "Open", params: { show: "open" }, countKey: "open" }, { key: "closed", label: "Closed", params: { show: "closed" }, countKey: "closed" }, { key: "all", label: "All", params: {}, countKey: "all" }]}
+        presets={[{ key: "open", label: "Active", params: { show: "open" }, countKey: "open" }, { key: "closed", label: "Inactive", params: { show: "closed" }, countKey: "closed" }, { key: "all", label: "All", params: {}, countKey: "all" }]}
         tabs
         top={(res) => {
           const s = (res.sums ?? {}) as Record<string, number>

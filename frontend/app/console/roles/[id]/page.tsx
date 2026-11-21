@@ -49,7 +49,7 @@ export default function RolePage({ params }: { params: Promise<{ id: string }> }
   const [confirm, setConfirm] = React.useState<"reset" | "delete" | null>(null)
 
   if (error) return <Failed error={error} onRetry={reload} />
-  if (!data) return <Loading rows={8} className="mx-auto max-w-6xl" />
+  if (!data) return <Loading rows={8} />
 
   const editable = isAdmin && !data.locked
   const g = grants ?? roleGrants

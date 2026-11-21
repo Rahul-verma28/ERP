@@ -140,6 +140,8 @@ export function ItemForm({ editId, copyId }: { editId?: string | null; copyId?: 
   const startAt = places?.find((w) => w.isDefault && w.isActive)?.id ?? ""
   const form: Form = { ...(item ? fromItem(item) : copy ? { ...copy, locationId: startAt } : { ...BLANK, trackStock: canStock, locationId: startAt }), ...edits }
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setEdits((e) => ({ ...e, [k]: v }))
+  // Editing: Save works only once a value differs from the saved item
+  const unchanged = !!item && (Object.keys(edits) as (keyof Form)[]).every((k) => JSON.stringify(edits[k]) === JSON.stringify(fromItem(item)[k]))
   const editable = item ? can("catalog.item.edit") : can("catalog.item.create")
   const canCost = me?.fieldAccess?.["item.cost_price"] === "write"
   const isProduct = form.type === "product"
@@ -322,8 +324,8 @@ export function ItemForm({ editId, copyId }: { editId?: string | null; copyId?: 
           <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-5">
             {at > 0 ? <Button type="button" variant="outline" onClick={() => setStep(at - 1)}><ChevronLeft /> Previous</Button> : <span />}
             <div className="flex gap-2">
-              {item && !last && editable && <Button type="button" variant="outline" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save changes"}</Button>}
-              {!last ? <Button type="button" onClick={next}>Next <ChevronRight /></Button> : editable && <Button type="button" disabled={busy} onClick={save}>{busy ? "Saving…" : item ? "Save changes" : "Create item"}</Button>}
+              {item && !last && editable && <Button type="button" variant="outline" disabled={busy || unchanged} onClick={save}>{busy ? "Saving…" : "Save changes"}</Button>}
+              {!last ? <Button type="button" onClick={next}>Next <ChevronRight /></Button> : editable && <Button type="button" disabled={busy || unchanged} onClick={save}>{busy ? "Saving…" : item ? "Save changes" : "Create item"}</Button>}
             </div>
           </div>
         </section>

@@ -19,6 +19,7 @@ import { useSharedApi } from "@/lib/use-api"
 import { formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { APPROVAL_KIND, COLORS, PRIORITY, PROJECT_STATUS, REPEAT_LABEL, STATUS, fmtMin, usePeople, type Approval, type ChecklistStep, type Project, type Task } from "@/lib/tasks"
+import { useChanged } from "@/lib/use-dirty"
 
 // Every Tasks form: task, project, time, approval request and decision. Dialogs only (one list page
 // per screen); each groups its fields in titled sections, marks and enforces what is required, and
@@ -132,6 +133,8 @@ export function TaskDialog({ task, parentId, defaults, labels = [], onClose, onS
     assigneeId: task ? task.assigneeId ?? "" : me?.user.id ?? "", projectId: task?.projectId ?? defaults?.projectId ?? "", repeat: task?.repeat ?? "none",
     labels: task?.labels ?? [], checklist: task?.checklist ?? [],
   })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [contact, setContact] = React.useState<ContactOption | null>(task?.contact ? { id: task.contact.id, name: task.contact.name } : defaults?.contact ?? null)
   const { errors, setErrors, error, setError, fail } = useErrors()
   const [busy, setBusy] = React.useState(false)
@@ -192,7 +195,7 @@ export function TaskDialog({ task, parentId, defaults, labels = [], onClose, onS
             {errors.checklist && <p className="text-xs text-destructive">{errors.checklist}</p>}
           </FormSection>
           <FormError message={error} />
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : edit ? "Save task" : "Create task"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!task && unchanged)}>{busy ? "Saving…" : edit ? "Save task" : "Create task"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
@@ -209,6 +212,8 @@ export function ProjectDialog({ project, initialName = "", onClose, onSaved }: {
     memberIds: project?.memberIds ?? [], status: project?.status ?? "active", startOn: project?.startOn?.slice(0, 10) ?? todayInIndia(), dueOn: project?.dueOn?.slice(0, 10) ?? "",
     budgetPaise: project?.budgetPaise ?? null as number | null, billable: project?.billable ?? false, hourlyRatePaise: project?.hourlyRatePaise ?? null as number | null, color: project?.color ?? "blue",
   })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [contact, setContact] = React.useState<ContactOption | null>(project?.contactId && project.customer ? { id: project.contactId, name: project.customer } : null)
   const { people } = usePeople()
   const { errors, setErrors, error, setError, fail } = useErrors()
@@ -261,7 +266,7 @@ export function ProjectDialog({ project, initialName = "", onClose, onSaved }: {
             {f.billable && <Field label="Rate per hour" required error={errors.hourlyRatePaise}><MoneyInput value={f.hourlyRatePaise} onChange={(v) => set("hourlyRatePaise", v)} aria-label="Rate per hour" /></Field>}
           </FormSection>
           <FormError message={error} />
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : edit ? "Save project" : "Create project"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!project && unchanged)}>{busy ? "Saving…" : edit ? "Save project" : "Create project"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -53,13 +53,13 @@ function UserPage() {
       <DetailHeader
         title={u.name}
         initials={u.name}
-        pills={<><Pill color={u.status === "active" ? "emerald" : "slate"} dot>{u.status === "active" ? "Can sign in" : "Login off"}</Pill><Pill color="blue">{u.role.name}</Pill>{u.you && <Pill>You</Pill>}</>}
+        pills={<><Pill color={u.status === "active" ? "emerald" : "slate"} dot>{u.status === "active" ? "Active" : "Inactive"}</Pill><Pill color="blue">{u.role.name}</Pill>{u.you && <Pill>You</Pill>}</>}
         subtitle={[u.email, u.mobile].filter(Boolean).join(" · ")}
         extra={u.employee ? <Link href={`/app/m/hr/employees/${u.employee.id}`} className="text-xs text-primary hover:underline">Employee {u.employee.code}{u.employee.designation ? ` · ${u.employee.designation}` : ""}</Link> : undefined}
         actions={canEdit ? <>
           <Button variant="outline" onClick={() => setEditing(true)}><KeyRound /> Role and branches</Button>
           <ActionMenu items={[
-            u.status === "active" ? { label: "Turn off login", icon: UserX, destructive: true, onClick: () => setConfirm("off") } : { label: "Turn on login", icon: UserCheck, onClick: () => setConfirm("on") },
+            u.status === "active" ? { label: "Make inactive", icon: UserX, destructive: true, onClick: () => setConfirm("off") } : { label: "Make active", icon: UserCheck, onClick: () => setConfirm("on") },
             u.status === "active" && u.devices.length > 0 && { label: "Sign out everywhere", icon: LogOut, onClick: () => setConfirm("signout") },
           ]} />
         </> : u.you ? <Link href="/app/account" className="text-sm font-medium text-primary hover:underline">Edit in My account</Link> : undefined}
@@ -107,7 +107,7 @@ function UserPage() {
             <Section title="How much they see">
               <ul className="grid gap-1.5 text-sm">{Object.entries(SCOPE).map(([k, l]) => <li key={k} className="flex items-center gap-2"><Pill color={SCOPE_COLOR[k]}>{l}</Pill><span className="text-xs text-muted-foreground">{k === "all" ? "every record" : k === "branch" ? "records of their branches" : k === "team" ? "theirs and their team's" : "records they made or own"}</span></li>)}</ul>
             </Section>
-            <AboutCard id={u.id} createdAt={u.joinedAt} extra={[["Status", u.status === "active" ? "Can sign in" : `Login off${u.deactivatedAt ? ` since ${formatDate(u.deactivatedAt)}` : ""}`]]} />
+            <AboutCard id={u.id} createdAt={u.joinedAt} extra={[["Status", u.status === "active" ? "Active" : `Inactive${u.deactivatedAt ? ` since ${formatDate(u.deactivatedAt)}` : ""}`]]} />
           </div>
         </div>
       )}
@@ -159,12 +159,12 @@ function UserPage() {
         open={!!confirm}
         onOpenChange={(o) => !o && setConfirm(null)}
         destructive={confirm !== "on"}
-        title={confirm === "off" ? `Turn off ${u.name}'s login?` : confirm === "on" ? `Turn on ${u.name}'s login?` : `Sign ${u.name} out everywhere?`}
+        title={confirm === "off" ? `Make ${u.name} inactive?` : confirm === "on" ? `Make ${u.name} active again?` : `Sign ${u.name} out everywhere?`}
         description={confirm === "off" ? `They are signed out at once. ${c.tasks + c.tickets + c.appointments ? `They still have ${c.tasks + c.tickets + c.appointments} open items; give them to someone else.` : "Their records stay."}` : confirm === "on" ? "They can sign in again. It takes a seat on your plan." : "Every device is signed out of this business. They can sign in again."}
-        confirmLabel={confirm === "off" ? "Turn off" : confirm === "on" ? "Turn on" : "Sign out"}
+        confirmLabel={confirm === "off" ? "Make inactive" : confirm === "on" ? "Make active" : "Sign out"}
         onConfirm={async () => {
           if (confirm === "signout") await act(() => api.post(`/members/${u.id}/sign-out`), "Signed out everywhere")
-          else await act(() => api.patch(`/members/${u.id}`, { status: confirm === "off" ? "deactivated" : "active", version: u.version }), confirm === "off" ? "Login turned off" : "Login turned on")
+          else await act(() => api.patch(`/members/${u.id}`, { status: confirm === "off" ? "deactivated" : "active", version: u.version }), confirm === "off" ? "Made inactive: login is off" : "Active again: login is on")
         }}
       />
     </div>

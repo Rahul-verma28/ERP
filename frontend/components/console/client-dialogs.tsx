@@ -137,7 +137,7 @@ export function SourceDialog({ client, open, onOpenChange, onDone }: { client: C
           </Field>
           <FormError message={errors.form} />
           <DialogFooter>
-            <Button type="submit" disabled={busy || form.reason.trim().length < 5}>
+            <Button type="submit" disabled={busy || form.reason.trim().length < 5 || (form.byType === (a?.byType ?? "self") && form.byUserId === (a?.by?.id ?? "") && form.method === (a?.method ?? "signup"))}>
               {busy ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>

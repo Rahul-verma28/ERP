@@ -35,7 +35,7 @@ export default function ServicesPage() {
     { key: "needs", header: "Needs", csv: (s) => (s.resourceKind ? RESOURCE_KIND[s.resourceKind] : ""), cell: (s) => (s.resourceKind ? <Pill color="slate">A {RESOURCE_KIND[s.resourceKind].toLowerCase()}</Pill> : <span className="text-muted-foreground">—</span>) },
     { key: "booked", header: "Booked (30 days)", align: "right", sort: (s) => s.booked30, csv: (s) => s.booked30, cell: (s) => <span className="tabular-nums">{s.booked30}<span className="block text-[11px] text-muted-foreground">{s.upcoming} ahead</span></span> },
     { key: "revenue", header: "Earned (30 days)", align: "right", sort: (s) => s.revenue30Paise, csv: (s) => s.revenue30Paise / 100, cell: (s) => <span className="tabular-nums">{s.revenue30Paise ? formatPaise(s.revenue30Paise) : "—"}</span> },
-    { key: "online", header: "Online", csv: (s) => (s.online ? "Yes" : "No"), cell: (s) => (!s.isActive ? <Pill color="slate">Closed</Pill> : s.online ? <Pill color="violet">Online</Pill> : <Pill color="slate">Counter only</Pill>) },
+    { key: "online", header: "Online", csv: (s) => (s.online ? "Yes" : "No"), cell: (s) => (!s.isActive ? <Pill color="slate">Inactive</Pill> : s.online ? <Pill color="violet">Online</Pill> : <Pill color="slate">Counter only</Pill>) },
     { key: "actions", header: "Actions", hideable: false, cell: (s) => (canEdit ? <Button variant="ghost" size="icon-sm" title="Set up" aria-label={`Set up ${s.name}`} onClick={(e) => { e.stopPropagation(); setEditing(s) }}><Pencil /></Button> : null) },
   ]
   return (
@@ -51,7 +51,7 @@ export default function ServicesPage() {
         header={{ title: "Services", description: "What customers book. Set how long each takes, who does it and whether it can be booked online.", primary: can("catalog.item.create") ? <Link href="/app/m/catalog/new?type=service" className={buttonVariants({ className: "h-10 rounded-xl px-4 font-semibold" })}><Plus /> New service</Link> : undefined, more: [{ label: "Online booking", href: "/app/m/bookings/online" }] }}
         columns={columns}
         searchPlaceholder="Search service or category"
-        presets={[{ key: "all", label: "All", params: {}, countKey: "all" }, { key: "online", label: "Online", params: { show: "online" }, countKey: "online" }, { key: "counter", label: "Counter only", params: { show: "counter" }, countKey: "counter" }, { key: "setup", label: "Needs set-up", params: { show: "setup" }, countKey: "setup" }, { key: "closed", label: "Closed", params: { show: "closed" }, countKey: "closed" }]}
+        presets={[{ key: "all", label: "All", params: {}, countKey: "all" }, { key: "online", label: "Online", params: { show: "online" }, countKey: "online" }, { key: "counter", label: "Counter only", params: { show: "counter" }, countKey: "counter" }, { key: "setup", label: "Needs set-up", params: { show: "setup" }, countKey: "setup" }, { key: "closed", label: "Inactive", params: { show: "closed" }, countKey: "closed" }]}
         presetLabel="Show"
         tabs
         top={(res) => {

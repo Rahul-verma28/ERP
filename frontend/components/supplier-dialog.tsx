@@ -13,6 +13,7 @@ import { StateSelect } from "@/components/search-select"
 import { email as emailRule, gstin as gstinRule, gstinStateMismatch, phone as phoneRule, pincode as pincodeRule } from "@contracts/validation"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import type { Supplier } from "@/lib/purchase"
+import { useChanged } from "@/lib/use-dirty"
 
 // Add or change a supplier, in the same sections as a customer: who they are, GST, address, terms.
 // A registered supplier must give a GSTIN (input credit depends on it); the state comes from it.
@@ -35,6 +36,7 @@ function SupplierForm({ onOpenChange, supplier, onSaved, initialName = "" }: Pro
     line1: a.line1 ?? "", line2: a.line2 ?? "", city: a.city ?? "", pincode: a.pincode ?? "",
     paymentDays: supplier?.paymentDays == null ? "" : String(supplier.paymentDays), notes: supplier?.notes ?? "",
   })
+  const unchanged = !useChanged(form)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -143,7 +145,7 @@ function SupplierForm({ onOpenChange, supplier, onSaved, initialName = "" }: Pro
         <FormError message={error} />
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save supplier"}</Button>
+          <Button type="submit" disabled={busy || (!!supplier && unchanged)}>{busy ? "Saving…" : "Save supplier"}</Button>
         </DialogFooter>
       </form>
     </DialogContent>

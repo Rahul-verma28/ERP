@@ -44,7 +44,7 @@ export default function PlanEditorPage({ params }: { params: Promise<{ key: stri
   const [confirm, setConfirm] = React.useState(false)
 
   if (error) return <Failed error={error} onRetry={reload} />
-  if (!data) return <Loading rows={8} className="mx-auto max-w-6xl" />
+  if (!data) return <Loading rows={8} />
 
   const base = data.draft ?? data.live
   const f = form ?? base
@@ -213,7 +213,7 @@ export default function PlanEditorPage({ params }: { params: Promise<{ key: stri
                 <div className="grid gap-1.5 rounded-lg bg-muted/50 p-3 text-[13px]">
                   <b className="text-sm">Who it affects</b>
                   <span className="flex items-center gap-2"><CircleDot className="size-3.5 text-primary" /> {data.impact.onPlan} business{data.impact.onPlan === 1 ? "" : "es"} on {data.live.name}</span>
-                  {data.diff.removed.length > 0 && data.impact.losingModules > 0 && <span className="flex items-center gap-2 text-amber-700 dark:text-amber-400"><AlertTriangle className="size-3.5" /> {data.impact.losingModules} paying business{data.impact.losingModules === 1 ? "" : "es"} lose {data.diff.removed.map(name).join(", ")} (becomes read-only if used)</span>}
+                  {data.diff.removed.length > 0 && data.impact.losingModules > 0 && <span className="flex items-center gap-2 text-amber-700 dark:text-amber-400"><AlertTriangle className="size-3.5" /> {data.impact.losingModules} paying business{data.impact.losingModules === 1 ? "" : "es"} lose {data.diff.removed.map(name).join(", ")} (becomes view only if used)</span>}
                   {data.diff.prices.length > 0 && <span className="flex items-center gap-2"><Check className="size-3.5 text-emerald-600" /> New prices apply to new orders and renewals; nobody is charged now</span>}
                 </div>
                 {data.problems.length > 0 && <p className="text-sm text-amber-700 dark:text-amber-400">{data.problems.join(" · ")}</p>}

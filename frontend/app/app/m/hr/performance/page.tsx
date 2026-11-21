@@ -20,6 +20,7 @@ import { useAuth } from "@/lib/auth"
 import { formatDate } from "@/lib/format"
 import { useHrLookups } from "@/lib/hr"
 import { cn } from "@/lib/utils"
+import { useChanged } from "@/lib/use-dirty"
 
 // Performance reviews: set one up (who, reviewer, cycle), then rate each area out of 5.
 
@@ -40,6 +41,8 @@ function Stars({ value, onChange, label }: { value: number; onChange?: (v: numbe
 function ReviewDialog({ review, onClose, onSaved }: { review: Review | null; onClose: () => void; onSaved: () => void }) {
   const look = useHrLookups()
   const [f, setF] = React.useState({ employeeId: review?.employeeId ?? "", reviewerId: review?.reviewerId ?? "", cycle: review?.cycle ?? "", reviewOn: review?.reviewOn.slice(0, 10) ?? todayInIndia() })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -75,7 +78,7 @@ function ReviewDialog({ review, onClose, onSaved }: { review: Review | null; onC
           <Field label="Cycle" required error={errors.cycle}><SearchSelect value={f.cycle} onChange={(v) => set("cycle", v)} options={(look.data?.config.cycles ?? []).filter((c) => c.active || c.name === f.cycle).map((c) => ({ value: c.name, label: c.name }))} placeholder="Choose the cycle" aria-label="Cycle" /></Field>
           <Field label="Review date" required><Input type="date" value={f.reviewOn} onChange={(e) => set("reviewOn", e.target.value)} /></Field>
           <FormError message={error} />
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : review ? "Save" : "Set up review"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!review && unchanged)}>{busy ? "Saving…" : review ? "Save" : "Set up review"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

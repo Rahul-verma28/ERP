@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
 import { EVERY_LABEL, GROUP_HINT, GROUP_LABEL, useFinAccounts, useLedgers, type Journal, type Ledger, type LedgerGroup, type Recurring } from "@/lib/finance"
 import { cn } from "@/lib/utils"
+import { useChanged } from "@/lib/use-dirty"
 
 // Books forms: your own ledger, a journal entry (debits = credits), and a repeating expense.
 
@@ -46,6 +47,8 @@ export function LedgerSelect({ value, onChange, ...rest }: { value: string; onCh
 
 export function LedgerDialog({ ledger, initialName = "", initialGroup, onClose, onSaved }: { ledger: Ledger | null; initialName?: string; initialGroup?: LedgerGroup; onClose: () => void; onSaved: (l: { id: string; name: string }) => void }) {
   const [f, setF] = React.useState({ name: ledger?.name ?? initialName, group: (ledger?.group ?? initialGroup ?? "") as LedgerGroup | "", code: ledger?.code && ledger.id ? ledger.code : "", description: ledger?.description ?? "" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -91,7 +94,7 @@ export function LedgerDialog({ ledger, initialName = "", initialGroup, onClose, 
           <FormError message={error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : ledger ? "Save ledger" : "Add ledger"}</Button>
+            <Button type="submit" disabled={busy || (!!ledger && unchanged)}>{busy ? "Saving…" : ledger ? "Save ledger" : "Add ledger"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -118,6 +121,8 @@ export function JournalDialog({ journal, copyOf, preset, onClose, onSaved }: { j
   const accounts = useFinAccounts()
   const src = journal ?? copyOf
   const [f, setF] = React.useState({ journalOn: journal?.journalOn.slice(0, 10) ?? today, narration: src?.narration ?? "", reference: journal?.reference ?? "" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [lines, setLines] = React.useState<Line[]>(src ? src.lines.map((l) => ({ ledgerKey: l.ledgerKey, debitPaise: l.debitPaise || null, creditPaise: l.creditPaise || null, description: l.description ?? "" })) : [{ ...blank(), ledgerKey: preset?.ledgerKey ?? "" }, blank()])
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
@@ -217,7 +222,7 @@ export function JournalDialog({ journal, copyOf, preset, onClose, onSaved }: { j
           <FormError message={error} />
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : journal ? "Save entry" : "Save journal entry"}</Button>
+            <Button type="submit" disabled={busy || (!!journal && unchanged)}>{busy ? "Saving…" : journal ? "Save entry" : "Save journal entry"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -235,6 +240,8 @@ export function RecurringDialog({ recurring, onClose, onSaved }: { recurring: Re
     name: recurring?.name ?? "", every: recurring?.every ?? "month", nextOn: recurring?.nextOn.slice(0, 10) ?? today, endsOn: recurring?.endsOn?.slice(0, 10) ?? "",
     category: t?.category ?? "", amountPaise: t?.amountPaise ?? (null as number | null), accountId: t?.accountId ?? "", payee: t?.payee ?? "", notes: t?.notes ?? "",
   })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -289,7 +296,7 @@ export function RecurringDialog({ recurring, onClose, onSaved }: { recurring: Re
           <div className="sm:col-span-2"><FormError message={error} /></div>
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
-            <Button type="submit" disabled={busy}>{busy ? "Saving…" : recurring ? "Save" : "Add repeating expense"}</Button>
+            <Button type="submit" disabled={busy || (!!recurring && unchanged)}>{busy ? "Saving…" : recurring ? "Save" : "Add repeating expense"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -8,7 +8,7 @@ import { passwordStrength } from "@contracts/validation"
 import { passwordPolicyError } from "@contracts/account"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
+import { PasswordInput } from "@/components/ui/input-group"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Field, FormError } from "@/components/form"
 import { OtpInput } from "@/components/onboarding"
@@ -118,11 +118,11 @@ export function PasswordRow({ account, onChanged }: { account: AccountOverview; 
               </DialogDescription>
             </DialogHeader>
             <Field label="Current password" required error={errors.current}>
-              <Input type="password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" autoFocus />
+              <PasswordInput value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" autoFocus />
             </Field>
             <div className="grid gap-1.5">
               <Field label="New password" required error={errors.password}>
-                <Input type="password" value={next} onChange={(e) => setNext(e.target.value)} onBlur={() => next && setErrors((x) => ({ ...x, password: policyError(next) }))} autoComplete="new-password" />
+                <PasswordInput value={next} onChange={(e) => setNext(e.target.value)} onBlur={() => next && setErrors((x) => ({ ...x, password: policyError(next) }))} autoComplete="new-password" />
               </Field>
               <div className="mt-2 flex h-1 gap-1" aria-label={next ? `Strength ${strength} of 4` : undefined}>
                 {[1, 2, 3, 4].map((i) => (
@@ -131,7 +131,7 @@ export function PasswordRow({ account, onChanged }: { account: AccountOverview; 
               </div>
             </div>
             <Field label="Confirm new password" required error={errors.confirm}>
-              <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
+              <PasswordInput value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
             </Field>
             <label className="flex items-center gap-2 text-xs">
               <input type="checkbox" className="size-4 accent-primary" checked={signOutOthers} onChange={(e) => setSignOutOthers(e.target.checked)} />
@@ -219,7 +219,7 @@ function TurnOffDialog({ open, onClose, onDone }: { open: boolean; onClose: () =
           <DialogDescription>Your account will be protected by your password only. Trusted devices and backup codes stop working.</DialogDescription>
         </DialogHeader>
         <Field label="Password" error={errors.password}>
-          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" autoFocus />
+          <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" autoFocus />
         </Field>
         <div className="grid gap-1.5">
           <span className="text-sm font-medium">Code from your app</span>
@@ -288,7 +288,7 @@ export function BackupCodesRow({ account, onChanged }: { account: AccountOvervie
             <BackupCodes codes={codes} />
           ) : (
             <Field label="Password" error={error}>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && make()} autoComplete="current-password" autoFocus />
+              <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && make()} autoComplete="current-password" autoFocus />
             </Field>
           )}
           <DialogFooter>

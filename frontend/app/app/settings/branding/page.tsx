@@ -5,6 +5,7 @@ import { toast } from "sonner"
 import { BrandingStep } from "@/components/setup/branding-step"
 import { SettingsStepPage } from "@/components/settings-step-page"
 import { LogoUpload } from "@/components/logo-upload"
+import { InlineSave } from "@/components/save-bar"
 import type { SetupTenant } from "@/components/setup/wizard"
 import { api, errorMessage } from "@/lib/api"
 
@@ -21,6 +22,8 @@ export default function BrandingSettingsPage() {
 }
 
 function LogoCard({ tenant, refresh, readOnly }: { tenant: SetupTenant; refresh: () => Promise<void>; readOnly: boolean }) {
+  const savedUrl = tenant.logoUrl ?? ""
+  const [logo, setLogo] = React.useState(savedUrl)
   const [saving, setSaving] = React.useState(false)
   const save = async (url: string) => {
     setSaving(true)
@@ -40,7 +43,8 @@ function LogoCard({ tenant, refresh, readOnly }: { tenant: SetupTenant; refresh:
         <h2 className="text-[15px] font-bold">Logo</h2>
         <p className="text-xs text-muted-foreground">Printed on invoices and shown in the menu. PNG, JPG or WebP; it&apos;s resized for you.</p>
       </div>
-      <LogoUpload value={tenant.logoUrl ?? ""} onChange={save} disabled={readOnly || saving} />
+      <LogoUpload value={logo} onChange={setLogo} disabled={readOnly || saving} />
+      <InlineSave dirty={logo !== savedUrl} saving={saving} onDiscard={() => setLogo(savedUrl)} onSave={() => void save(logo)} saveLabel={logo ? "Save logo" : "Remove logo"} />
     </section>
   )
 }

@@ -35,7 +35,7 @@ export default function ModulePage({ params }: { params: Promise<{ module: strin
             <CardTitle>Coming in release phase {nav.phase}</CardTitle>
             <CardDescription>
               The platform (sign-up, trial, roles, permissions and configuration) is live. The {nav.label} screens are next on the build plan.
-              {ent?.status === "read_only" && " On your current plan this module will be read-only."}
+              {ent?.status === "read_only" && " On your current plan this module is view only."}
             </CardDescription>
           </CardHeader>
         </Card>

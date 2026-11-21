@@ -23,6 +23,7 @@ import { useSharedApi } from "@/lib/use-api"
 import { formatDate } from "@/lib/format"
 import { useRecords, type HrRecord } from "@/lib/hr"
 import { cn } from "@/lib/utils"
+import { useChanged } from "@/lib/use-dirty"
 
 // Candidate onboarding: a hired person's first days, run from a checklist, with a buddy.
 
@@ -37,6 +38,8 @@ function OnboardingDialog({ row, onClose, onSaved }: { row: Row | null; onClose:
   const d = row?.data
   const def = lists.data?.data.find((l) => l.data.isDefault && l.status === "active")?.id ?? ""
   const [f, setF] = React.useState({ candidateId: d?.candidateId ?? "", checklistId: d?.checklistId ?? "", startOn: d?.startOn ?? todayInIndia(), buddyId: d?.buddyId ?? "", notes: d?.notes ?? "" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -75,7 +78,7 @@ function OnboardingDialog({ row, onClose, onSaved }: { row: Row | null; onClose:
           <Field label="Buddy" hint="Someone who helps them settle in"><EmployeeSelect value={f.buddyId} onChange={(v) => set("buddyId", v)} placeholder="Choose a buddy (optional)" aria-label="Buddy" /></Field>
           <Field label="Notes"><Textarea rows={2} maxLength={2000} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Optional" /></Field>
           <FormError message={error} />
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}><Rocket /> {busy ? "Saving…" : row ? "Save" : "Start onboarding"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!d && unchanged)}><Rocket /> {busy ? "Saving…" : row ? "Save" : "Start onboarding"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

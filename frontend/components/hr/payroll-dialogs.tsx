@@ -18,6 +18,7 @@ import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
 import { useFinAccounts } from "@/lib/finance"
 import { monthLabel, useCurrentEmployees } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
 
 // Loan and overtime forms, used on their own pages and on an employee's Set Salary page
 // (where the employee is already chosen).
@@ -88,6 +89,8 @@ export function LoanDialog({ employeeId, onClose, onSaved }: { employeeId?: stri
 export function OvertimeDialog({ ot, employeeId, onClose, onSaved }: { ot: OT | null; employeeId?: string; onClose: () => void; onSaved: () => void }) {
   const emps = useCurrentEmployees()
   const [f, setF] = React.useState({ employeeId: ot?.employeeId ?? employeeId ?? "", workOn: ot?.workOn.slice(0, 10) ?? todayInIndia(), hours: ot ? String(ot.hours) : "2", ratePaise: ot?.ratePaise ?? (null as number | null), notes: ot?.notes ?? "" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -138,7 +141,7 @@ export function OvertimeDialog({ ot, employeeId, onClose, onSaved }: { ot: OT | 
           <Field label="Note" className="sm:col-span-2"><Input value={f.notes} maxLength={300} onChange={(e) => set("notes", e.target.value)} placeholder="e.g. Stock-taking" /></Field>
           <p className="rounded-xl bg-muted/60 px-3 py-2 text-sm sm:col-span-2">Overtime pay: <strong className="tabular-nums">{formatPaise(amount)}</strong></p>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save overtime"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!ot && unchanged)}>{busy ? "Saving…" : "Save overtime"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -21,6 +21,7 @@ import { formatDate, formatDateTime, formatPaise } from "@/lib/format"
 import { paiseToRupees, rupeesToPaise } from "@/lib/money"
 import type { OrderDetail } from "@/lib/console"
 import { PageError } from "@/components/page-states"
+import { ConfirmDialog } from "@/components/common"
 
 const METHODS = [
   { value: "bank_transfer", label: "Bank transfer (NEFT/RTGS/IMPS)" },
@@ -136,6 +137,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   const [cancelOpen, setCancelOpen] = React.useState(false)
   const [approving, setApproving] = React.useState(false)
   const [sendingLink, setSendingLink] = React.useState(false)
+  const [ask, setAsk] = React.useState<"approve" | "link" | null>(null)
 
   if (error) return <PageError error={error} />
   if (!o) return <Skeleton className="h-96 rounded-4xl" />
@@ -143,7 +145,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
   const canApprove = o.status === "pending_approval" && canConsole("platform.discount.approve") && o.createdBy !== me?.user.id
 
   return (
-    <div className="mx-auto w-full max-w-6xl">
+    <div className="w-full">
       <Link href="/console/payments" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" /> Payments
       </Link>
@@ -153,9 +155,12 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
         actions={
           <>
             {canApprove && (
-              <Button
-                disabled={approving}
-                onClick={async () => {
+              <Button disabled={approving} onClick={() => setAsk("approve")}>
+                <Check /> Approve discount
+              </Button>
+            )}
+            {canApprove && ask === "approve" && (
+              <ConfirmDialog open onOpenChange={(v) => !v && setAsk(null)} title="Approve this discount?" description="The client can then pay the order at the discounted price." confirmLabel="Approve discount" onConfirm={async () => {
                   setApproving(true)
                   try {
                     await api.post(`/console/orders/${o.id}/approve`)
@@ -166,16 +171,15 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                   } finally {
                     setApproving(false)
                   }
-                }}
-              >
-                <Check /> Approve discount
-              </Button>
+                }} />
             )}
             {o.status === "awaiting_payment" && (
-              <Button
-                variant={o.paymentLinkUrl ? "outline" : "default"}
-                disabled={sendingLink}
-                onClick={async () => {
+              <Button variant={o.paymentLinkUrl ? "outline" : "default"} disabled={sendingLink} onClick={() => setAsk("link")}>
+                <Link2 /> {o.paymentLinkUrl ? "Resend link" : "Send payment link"}
+              </Button>
+            )}
+            {o.status === "awaiting_payment" && ask === "link" && (
+              <ConfirmDialog open onOpenChange={(v) => !v && setAsk(null)} title={o.paymentLinkUrl ? "Send the payment link again?" : "Send the payment link?"} description={`It goes to the owner of ${o.client?.name ?? "the business"} by email and SMS, and is copied for you.`} confirmLabel={o.paymentLinkUrl ? "Resend link" : "Send link"} onConfirm={async () => {
                   setSendingLink(true)
                   try {
                     const r = await api.post<{ url: string; sent: boolean }>(`/console/orders/${o.id}/payment-link`, { resend: !!o.paymentLinkUrl })
@@ -187,10 +191,7 @@ export default function OrderPage({ params }: { params: Promise<{ id: string }> 
                   } finally {
                     setSendingLink(false)
                   }
-                }}
-              >
-                <Link2 /> {o.paymentLinkUrl ? "Resend link" : "Send payment link"}
-              </Button>
+                }} />
             )}
             {o.status === "awaiting_payment" && canConsole("platform.payment.create") && (
               <Button onClick={() => setPayOpen(true)}>

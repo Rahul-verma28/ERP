@@ -394,7 +394,7 @@ function SignupFlow() {
   }))
 
   return (
-    <div className="flex min-h-svh bg-card">
+    <div className="flex min-h-svh bg-[#f8f9fc] dark:bg-background">
       <SignupRail
         steps={rail}
         narrow={step === "industry" || step === "goals" || step === "verify"}

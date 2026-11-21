@@ -15,6 +15,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { GST_STATES, formatDate } from "@/lib/format"
 import type { PartnerDetail } from "@/lib/console"
+import { useChanged } from "@/lib/use-dirty"
 
 // One partner: contact, discount, status, their people and this month's bill.
 
@@ -22,6 +23,7 @@ function EditPartner({ partner, onClose, onSaved }: { partner: PartnerDetail; on
   const [form, setForm] = React.useState({ name: partner.name, contactName: partner.contactName, email: partner.email, mobile: partner.mobile.replace(/^\+91/, ""), discountPercent: String(partner.discountPercent) })
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [busy, setBusy] = React.useState(false)
+  const unchanged = !useChanged(form)
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value })
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -65,7 +67,7 @@ function EditPartner({ partner, onClose, onSaved }: { partner: PartnerDetail; on
           </div>
           <FormError message={errors.form} />
           <DialogFooter>
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy || unchanged}>
               {busy ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
@@ -84,7 +86,7 @@ export default function PartnerPage({ params }: { params: Promise<{ id: string }
   const canEdit = canConsole("platform.partner.edit")
 
   if (error) return <Failed error={error} onRetry={reload} />
-  if (!p) return <Loading rows={6} className="mx-auto max-w-6xl" />
+  if (!p) return <Loading rows={6} />
   const paused = p.status === "paused"
 
   return (

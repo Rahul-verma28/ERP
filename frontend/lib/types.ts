@@ -110,5 +110,6 @@ export interface Branch {
   stateCode: string | null
   gstin: string | null
   isDefault: boolean
+  isActive?: boolean
   address: Record<string, string> | null
 }

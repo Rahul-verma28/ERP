@@ -14,6 +14,7 @@ import { Field, FormError, NativeSelect } from "@/components/form"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
+import { InlineSave } from "@/components/save-bar"
 
 interface FieldDef {
   id: string
@@ -66,16 +67,22 @@ const TYPES = [
 
 function Terminology({ editable }: { editable: boolean }) {
   const { reload } = useAuth()
-  const { data, setData } = useApi<{ terms: Record<string, string> }>("/config/terms")
+  const res = useApi<{ terms: Record<string, string> }>("/config/terms")
+  // The words being edited; null = as saved
+  const [draft, setDraft] = React.useState<Record<string, string> | null>(null)
   const [busy, setBusy] = React.useState(false)
-  if (!data) return null
+  if (!res.data) return null
+  const data = { terms: draft ?? res.data.terms }
+  const setData = (next: { terms: Record<string, string> }) => setDraft(next.terms)
+  const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(res.data.terms)
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
     setBusy(true)
     try {
-      await api.put("/config/terms", { terms: data!.terms })
-      await reload()
+      await api.put("/config/terms", { terms: data.terms })
+      await Promise.all([reload(), res.reload()])
+      setDraft(null)
       toast.success("Terminology saved")
     } catch (err) {
       toast.error(errorMessage(err))
@@ -99,13 +106,7 @@ function Terminology({ editable }: { editable: boolean }) {
               </Field>
             ))}
           </div>
-          {editable && (
-            <div>
-              <Button type="submit" disabled={busy}>
-                {busy ? "Saving…" : "Save terminology"}
-              </Button>
-            </div>
-          )}
+          {editable && <InlineSave dirty={dirty} saving={busy} onDiscard={() => setDraft(null)} onSave={() => void save({ preventDefault() {} } as React.FormEvent)} saveLabel="Save terminology" />}
         </form>
       </CardContent>
     </Card>
@@ -158,7 +159,7 @@ function CustomFields({ editable }: { editable: boolean }) {
     <Card>
       <CardHeader>
         <CardTitle>Custom fields</CardTitle>
-        <CardDescription>Add your own fields to records. Archived fields keep their data but are hidden from forms.</CardDescription>
+        <CardDescription>Add your own fields to records. Inactive fields keep their data but are hidden from forms.</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -188,7 +189,7 @@ function CustomFields({ editable }: { editable: boolean }) {
               {f.options && <span className="truncate text-xs text-muted-foreground">{f.options.join(", ")}</span>}
               {editable && (
                 <Button variant="ghost" size="sm" className="ml-auto" onClick={() => toggleArchive(f)}>
-                  {f.archivedAt ? <RotateCcw /> : <Archive />} {f.archivedAt ? "Restore" : "Archive"}
+                  {f.archivedAt ? <RotateCcw /> : <Archive />} {f.archivedAt ? "Make active" : "Make inactive"}
                 </Button>
               )}
             </li>

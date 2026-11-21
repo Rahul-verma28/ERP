@@ -12,12 +12,15 @@ import { api, ApiError, errorMessage } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
 import { useDebounced } from "@/lib/use-list"
 import { formatPaise } from "@/lib/format"
+import { useChanged } from "@/lib/use-dirty"
 
 // A price list's name, its discount on everything, and exact prices for some items. Used from the
 // list of price lists and from a price list's own page.
 
 export interface PriceList {
   id: string
+  /** Inactive: customers on it keep their prices; it can't be chosen for others */
+  isActive?: boolean
   name: string
   discountBp: number
   itemCount: number
@@ -36,6 +39,7 @@ export function PriceListDialog({ list, onClose, onSaved }: { list: Pick<PriceLi
   const items = useApi<{ data: Item[] }>(`/items?limit=50${q ? `&q=${encodeURIComponent(q)}` : ""}`)
   const saved = useApi<{ data: { itemId: string; pricePaise: number }[] }>(list ? `/price-lists/${list.id}/items` : null)
   const [edits, setEdits] = React.useState<Record<string, number | null>>({})
+  const unchanged = !useChanged([name, discount, edits])
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -88,7 +92,7 @@ export function PriceListDialog({ list, onClose, onSaved }: { list: Pick<PriceLi
             </ul>
           )}
           <FormError message={error} />
-          <DialogFooter><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save price list"}</Button></DialogFooter>
+          <DialogFooter><Button type="submit" disabled={busy || (!!list && unchanged)}>{busy ? "Saving…" : "Save price list"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

@@ -41,7 +41,7 @@ export default function LedgersPage() {
   async function toggle(l: Row) {
     try {
       await api.patch(`/finance/ledgers/${l.ledgerId}`, { isActive: !l.isActive, version: l.version })
-      toast.success(l.isActive ? `${l.name} closed` : `${l.name} reopened`)
+      toast.success(l.isActive ? `${l.name} is inactive` : `${l.name} is active again`)
       reload()
     } catch (e) {
       toast.error(errorMessage(e))
@@ -50,7 +50,7 @@ export default function LedgersPage() {
 
   const columns: Column<Row>[] = [
     { key: "code", header: "Code", sort: (l) => l.code, csv: (l) => l.code, cell: (l) => <span className="font-mono text-xs text-muted-foreground">{l.code}</span> },
-    { key: "name", header: "Ledger", hideable: false, sort: (l) => l.name, csv: (l) => l.name, cell: (l) => <span><span className="font-medium">{l.name}</span>{!l.isActive && <Pill color="slate" className="ml-2">Closed</Pill>}{l.description && <span className="block max-w-72 truncate text-xs text-muted-foreground">{l.description}</span>}</span> },
+    { key: "name", header: "Ledger", hideable: false, sort: (l) => l.name, csv: (l) => l.name, cell: (l) => <span><span className="font-medium">{l.name}</span>{!l.isActive && <Pill color="slate" className="ml-2">Inactive</Pill>}{l.description && <span className="block max-w-72 truncate text-xs text-muted-foreground">{l.description}</span>}</span> },
     { key: "group", header: "Kind", sort: (l) => l.group, csv: (l) => GROUP_LABEL[l.group], cell: (l) => <Pill color={GROUP_TONE[l.group]}>{GROUP_LABEL[l.group]}</Pill> },
     { key: "section", header: "Group", sort: (l) => l.section, csv: (l) => l.section, cell: (l) => <span className="text-muted-foreground">{l.section}</span> },
     { key: "made", header: "Made by", csv: (l) => (l.ledgerId ? "You" : "App"), cell: (l) => <span className="text-xs text-muted-foreground">{l.ledgerId ? "You" : "App"}</span>, defaultHidden: true },
@@ -64,7 +64,7 @@ export default function LedgersPage() {
             { label: "Open ledger", icon: BookOpen, href: ledgerHref(l.key) },
             l.journal && can("finance.expense.create") && { label: "Journal entry with this", icon: FilePlus2, onClick: () => setJournalFor(l.key) },
             "-",
-            !!l.ledgerId && can("finance.expense.edit") && { label: l.isActive ? "Close ledger" : "Reopen", icon: l.isActive ? Archive : ArchiveRestore, onClick: () => void toggle(l) },
+            !!l.ledgerId && can("finance.expense.edit") && { label: l.isActive ? "Make inactive" : "Make active", icon: l.isActive ? Archive : ArchiveRestore, onClick: () => void toggle(l) },
             !!l.ledgerId && !l.usedInJournals && can("finance.expense.delete") && { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(l) },
           ]} />
         </span>

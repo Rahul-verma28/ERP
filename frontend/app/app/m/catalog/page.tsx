@@ -24,7 +24,7 @@ const PRESETS: ViewPreset[] = [
   { key: "service", label: "Services", params: { type: "service" }, countKey: "service" },
   { key: "low", label: "Low stock", params: { low: "true" }, countKey: "low" },
   { key: "out", label: "Out of stock", params: { stock: "out" }, countKey: "out" },
-  { key: "archived", label: "Archived", params: { active: "false" }, countKey: "archived" },
+  { key: "archived", label: "Inactive", params: { active: "false" }, countKey: "archived" },
 ]
 const ago = (iso: string | null | undefined) => {
   if (!iso) return null
@@ -50,7 +50,7 @@ export default function ItemsPage() {
   async function setActive(r: Item, active: boolean) {
     try {
       await api.patch(`/items/${r.id}`, { isActive: active, version: r.version })
-      toast.success(active ? `${r.name} restored` : `${r.name} archived`)
+      toast.success(active ? `${r.name} is active again` : `${r.name} is inactive`)
       refresh()
     } catch (e) {
       toast.error(errorMessage(e))
@@ -67,7 +67,7 @@ export default function ItemsPage() {
             {r.imageUrl ? <img src={r.imageUrl} alt="" className="size-full object-cover" /> : <Package className="size-5 text-muted-foreground" aria-hidden />}
           </span>
           <span className="min-w-0">
-            <span className="block font-medium">{r.name}{!r.isActive && <Badge variant="outline" className="ml-2">Archived</Badge>}</span>
+            <span className="block font-medium">{r.name}{!r.isActive && <Badge variant="outline" className="ml-2">Inactive</Badge>}</span>
             <span className="flex items-center gap-1 text-xs text-muted-foreground"><Tag className="size-3" aria-hidden />{r.sku || "No SKU"}{r.tracking === "batch" ? " · Batch" : r.tracking === "serial" ? " · Serial" : ""}{r.hsnSac ? ` · HSN ${r.hsnSac}` : ""}</span>
           </span>
         </span>
@@ -114,7 +114,7 @@ export default function ItemsPage() {
               "-",
               can("catalog.item.create") && { label: "Make a copy", icon: Copy, href: `/app/m/catalog/new?copy=${r.id}` },
               r.type === "product" && { label: "Print barcode labels", icon: Barcode, onClick: () => window.open(`/print/labels?ids=${r.id}`, "_blank", "noopener") },
-              can("catalog.item.edit") && (r.isActive ? { label: "Archive", icon: Archive, onClick: () => void setActive(r, false) } : { label: "Restore", icon: ArchiveRestore, onClick: () => void setActive(r, true) }),
+              can("catalog.item.edit") && (r.isActive ? { label: "Make inactive", icon: Archive, onClick: () => void setActive(r, false) } : { label: "Make active", icon: ArchiveRestore, onClick: () => void setActive(r, true) }),
               "-",
               can("catalog.item.delete") && r.isActive && { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(r) },
             ]} />
@@ -163,7 +163,7 @@ export default function ItemsPage() {
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
         title={`Delete ${deleting?.name ?? "item"}?`}
-        description="If it is used on any bill or stock record it is archived instead, so your history stays correct."
+        description="If it is used on any bill or stock record it is made inactive instead, so your history stays correct."
         confirmLabel="Delete"
         destructive
         onConfirm={async () => {

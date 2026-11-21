@@ -15,11 +15,14 @@ import { HrTabs, ListSelect, TABS } from "@/components/hr/pickers"
 import { saveHrConfig } from "@/components/hr/list-editor"
 import { useAuth } from "@/lib/auth"
 import { UNIT, useHrLookups, type Indicator } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
 
 // Performance indicators: what a review rates (each out of 5), grouped by category, with a target.
 
 function IndicatorDialog({ row, all, onClose, onSaved }: { row: Indicator | null; all: Indicator[]; onClose: () => void; onSaved: () => void }) {
   const [f, setF] = React.useState({ name: row?.name ?? "", category: row?.category ?? "", unit: row?.unit ?? "rating", target: row?.target ?? "", description: row?.description ?? "", active: row?.active ?? true })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   async function save(e: React.FormEvent) {
@@ -43,7 +46,7 @@ function IndicatorDialog({ row, all, onClose, onSaved }: { row: Indicator | null
           <Field label="Target" className="sm:col-span-2"><Input value={f.target} maxLength={40} onChange={(e) => setF({ ...f, target: e.target.value })} placeholder="e.g. 4 out of 5, 98%, ₹5 lakh" /></Field>
           <Field label="What it means" className="sm:col-span-2"><Textarea rows={2} maxLength={300} value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Optional: how to judge it" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!row && unchanged)}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

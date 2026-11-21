@@ -13,6 +13,7 @@ import { Section } from "@/components/page-parts"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { LIST_LABEL, useHrLookups, type HrConfig, type ListKey } from "@/lib/hr"
+import { useChanged } from "@/lib/use-dirty"
 
 // One HR type list (award types, loan types, job locations…) as a table: name, description, actions.
 // Used by every HR setup page so they all work the same way.
@@ -34,6 +35,7 @@ const one = (label: string) => label.replace(/ies$/, "y").replace(/s$/, "").toLo
 function ItemDialog({ title, value, note, taken, onClose, onSave }: { title: string; value: string; note: string; taken: (name: string) => boolean; onClose: () => void; onSave: (name: string, note: string) => Promise<boolean> }) {
   const [name, setName] = React.useState(value)
   const [desc, setDesc] = React.useState(note)
+  const unchanged = !useChanged([name, desc])
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   async function save(e: React.FormEvent) {
@@ -52,7 +54,7 @@ function ItemDialog({ title, value, note, taken, onClose, onSave }: { title: str
           <Field label="Name" required><Input value={name} autoFocus maxLength={60} onChange={(e) => { setName(e.target.value); setError(null) }} /></Field>
           <Field label="Description"><Textarea rows={2} maxLength={300} value={desc} onChange={(e) => setDesc(e.target.value)} placeholder="Optional: when to use it" /></Field>
           <FormError message={error} />
-          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!value && unchanged)}>{busy ? "Saving…" : "Save"}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

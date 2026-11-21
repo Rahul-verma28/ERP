@@ -25,6 +25,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate } from "@/lib/format"
 import { useHrLookups, type Post } from "@/lib/hr"
 import { cn } from "@/lib/utils"
+import { useChanged } from "@/lib/use-dirty"
 
 // Workplace: announcements, events, and documents and policies staff confirm they have read.
 
@@ -42,6 +43,8 @@ function PostDialog({ kind, post, onClose, onSaved }: { kind: Kind; post: Post |
   const look = useHrLookups()
   const k = KINDS[kind]
   const [f, setF] = React.useState({ title: post?.title ?? "", category: post?.category ?? "", body: post?.body ?? "", startsOn: post?.startsOn?.slice(0, 10) ?? (kind === "document" ? "" : todayInIndia()), endsOn: post?.endsOn?.slice(0, 10) ?? "", startsAt: post?.startsAt ?? "", endsAt: post?.endsAt ?? "", location: post?.location ?? "", priority: post?.priority ?? "normal", departmentIds: post?.departmentIds ?? [], url: post?.url ?? "", needsAck: post?.needsAck ?? false, status: post?.status ?? (kind === "announcement" ? "active" : "pending"), color: post?.color ?? "" })
+  // Editing: Save works only once something changed
+  const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -100,7 +103,7 @@ function PostDialog({ kind, post, onClose, onSaved }: { kind: Kind; post: Post |
           {kind === "document" && <label className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm sm:col-span-2"><span><span className="font-medium">Staff must confirm they have read it</span><span className="block text-xs text-muted-foreground">You see who has and who hasn&apos;t</span></span><Switch checked={f.needsAck} onCheckedChange={(v) => set("needsAck", v)} aria-label="Needs confirmation" /></label>}
           <div className="sm:col-span-2"><FormError message={error} /></div>
           {kind !== "announcement" && !post?.id && <p className="rounded-xl bg-muted/60 px-3 py-2 text-xs text-muted-foreground sm:col-span-2">It goes in as <strong>Pending</strong>. Staff see it once someone approves it from the list.</p>}
-          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : post?.id ? "Save" : `Add ${k.one}`}</Button></DialogFooter>
+          <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!post && unchanged)}>{busy ? "Saving…" : post?.id ? "Save" : `Add ${k.one}`}</Button></DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
