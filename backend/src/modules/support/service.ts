@@ -5,7 +5,7 @@ import { db } from '../../kernel/db';
 import { bundle, userNames, userPart, type Row } from '../../kernel/bundle';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
-import { DateStr, assertVersion } from '../../kernel/query';
+import { DateStr, assertVersion, scopeSql } from '../../kernel/query';
 import { todayIST } from '../../kernel/gst';
 import { getRolePermissions } from '../access/service';
 import { notify } from '../notifications/service';
@@ -182,7 +182,7 @@ export const TicketList = z.object({
   cursor: z.string().uuid().optional(),
 });
 
-const ownSql = (ctx: TenantCtx) => ((ctx.scope ?? 'own') === 'own' ? Prisma.sql`and (t.assignee_id = ${ctx.userId}::uuid or t.created_by = ${ctx.userId}::uuid)` : Prisma.empty);
+const ownSql = (ctx: TenantCtx) => scopeSql(ctx, ['t.assignee_id', 't.created_by']);
 
 /** Resolved tickets close themselves after the set days */
 async function autoClose(ctx: TenantCtx, days: number) {

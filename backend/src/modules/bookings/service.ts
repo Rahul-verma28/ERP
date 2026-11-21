@@ -5,7 +5,7 @@ import { db } from '../../kernel/db';
 import { bundle, userNames, userPart, type Row } from '../../kernel/bundle';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
-import { DateStr, Paise, assertVersion, inScope } from '../../kernel/query';
+import { DateStr, Paise, assertVersion, inScope, scopeSql } from '../../kernel/query';
 import { todayIST } from '../../kernel/gst';
 import { zPhone } from '../../kernel/zodRules';
 import { notify } from '../notifications/service';
@@ -65,12 +65,7 @@ export const AppointmentList = z.object({
   cursor: z.string().uuid().optional(),
 });
 
-const scopeSql = (ctx: TenantCtx) => {
-  const scope = ctx.scope ?? 'own';
-  if (scope === 'all') return Prisma.empty;
-  if (scope === 'branch') return ctx.branchIds.length ? Prisma.sql`and (a.branch_id in (${Prisma.join(ctx.branchIds.map((b) => Prisma.sql`${b}::uuid`))}) or a.branch_id is null)` : Prisma.empty;
-  return Prisma.sql`and (a.created_by = ${ctx.userId}::uuid or a.staff_id = ${ctx.userId}::uuid)`;
-};
+const apptScopeSql = (ctx: TenantCtx) => scopeSql(ctx, ['a.created_by', 'a.staff_id'], 'a.branch_id');
 
 /** Appointments with their customer, service, staff and room, and the counts and totals for the
  *  tabs and cards. With from/to only that window is read (the calendar); otherwise the last 120 days
@@ -92,7 +87,7 @@ export async function listAppointments(ctx: TenantCtx, q: z.infer<typeof Appoint
       left join booking_resources r on r.id = a.resource_id
       left join booking_services s on s.item_id = a.item_id and s.tenant_id = a.tenant_id
       left join sales_documents d on d.id = a.invoice_id
-      where a.tenant_id = ${t}::uuid ${scopeSql(ctx)} and a.start_at < ${to} and a.end_at > ${from}
+      where a.tenant_id = ${t}::uuid ${apptScopeSql(ctx)} and a.start_at < ${to} and a.end_at > ${from}
       order by a.start_at limit 5000`,
     ...userPart(t),
   });

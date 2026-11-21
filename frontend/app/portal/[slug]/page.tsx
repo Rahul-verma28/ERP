@@ -53,6 +53,7 @@ function SignIn({ slug, note, onIn }: { slug: string; note: string | null; onIn:
   const [code, setCode] = React.useState("")
   const [step, setStep] = React.useState<"mobile" | "code">("mobile")
   const [dev, setDev] = React.useState<string | null>(null)
+  const [devNote, setDevNote] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(note)
   const [busy, setBusy] = React.useState(false)
   const [accounts, setAccounts] = React.useState<{ token: string; accounts: Account[] } | null>(null)
@@ -62,8 +63,8 @@ function SignIn({ slug, note, onIn }: { slug: string; note: string | null; onIn:
     if (!/^[6-9]\d{9}$/.test(mobile)) return setError("Enter your 10-digit mobile number")
     setBusy(true); setError(null)
     try {
-      const r = await portalApi<{ sent: boolean; devCode?: string }>(slug, "/code", { method: "POST", body: { mobile } })
-      setDev(r.devCode ?? null); setStep("code")
+      const r = await portalApi<{ sent: boolean; devCode?: string; devNote?: string }>(slug, "/code", { method: "POST", body: { mobile } })
+      setDev(r.devCode ?? null); setDevNote(r.devNote ?? null); setStep("code")
     } catch (err) { setError(errorMessage(err)) } finally { setBusy(false) }
   }
   async function verify(e: React.FormEvent) {
@@ -99,7 +100,8 @@ function SignIn({ slug, note, onIn }: { slug: string; note: string | null; onIn:
         <form onSubmit={verify} className="grid gap-3" noValidate>
           <p className="text-sm">If <strong>{mobile}</strong> is with the business, a code is on its way. <button type="button" className="font-medium text-emerald-700 underline" onClick={() => { setStep("mobile"); setCode(""); setError(null) }}>Change number</button></p>
           <label className="grid gap-1 text-sm"><span className="font-medium">Code</span><Input className="h-11 bg-white text-center text-lg tracking-[.4em]" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => { setCode(e.target.value.replace(/\D/g, "")); setError(null) }} autoFocus /></label>
-          {dev && <p className="text-xs text-neutral-500">Testing: the code is {dev}</p>}
+          {dev && <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">Testing mode: the code is <strong className="font-mono tracking-widest">{dev}</strong> (also on <a href="/dev/messages" target="_blank" rel="noreferrer" className="underline">Dev messages</a>)</p>}
+          {devNote && <p className="rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900">Testing mode: {devNote}</p>}
           {error && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
           <Button type="submit" disabled={busy} className="h-11 bg-emerald-600 text-white hover:bg-emerald-700">{busy ? "Checking…" : "Sign in"}</Button>
           <button type="button" className="text-sm text-neutral-500 underline" onClick={(e) => void send(e as unknown as React.FormEvent)}>Send the code again</button>

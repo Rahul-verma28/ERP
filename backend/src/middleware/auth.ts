@@ -7,6 +7,7 @@ import { getEntitlements } from '../modules/subscription/entitlements';
 import { getPlatformMember } from '../modules/console/service';
 import { PERMISSION_BY_KEY, isReadAction } from '../contracts/permissions';
 import { ipAllowed } from '../contracts/account';
+import { loadTeamUsers } from '../kernel/query';
 import { mfaRequirement, tenantSecurity } from '../modules/account/policy';
 
 type Handler = (req: Request, res: Response) => Promise<unknown>;
@@ -82,6 +83,8 @@ export function requirePermission(key: string) {
     const scope = perms.get(key);
     if (!scope) throw new AppError('PERMISSION_DENIED', 'You do not have permission to do this.', { permission: key });
     ctx.scope = scope;
+    // "team": the person and everyone reporting to them, worked out once per request
+    if (scope === 'team' && !ctx.teamUserIds) ctx.teamUserIds = await withTenant(ctx, () => loadTeamUsers(ctx.tenantId, ctx.memberId, ctx.userId));
     next();
   };
 }

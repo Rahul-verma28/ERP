@@ -5,7 +5,7 @@ import { db } from '../../kernel/db';
 import { bundle, userNames, userPart, type Row } from '../../kernel/bundle';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
-import { DateStr, Paise, assertVersion } from '../../kernel/query';
+import { DateStr, Paise, assertVersion, scopeSql, scopeUsers } from '../../kernel/query';
 import { todayIST } from '../../kernel/gst';
 import { getRolePermissions } from '../access/service';
 import { notify } from '../notifications/service';
@@ -28,8 +28,9 @@ function page<T extends { id: string }>(rows: T[], limit: number, cursor?: strin
   const data = rows.slice(start, start + limit);
   return { data, nextCursor: start + limit < rows.length ? data[data.length - 1]?.id ?? null : null, total: rows.length };
 }
-const ownScope = (ctx: TenantCtx, cols: string[]) =>
-  (ctx.scope ?? 'own') === 'own' ? Prisma.sql`and (${Prisma.join(cols.map((c) => Prisma.sql`${Prisma.raw(c)} = ${ctx.userId}::uuid`), ' or ')})` : Prisma.empty;
+// Tasks have no branch, so a branch scope sees everything; own/team see their people's work
+const ownScope = (ctx: TenantCtx, cols: string[]) => scopeSql(ctx, cols);
+const uuidList = (ids: string[]) => Prisma.join(ids.map((u) => Prisma.sql`${u}::uuid`));
 const canDo = async (ctx: TenantCtx, key: string) => (await getRolePermissions(ctx.roleId)).has(key);
 
 async function activeUser(id: string | null | undefined, field: string) {
@@ -154,10 +155,12 @@ export async function listTasks(ctx: TenantCtx, q: z.infer<typeof TaskList>) {
 async function scoped(ctx: TenantCtx, id: string) {
   const task = await db().task.findUnique({ where: { id } });
   if (!task) throw notFound('Task');
-  if ((ctx.scope ?? 'own') === 'own' && task.createdBy !== ctx.userId && task.assigneeId !== ctx.userId) {
+  const users = scopeUsers(ctx);
+  const mine = (t: { createdBy: string | null; assigneeId: string | null }) => !users || users.includes(t.createdBy ?? '') || users.includes(t.assigneeId ?? '');
+  if (!mine(task)) {
     // A subtask is visible to whoever sees its parent
     const parent = task.parentId ? await db().task.findUnique({ where: { id: task.parentId } }) : null;
-    if (!parent || (parent.createdBy !== ctx.userId && parent.assigneeId !== ctx.userId)) throw notFound('Task');
+    if (!parent || !mine(parent)) throw notFound('Task');
   }
   return task;
 }
@@ -332,8 +335,11 @@ export const ProjectInput = z.object({
   if (v.billable && !v.hourlyRatePaise) c.addIssue({ code: 'custom', path: ['hourlyRatePaise'], message: 'Enter the rate per hour for billable work' });
 });
 
-const projectScope = (ctx: TenantCtx) =>
-  (ctx.scope ?? 'own') === 'own' ? Prisma.sql`and (p.owner_id = ${ctx.userId}::uuid or p.created_by = ${ctx.userId}::uuid or ${ctx.userId}::uuid = any(p.member_ids))` : Prisma.empty;
+const projectScope = (ctx: TenantCtx) => {
+  const users = scopeUsers(ctx);
+  if (!users) return Prisma.empty;
+  return Prisma.sql`and (p.owner_id in (${uuidList(users)}) or p.created_by in (${uuidList(users)}) or p.member_ids && array[${uuidList(users)}])`;
+};
 
 export async function listProjects(ctx: TenantCtx, q: { status?: string; q?: string }) {
   const t = ctx.tenantId;
@@ -553,7 +559,7 @@ export async function listApprovals(ctx: TenantCtx, q: { view?: string; q?: stri
     rows: Prisma.sql`
       select a.*, k.title as task_title, p.name as project_name from approval_requests a
       left join tasks k on k.id = a.task_id left join task_projects p on p.id = a.project_id
-      where a.tenant_id = ${t}::uuid ${seeAll ? Prisma.empty : Prisma.sql`and (a.requested_by = ${ctx.userId}::uuid or a.approver_id = ${ctx.userId}::uuid)`}
+      where a.tenant_id = ${t}::uuid ${seeAll ? Prisma.empty : Prisma.sql`and (a.requested_by in (${uuidList(scopeUsers(ctx) ?? [ctx.userId])}) or a.approver_id = ${ctx.userId}::uuid)`}
       order by a.created_at desc limit 3000`,
     ...userPart(t),
   });

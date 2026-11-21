@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { bundle, userNames, userPart, type Row } from '../../kernel/bundle';
 import type { TenantCtx } from '../../kernel/context';
-import { DateStr } from '../../kernel/query';
+import { DateStr, scopeSql } from '../../kernel/query';
+import { hrReach } from '../hr/employees';
 
 // The reports the module pages did not have yet, each read in ONE database round trip:
 // profit by item, stock movement, attendance and payroll registers, leave taken, bookings and time.
@@ -18,17 +19,13 @@ const uuids = (ids: string[]) => Prisma.join(ids.map((b) => Prisma.sql`${b}::uui
 
 /** Sales documents in scope (owner = created_by, branch = branch_id), alias d */
 function docScope(ctx: TenantCtx) {
-  const scope = ctx.scope ?? 'own';
-  if (scope === 'all') return Prisma.empty;
-  if (scope === 'branch') return ctx.branchIds.length ? Prisma.sql`and (d.branch_id in (${uuids(ctx.branchIds)}) or d.branch_id is null)` : Prisma.empty;
-  return Prisma.sql`and d.created_by = ${ctx.userId}::uuid`;
+  return scopeSql(ctx, ['d.created_by'], 'd.branch_id');
 }
-/** Employees in scope: own = the person's own record */
-function empScope(ctx: TenantCtx) {
-  const scope = ctx.scope ?? 'own';
-  if (scope === 'all') return Prisma.empty;
-  if (scope === 'branch') return ctx.branchIds.length ? Prisma.sql`and (e.branch_id in (${uuids(ctx.branchIds)}) or e.branch_id is null)` : Prisma.empty;
-  return Prisma.sql`and e.member_id = ${ctx.memberId}::uuid`;
+/** Employees in scope, the HR way: own = the person's record, team = them and their reports */
+async function empScope(ctx: TenantCtx) {
+  const reach = await hrReach(ctx);
+  if (!reach) return Prisma.empty;
+  return reach.length ? Prisma.sql`and e.id in (${uuids(reach)})` : Prisma.sql`and false`;
 }
 
 // ---------------------------------------------------------------- profit by item
@@ -137,7 +134,7 @@ export async function attendanceSummary(ctx: TenantCtx, month: string) {
       from employees e
       left join attendance a on a.employee_id = e.id and a.date between ${r.from}::date and ${r.to}::date
       left join hr_departments d on d.id = e.department_id left join hr_designations g on g.id = e.designation_id
-      where e.tenant_id = ${t}::uuid and e.joined_on <= ${r.to}::date and (e.exit_on is null or e.exit_on >= ${r.from}::date) ${empScope(ctx)}
+      where e.tenant_id = ${t}::uuid and e.joined_on <= ${r.to}::date and (e.exit_on is null or e.exit_on >= ${r.from}::date) ${await empScope(ctx)}
       group by e.id, d.name, g.name order by e.name`,
   });
   const rows = b.rows.map((x) => {
@@ -165,7 +162,7 @@ export async function payrollRegister(ctx: TenantCtx, month: string) {
       select s.id, s.number, s.status, s.paid_on, s.days_in_month, s.payable_days, s.lop_days, s.basic_paise, s.earnings, s.deductions, s.employer,
         s.gross_paise, s.deductions_paise, s.net_paise, s.employer_paise, e.id as employee_id, e.code, e.name, e.uan, e.esi_no, e.pan, d.name as department
       from payslips s join payroll_runs r on r.id = s.run_id join employees e on e.id = s.employee_id left join hr_departments d on d.id = e.department_id
-      where s.tenant_id = ${t}::uuid and r.month = ${month} ${empScope(ctx)}
+      where s.tenant_id = ${t}::uuid and r.month = ${month} ${await empScope(ctx)}
       order by e.name`,
   });
   const by = (parts: unknown, code: string) => ((parts ?? []) as Part[]).filter((x) => x.code === code).reduce((s, x) => s + n(x.amountPaise), 0);
@@ -198,7 +195,7 @@ export async function leaveReport(ctx: TenantCtx, p: P) {
         (select coalesce(sum(l.days), 0) from leave_applications l where l.employee_id = e.id and l.status = 'pending' and l.from_date <= ${p.to}::date and l.to_date >= ${p.from}::date) as pending,
         (select count(*) from leave_applications l where l.employee_id = e.id and l.status = 'rejected' and l.from_date <= ${p.to}::date and l.to_date >= ${p.from}::date) as rejected
       from employees e left join hr_departments d on d.id = e.department_id
-      where e.tenant_id = ${t}::uuid and e.status <> 'exited' ${empScope(ctx)} order by e.name`,
+      where e.tenant_id = ${t}::uuid and e.status <> 'exited' ${await empScope(ctx)} order by e.name`,
   });
   const paid = new Map(b.types.map((x) => [x.id as string, !!x.paid]));
   const rows = b.rows.map((x) => {
@@ -216,7 +213,7 @@ export const BookingReport = Period.and(z.object({ by: z.enum(['service', 'staff
 /** Appointments grouped by service, person, where they came from, day or customer. */
 export async function bookingReport(ctx: TenantCtx, p: P & { by: 'service' | 'staff' | 'source' | 'day' | 'customer' }) {
   const t = ctx.tenantId;
-  const own = (ctx.scope ?? 'own') === 'own' ? Prisma.sql`and (a.staff_id = ${ctx.userId}::uuid or a.created_by = ${ctx.userId}::uuid)` : Prisma.empty;
+  const own = scopeSql(ctx, ['a.staff_id', 'a.created_by']);
   const b = await bundle({
     rows: Prisma.sql`
       select a.id, a.status, a.source, a.start_at, a.end_at, a.price_paise, a.invoice_id, a.staff_id, a.item_id, a.contact_id, a.guest_name,
@@ -260,8 +257,8 @@ export const TimeReport = Period.and(z.object({ by: z.enum(['project', 'person',
 /** Time logged, grouped, with the billable share and what it is worth; and each person's tasks. */
 export async function timeReport(ctx: TenantCtx, p: P & { by: 'project' | 'person' | 'day' | 'task' }) {
   const t = ctx.tenantId;
-  const own = (ctx.scope ?? 'own') === 'own' ? Prisma.sql`and tt.user_id = ${ctx.userId}::uuid` : Prisma.empty;
-  const ownTask = (ctx.scope ?? 'own') === 'own' ? Prisma.sql`and (k.assignee_id = ${ctx.userId}::uuid or k.created_by = ${ctx.userId}::uuid)` : Prisma.empty;
+  const own = scopeSql(ctx, ['tt.user_id']);
+  const ownTask = scopeSql(ctx, ['k.assignee_id', 'k.created_by']);
   const b = await bundle({
     rows: Prisma.sql`
       select tt.id, tt.user_id, tt.work_date, tt.minutes, tt.billable, tt.task_id, coalesce(tt.project_id, k.project_id) as project_id,

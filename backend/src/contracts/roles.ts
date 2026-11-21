@@ -145,13 +145,13 @@ export const ROLES: RoleDef[] = [
   {
     // "team" = the person and everyone who reports to them, at any depth (each employee's manager)
     key: 'team_manager', name: 'Team Manager', layer: 'tenant', roleType: 'user', requiredModules: ['hr'],
-    description: 'Their team only (everyone reporting to them): attendance, leave approval, goals and reviews; own payslips',
+    description: 'Their team only (everyone reporting to them): attendance, leave approval, goals, reviews and tasks; own payslips',
     grants: [
       ['hr.employee.view', 'team'], ['hr.attendance.view', 'team'], ['hr.attendance.create', 'team'], ['hr.attendance.edit', 'team'], ['hr.attendance.approve', 'team'],
       ['hr.leave.view', 'team'], ['hr.leave.create', 'team'], ['hr.leave.approve', 'team'],
       ['hr.performance.view', 'team'], ['hr.performance.create', 'team'], ['hr.performance.edit', 'team'], ['hr.training.view', 'team'],
       ['hr.payslip.view', 'own'], ['hr.workplace.view', 'all'],
-      ['tasks.task.*', 'own'], ['tasks.approval.view', 'all'], ['tasks.approval.create', 'all'], ['tasks.approval.approve', 'all'],
+      ['tasks.task.*', 'team'], ['tasks.approval.view', 'team'], ['tasks.approval.create', 'all'], ['tasks.approval.approve', 'all'],
       ['automation.notification.view', 'own'],
     ],
   },

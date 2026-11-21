@@ -1,3 +1,4 @@
+import { scopeSql } from '../../kernel/query';
 import { Prisma } from '@prisma/client';
 import { bundle, type Row } from '../../kernel/bundle';
 import { withTenant } from '../../kernel/db';
@@ -32,8 +33,8 @@ export async function purchase(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
   const prev = previousRange(r);
   const t = ctx.tenantId;
   const today = todayIST();
-  const own = (c.scope ?? 'own') === 'own' ? Prisma.sql`and d.created_by = ${ctx.userId}::uuid` : Prisma.empty;
-  const ownPay = (c.scope ?? 'own') === 'own' ? Prisma.sql`and p.created_by = ${ctx.userId}::uuid` : Prisma.empty;
+  const own = scopeSql(c, ['d.created_by']);
+  const ownPay = scopeSql(c, ['p.created_by']);
   const live = Prisma.sql`d.tenant_id = ${t}::uuid and d.kind = 'purchase_bill' and d.status not in ('cancelled', 'draft') ${own}`;
   return widgets(ctx, () => bundle({
     bills: Prisma.sql`select d.issue_date, d.total_paise, d.contact_id, d.supplier->>'name' as supplier from purchase_documents d where ${live} and d.issue_date between ${prev.from}::date and ${r.to}::date`,

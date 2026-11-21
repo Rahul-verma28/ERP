@@ -1,3 +1,4 @@
+import { scopeSql } from '../../kernel/query';
 import { Prisma } from '@prisma/client';
 import { bundle, userNames, userPart, type Row } from '../../kernel/bundle';
 import type { TenantCtx } from '../../kernel/context';
@@ -17,13 +18,7 @@ function page<T extends { id: string }>(rows: T[], limit: number, cursor?: strin
 }
 /** Data scope as SQL: own = created by or owned by the user */
 function ownerScope(ctx: TenantCtx, alias: string, owner: string[], branch?: string) {
-  const scope = ctx.scope ?? 'own';
-  if (scope === 'all') return Prisma.empty;
-  if (scope === 'branch') {
-    if (!branch || !ctx.branchIds.length) return Prisma.empty;
-    return Prisma.sql`and (${Prisma.raw(`${alias}.${branch}`)} in (${Prisma.join(ctx.branchIds.map((b) => Prisma.sql`${b}::uuid`))}) or ${Prisma.raw(`${alias}.${branch}`)} is null)`;
-  }
-  return Prisma.sql`and (${Prisma.join(owner.map((f) => Prisma.sql`${Prisma.raw(`${alias}.${f}`)} = ${ctx.userId}::uuid`), ' or ')})`;
+  return scopeSql(ctx, owner.map((f) => `${alias}.${f}`), branch ? `${alias}.${branch}` : undefined);
 }
 /** Tasks done and total per contact or deal, and the last activity of any kind */
 const taskPart = (t: string, key: 'contact_id' | 'deal_id') => Prisma.sql`

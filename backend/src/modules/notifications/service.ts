@@ -1,4 +1,5 @@
 import { db } from '../../kernel/db';
+import { isDev } from '../../config/env';
 
 // Message delivery. Providers (SMS via DLT templates, WhatsApp, SES email) are not connected
 // yet, so messages are written to the server log. Swap sendMessage's body per channel.
@@ -11,7 +12,15 @@ export interface OutgoingMessage {
   text: string;
 }
 
+/** Development only: the last messages "sent", for the /dev/messages page (codes, invites) */
+const devOutbox: (OutgoingMessage & { at: string })[] = [];
+export const getDevOutbox = () => (isDev ? [...devOutbox] : []);
+
 export async function sendMessage(msg: OutgoingMessage) {
+  if (isDev) {
+    devOutbox.unshift({ ...msg, at: new Date().toISOString() });
+    devOutbox.length = Math.min(devOutbox.length, 50);
+  }
   console.log(`\n📨 [${msg.channel}] to ${msg.to} (${msg.template})${msg.subject ? `\n   ${msg.subject}` : ''}\n   ${msg.text}\n`);
 }
 

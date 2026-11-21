@@ -2,7 +2,7 @@ import type { PermissionScope, Prisma } from '@prisma/client';
 import { stockSummary } from '../inventory/service';
 import { db, prisma, withTenant } from '../../kernel/db';
 import type { TenantCtx } from '../../kernel/context';
-import { scopeWhere } from '../../kernel/query';
+import { scopeWhere, scopeUsers, loadTeamUsers } from '../../kernel/query';
 import { dateOnly, todayIST } from '../../kernel/gst';
 import { SETUP_STEPS, withDefaults, type SetupState } from '../../contracts/workspace';
 import { DASHBOARD_TABS, addDays, bucketsFor, daysBetween, gstr3bDue, previousRange, type DashboardTab } from '../../contracts/dashboard';
@@ -39,12 +39,14 @@ type Scoped = (key: string) => TenantCtx | null;
 
 export async function scoper(ctx: TenantCtx): Promise<{ scoped: Scoped; readOnly: (module: string) => boolean }> {
   const [perms, ent] = await Promise.all([getRolePermissions(ctx.roleId), getEntitlements(ctx.tenantId)]);
+  // Any "team" grant: work out the team once for every widget
+  const teamUserIds = ctx.teamUserIds ?? ([...perms.values()].includes('team') ? await loadTeamUsers(ctx.tenantId, ctx.memberId, ctx.userId) : undefined);
   return {
     scoped: (key) => {
       const scope = perms.get(key) as PermissionScope | undefined;
       const module = key.split('.')[0] as keyof typeof ent.modules;
       if (!scope || (module in ent.modules && ent.modules[module].status === 'inactive')) return null;
-      return { ...ctx, scope };
+      return { ...ctx, scope, teamUserIds };
     },
     readOnly: (module) => ent.modules[module as keyof typeof ent.modules]?.status === 'read_only',
   };
@@ -608,7 +610,7 @@ export async function tasks(ctx: TenantCtx, s: Scoped, i: DashboardInput) {
       db().task.count({ where: { AND: [scope, OPEN, { dueAt: { lt: istStart(today) } }] } }),
       db().task.count({ where: { AND: [scope, { status: 'done', completedAt: timeIn(r) }] } }),
       compare ? db().task.count({ where: { AND: [scope, { status: 'done', completedAt: timeIn(prev) }] } }) : null,
-      db().taskTime.aggregate({ where: { workDate: dateIn(r), ...(t.scope === 'own' ? { userId: ctx.userId } : {}) }, _sum: { minutes: true } }),
+      db().taskTime.aggregate({ where: { workDate: dateIn(r), ...(scopeUsers(t) ? { userId: { in: scopeUsers(t)! } } : {}) }, _sum: { minutes: true } }),
       ap ? db().approvalRequest.count({ where: { status: 'pending', approverId: ctx.userId } }) : null,
     ]);
     return { open: { value: open }, overdue: { value: overdue }, done: { value: done, change: change(done, donePrev) }, minutes: { value: n(logged._sum.minutes) }, approvals: waiting === null ? null : { value: waiting } };

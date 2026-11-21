@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
-import { DateStr, inScope, scopeWhere } from '../../kernel/query';
+import { DateStr, inScope, scopeWhere, scopeSql } from '../../kernel/query';
 import { bundle, userNames, userPart } from '../../kernel/bundle';
 import { dateOnly, todayIST } from '../../kernel/gst';
 import { Prisma } from '@prisma/client';
@@ -142,7 +142,7 @@ export const ReceiptList = z.object({
  *  advance went, plus the counts and totals for the tabs and cards. */
 export async function listReceipts(ctx: TenantCtx, q: z.infer<typeof ReceiptList>) {
   const t = ctx.tenantId;
-  const scope = (ctx.scope ?? 'own') === 'own' ? Prisma.sql`and p.created_by = ${ctx.userId}::uuid` : Prisma.empty;
+  const scope = scopeSql(ctx, ['p.created_by']);
   const b = await bundle({
     rows: Prisma.sql`
       select p.id, p.number, p.paid_on, p.method::text as method, p.reference, p.notes, p.amount_paise, p.contact_id, p.document_id, p.account_id, p.created_by, p.created_at, p.reverses_id,

@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { bundle, userNames, userPart, type Row } from '../../kernel/bundle';
 import type { TenantCtx } from '../../kernel/context';
 import { todayIST } from '../../kernel/gst';
-import { DateStr } from '../../kernel/query';
+import { DateStr, scopeSql } from '../../kernel/query';
 import { ensureFinance, routingFrom } from './service';
 
 // Expenses, other income and transfers, each in ONE database round trip (kernel/bundle): the rows,
@@ -47,10 +47,7 @@ export const ExpenseList = z.object({
 
 export async function listExpenses(ctx: TenantCtx, q: z.infer<typeof ExpenseList>) {
   const t = ctx.tenantId;
-  const scope = ctx.scope ?? 'own';
-  const scoped = scope === 'all' ? Prisma.empty
-    : scope === 'branch' ? (ctx.branchIds.length ? Prisma.sql`and (e.branch_id in (${Prisma.join(ctx.branchIds.map((b) => Prisma.sql`${b}::uuid`))}) or e.branch_id is null)` : Prisma.empty)
-    : Prisma.sql`and e.created_by = ${ctx.userId}::uuid`;
+  const scoped = scopeSql(ctx, ['e.created_by'], 'e.branch_id');
   const b = await bundle({
     accounts: Prisma.sql`select * from fin_accounts where tenant_id = ${t}::uuid order by created_at`,
     rows: Prisma.sql`select e.*, e.method::text as method from expenses e where e.tenant_id = ${t}::uuid ${scoped} order by e.paid_on desc, e.id desc limit 5000`,

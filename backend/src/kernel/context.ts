@@ -12,6 +12,8 @@ export interface TenantCtx {
   ip?: string;
   /** Data scope granted for the permission checked on this request */
   scope?: PermissionScope;
+  /** With the "team" scope: the person and everyone reporting to them in HR (users), filled once per request */
+  teamUserIds?: string[];
 }
 
 /** Background jobs acting for a tenant */

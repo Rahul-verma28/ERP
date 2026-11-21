@@ -1,3 +1,4 @@
+import { scopeSql } from '../../kernel/query';
 import { Prisma, type SalesDocKind } from '@prisma/client';
 import { bundle, userNames, userPart, type Row } from '../../kernel/bundle';
 import type { TenantCtx } from '../../kernel/context';
@@ -19,14 +20,8 @@ export interface SalesListQuery {
 }
 
 /** The SQL form of kernel/query scopeWhere for sales documents (owner = created_by, branch = branch_id) */
-function scopeSql(ctx: TenantCtx) {
-  const scope = ctx.scope ?? 'own';
-  if (scope === 'all') return Prisma.empty;
-  if (scope === 'branch') {
-    if (!ctx.branchIds.length) return Prisma.empty;
-    return Prisma.sql`and (d.branch_id in (${Prisma.join(ctx.branchIds.map((b) => Prisma.sql`${b}::uuid`))}) or d.branch_id is null)`;
-  }
-  return Prisma.sql`and d.created_by = ${ctx.userId}::uuid`;
+function docScopeSql(ctx: TenantCtx) {
+  return scopeSql(ctx, ['d.created_by'], 'd.branch_id');
 }
 
 export async function listSalesDocs(ctx: TenantCtx, kind: SalesDocKind, q: SalesListQuery) {
@@ -42,7 +37,7 @@ export async function listSalesDocs(ctx: TenantCtx, kind: SalesDocKind, q: Sales
         (select string_agg(l.description || ' ×' || trim(trailing '.' from trim(trailing '0' from l.quantity::text)), ', ' order by l.position)
            from (select * from sales_document_lines l2 where l2.document_id = d.id order by l2.position limit 4) l) as items
       from sales_documents d
-      where d.tenant_id = ${t}::uuid and d.kind::text = ${kind} ${scopeSql(ctx)}
+      where d.tenant_id = ${t}::uuid and d.kind::text = ${kind} ${docScopeSql(ctx)}
         ${q.contactId ? Prisma.sql`and d.contact_id = ${q.contactId}::uuid` : Prisma.empty}
         ${q.sourceId ? Prisma.sql`and d.source_id = ${q.sourceId}::uuid` : Prisma.empty}
       order by d.id desc limit 5000`,
@@ -118,10 +113,7 @@ export interface CustomerListQuery { q?: string; active: 'true' | 'false' | 'all
 export async function listCustomers(ctx: TenantCtx, q: CustomerListQuery, withDues: boolean) {
   const t = ctx.tenantId;
   const today = todayIST();
-  const scope = ctx.scope ?? 'own';
-  const scoped = scope === 'all' ? Prisma.empty
-    : scope === 'branch' ? (ctx.branchIds.length ? Prisma.sql`and (c.branch_id in (${Prisma.join(ctx.branchIds.map((b) => Prisma.sql`${b}::uuid`))}) or c.branch_id is null)` : Prisma.empty)
-    : Prisma.sql`and (c.created_by = ${ctx.userId}::uuid or c.owner_id = ${ctx.userId}::uuid)`;
+  const scoped = scopeSql(ctx, ['c.created_by', 'c.owner_id'], 'c.branch_id');
   const b = await bundle({
     rows: Prisma.sql`select c.* from contacts c where c.tenant_id = ${t}::uuid and c.type = 'customer' ${scoped} order by c.id desc`,
     docs: Prisma.sql`

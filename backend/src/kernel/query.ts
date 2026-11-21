@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import type { TenantCtx } from './context';
 import { AppError } from './errors';
 import { db } from './db';
@@ -9,9 +10,32 @@ import type { PlanLimits } from '../contracts/plans';
 // Shared helpers for business modules: data scope, pagination, limits, field access.
 
 /**
+ * The users whose records an own/team scope covers: just the person, or with "team" the person and
+ * everyone reporting to them in HR (each employee's manager, any depth). Null for all and branch.
+ */
+export function scopeUsers(ctx: TenantCtx): string[] | null {
+  const scope = ctx.scope ?? 'own';
+  if (scope === 'all' || scope === 'branch') return null;
+  if (scope === 'team') return ctx.teamUserIds?.length ? ctx.teamUserIds : [ctx.userId];
+  return [ctx.userId];
+}
+
+/** Everyone in the person's team: their login, plus the logins of everyone reporting to them in HR */
+export async function loadTeamUsers(tenantId: string, memberId: string, userId: string): Promise<string[]> {
+  const rows = await db().$queryRaw<{ user_id: string }[]>`
+    with recursive team as (
+      select id from employees where tenant_id = ${tenantId}::uuid and member_id = ${memberId}::uuid
+      union
+      select e.id from employees e join team t on e.manager_id = t.id where e.tenant_id = ${tenantId}::uuid
+    )
+    select distinct m.user_id from team t join employees e on e.id = t.id join tenant_members m on m.id = e.member_id where m.status = 'active'`;
+  return [...new Set([userId, ...rows.map((r) => r.user_id)])];
+}
+
+/**
  * LLD §4.3 — extra filter for the permission's data scope.
- * own: created by or assigned to the user · branch: in the member's branches (empty = all) · all: none.
- * `team` needs reporting lines from HR; until then it behaves like `own`.
+ * own: created by or assigned to the user · team: the same for anyone in their team (see scopeUsers)
+ * · branch: in the member's branches (empty = all) · all: none.
  */
 export function scopeWhere(ctx: TenantCtx, fields: { owner?: string[]; branch?: string } = {}): Record<string, unknown> {
   const scope = ctx.scope ?? 'own';
@@ -20,8 +44,9 @@ export function scopeWhere(ctx: TenantCtx, fields: { owner?: string[]; branch?: 
     if (!fields.branch || ctx.branchIds.length === 0) return {};
     return { OR: [{ [fields.branch]: { in: ctx.branchIds } }, { [fields.branch]: null }] };
   }
+  const users = scopeUsers(ctx)!;
   const owners = fields.owner ?? ['createdBy'];
-  return { OR: owners.map((f) => ({ [f]: ctx.userId })) };
+  return { OR: owners.map((f) => ({ [f]: users.length === 1 ? users[0] : { in: users } })) };
 }
 
 /** True when the record passes the scope check (for single-record reads/updates). */
@@ -33,7 +58,24 @@ export function inScope(ctx: TenantCtx, record: Record<string, unknown>, fields:
     const b = record[fields.branch] as string | null;
     return !b || ctx.branchIds.includes(b);
   }
-  return (fields.owner ?? ['createdBy']).some((f) => record[f] === ctx.userId);
+  const users = scopeUsers(ctx)!;
+  return (fields.owner ?? ['createdBy']).some((f) => users.includes(record[f] as string));
+}
+
+/**
+ * The same scope as a raw-SQL condition, starting with "and": owner columns for own/team, the
+ * branch column for branch (none given, or no branches = everything), nothing for all.
+ * Columns are written by the caller (trusted), e.g. ['d.created_by'], 'd.branch_id'.
+ */
+export function scopeSql(ctx: TenantCtx, owners: string[], branch?: string): Prisma.Sql {
+  const scope = ctx.scope ?? 'own';
+  if (scope === 'all') return Prisma.empty;
+  if (scope === 'branch') {
+    if (!branch || !ctx.branchIds.length) return Prisma.empty;
+    return Prisma.sql`and (${Prisma.raw(branch)} in (${Prisma.join(ctx.branchIds.map((b) => Prisma.sql`${b}::uuid`))}) or ${Prisma.raw(branch)} is null)`;
+  }
+  const ids = Prisma.join(scopeUsers(ctx)!.map((u) => Prisma.sql`${u}::uuid`));
+  return Prisma.sql`and (${Prisma.join(owners.map((c) => Prisma.sql`${Prisma.raw(c)} in (${ids})`), ' or ')})`;
 }
 
 export const ListQuery = z.object({

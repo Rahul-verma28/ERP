@@ -17,6 +17,8 @@ import inventoryRoutes from '../modules/inventory/routes';
 import purchaseRoutes from '../modules/purchase/routes';
 import consoleRoutes from '../modules/console/routes';
 import { publicPayments, tenantPayments } from '../modules/platformBilling/routes';
+import { isDev } from '../config/env';
+import { getDevOutbox } from '../modules/notifications/service';
 
 const router = Router();
 
@@ -39,6 +41,8 @@ router.use('/', publicBilling); // public share links, before any authenticated 
 router.use('/', publicBookings); // the online booking page, no login
 router.use('/', publicSupport); // the request form and tracking link, no login
 router.use('/', publicPortal); // the customer portal: its own sign-in, never a staff login
+// Development only: messages that would have gone by SMS or email (sign-in codes, invitations)
+router.get('/dev/messages', (_req, res) => { if (!isDev) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Not found.' } }); return; } res.json({ data: getDevOutbox() }); });
 router.use('/', publicPayments); // gateway webhooks (+ dev test gateway), signed, no login
 router.use('/', tenantPayments); // what the client owes AHEAD
 router.use('/', tenancyRoutes);
