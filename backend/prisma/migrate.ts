@@ -1,6 +1,7 @@
-// Applies pending Prisma migrations over Neon's WebSocket driver (port 443), for networks
-// that block Postgres port 5432. Records each migration in `_prisma_migrations` exactly like
+// Applies pending Prisma migrations. Records each migration in `_prisma_migrations` exactly like
 // `prisma migrate deploy`, so both tools can be used interchangeably.
+//   Neon:  over its WebSocket driver (port 443), for networks that block Postgres port 5432
+//   Local: over plain TCP with `pg`
 //
 //   npm run db:migrate        → this script
 //   npx prisma migrate deploy → Prisma CLI (needs port 5432)
@@ -8,17 +9,26 @@ import 'dotenv/config';
 import { createHash, randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Pool, neonConfig } from '@neondatabase/serverless';
+import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless';
+import { Pool as PgPool } from 'pg';
 import ws from 'ws';
-
-neonConfig.webSocketConstructor = ws;
-const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
-if (!url) throw new Error('DATABASE_URL is not set');
 
 const dir = join(__dirname, 'migrations');
 
-async function main() {
-  const pool = new Pool({ connectionString: url, connectionTimeoutMillis: 20_000 });
+export const isNeonUrl = (url: string) => process.env.DB_TRANSPORT !== 'tcp' && /\.neon\.tech/.test(url);
+
+// Neon's Pool follows pg's API, so both are used through pg's type
+function openPool(url: string): PgPool {
+  if (isNeonUrl(url)) {
+    neonConfig.webSocketConstructor = ws;
+    return new NeonPool({ connectionString: url, connectionTimeoutMillis: 20_000 }) as unknown as PgPool;
+  }
+  return new PgPool({ connectionString: url, connectionTimeoutMillis: 20_000 });
+}
+
+/** Apply every migration not yet recorded; returns how many ran. */
+export async function runMigrations(url: string, log: (s: string) => void = console.log): Promise<number> {
+  const pool = openPool(url);
   try {
     await pool.query(`CREATE TABLE IF NOT EXISTS "_prisma_migrations" (
       "id" VARCHAR(36) PRIMARY KEY NOT NULL,
@@ -44,8 +54,8 @@ async function main() {
       .filter((name) => !applied.has(name));
 
     if (!pending.length) {
-      console.log(`No pending migrations (${applied.size} applied).`);
-      return;
+      log(`No pending migrations (${applied.size} applied).`);
+      return 0;
     }
 
     for (const name of pending) {
@@ -59,7 +69,7 @@ async function main() {
         await client.query(sql);
         await client.query('UPDATE "_prisma_migrations" SET finished_at = now(), applied_steps_count = 1 WHERE id = $1', [id]);
         await client.query('COMMIT');
-        console.log(`✔ applied ${name}`);
+        log(`✔ applied ${name}`);
       } catch (e) {
         await client.query('ROLLBACK');
         throw new Error(`Migration ${name} failed: ${e instanceof Error ? e.message : e}`);
@@ -67,12 +77,17 @@ async function main() {
         client.release();
       }
     }
+    return pending.length;
   } finally {
     await pool.end();
   }
 }
 
-main().catch((e) => {
-  console.error(e instanceof Error ? e.message : e);
-  process.exit(1);
-});
+if (require.main === module) {
+  const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
+  if (!url) throw new Error('DATABASE_URL is not set');
+  runMigrations(url).catch((e) => {
+    console.error(e instanceof Error ? e.message : e);
+    process.exit(1);
+  });
+}

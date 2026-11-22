@@ -2,7 +2,9 @@
   "name": "backend",
   "version": "1.0.0",
   "scripts": {
-    "dev": "nodemon",
+    "dev": "tsx scripts/db-prepare.ts && nodemon",
+    "db:prepare": "tsx scripts/db-prepare.ts",
+    "db:copy-from-neon": "tsx scripts/copy-from-neon.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
