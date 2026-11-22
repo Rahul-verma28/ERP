@@ -69,7 +69,7 @@ export interface ClientDetail {
     cancelAtPeriodEnd: boolean
   } | null
   modules: { key: string; status: "active" | "read_only" | "inactive"; tier: string }[]
-  usage: { activeUsers: number; branches: number; thisMonth: Record<string, number> }
+  usage: { activeUsers: number; branches: number; thisMonth: Record<string, number>; /** Uploaded files against the plan */ storage?: { usedBytes: number; files: number; limitBytes: number | null; percent: number | null } }
   acquisition: {
     byType: AcquiredByType
     by: { id: string; name: string; email: string } | null
@@ -560,7 +560,7 @@ export interface Analytics {
 export type JobStatus = "ok" | "failed" | "late" | "running"
 export interface SystemHealth {
   summary: { jobsFailing: number; jobsLate: number; eventsWaiting: number; eventsRetrying: number; eventsFailed: number; queueStuck: boolean; webhooks: number; businessesWithErrors: number }
-  jobs: { key: string; label: string; text: string; status: JobStatus; lastRunAt: string | null; lastOkAt: string | null; lastError: string | null; runs: number; failures: number }[]
+  jobs: { key: string; label: string; text: string; /** What the last run did, e.g. "40 done, 2 failed" */ summary: string | null; status: JobStatus; lastRunAt: string | null; lastOkAt: string | null; lastError: string | null; runs: number; failures: number }[]
   failedEvents: { id: string; what: string; type: string; tenantId: string | null; business: string | null; attempts: number; error: string | null; at: string }[]
   webhooks: { id: string; gateway: string; type: string; eventId: string; error: string | null; at: string }[]
   businesses: { tenantId: string; business: string; errors: number }[]

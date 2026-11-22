@@ -14,7 +14,7 @@ import { SETTINGS } from '../contracts/settings';
 class Rollback extends Error {}
 async function rolledBack(fn: () => Promise<void>) {
   try {
-    // Long timeout: from India every query is a round trip to Neon us-east-2
+    // Long timeout: this test creates a whole business
     await withPlatform(async () => { await fn(); throw new Rollback(); }, { kind: 'platform' }, { timeoutMs: 120_000 });
   } catch (e) {
     if (!(e instanceof Rollback)) throw e;

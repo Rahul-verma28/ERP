@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { CustomerFiles, type CustomerFile } from "@/components/customer-files"
 
 // The request form a business shares: a customer says what is wrong, with their invoice or serial
 // number if they have it, and gets a request number and a private link to follow it. No login.
@@ -29,6 +30,7 @@ export default function SupportFormPage({ params }: { params: Promise<{ slug: st
   const [busy, setBusy] = React.useState(false)
   const [done, setDone] = React.useState<{ number: string; token: string } | null>(null)
   const [openArticle, setOpenArticle] = React.useState<string | null>(null)
+  const [files, setFiles] = React.useState<CustomerFile[]>([])
   React.useEffect(() => { api.get<FormData>(`/public/support/${slug}`).then(setPage).catch(() => setGone(true)) }, [slug])
   const set = (k: keyof typeof f, v: string) => { setF((x) => ({ ...x, [k]: v })); setErrors((e) => ({ ...e, [k]: "" })); setError(null) }
 
@@ -48,7 +50,7 @@ export default function SupportFormPage({ params }: { params: Promise<{ slug: st
     if (Object.keys(x).length) return
     setBusy(true)
     try {
-      setDone(await api.post(`/public/support/${slug}`, { name: f.name.trim(), phone: f.phone, email: f.email.trim() || null, category: f.category, subject: f.subject.trim(), description: f.description.trim(), invoiceNumber: f.invoiceNumber.trim() || null, serial: f.serial.trim() || null }))
+      setDone(await api.post(`/public/support/${slug}`, { name: f.name.trim(), phone: f.phone, email: f.email.trim() || null, category: f.category, subject: f.subject.trim(), description: f.description.trim(), invoiceNumber: f.invoiceNumber.trim() || null, fileIds: files.map((x) => x.id), serial: f.serial.trim() || null }))
     } catch (err) {
       if (err instanceof ApiError) setErrors(err.fields)
       setError(errorMessage(err))
@@ -108,6 +110,10 @@ export default function SupportFormPage({ params }: { params: Promise<{ slug: st
         <div className="grid gap-3 sm:grid-cols-2">
           {field("invoiceNumber", "Bill / invoice number", <Input className={input} value={f.invoiceNumber} maxLength={40} onChange={(e) => set("invoiceNumber", e.target.value)} placeholder="If you have it" />)}
           {field("serial", "Serial / IMEI number", <Input className={input} value={f.serial} maxLength={60} onChange={(e) => set("serial", e.target.value)} placeholder="For warranty" />)}
+        </div>
+        <div className="grid gap-1 text-sm">
+          <span className="font-medium">Photos or bill</span>
+          <CustomerFiles path={`/public/support/${slug}/files`} files={files} onChange={setFiles} />
         </div>
         {error && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
         <Button type="submit" disabled={busy} className="h-11 bg-emerald-600 text-white hover:bg-emerald-700">{busy ? "Sending…" : "Send request"}</Button>

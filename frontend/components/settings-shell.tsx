@@ -46,6 +46,7 @@ export const SETTINGS_GROUPS: { label: string; items: SettingsItem[] }[] = [
       { key: "inventory", label: "Inventory", href: "/app/settings/inventory", permission: "tenant.settings.view" },
       { key: "customization", label: "Customization", href: "/app/settings/customization", permission: "tenant.config.view" },
       { key: "data", label: "Data", href: "/app/settings/data", permission: "tenant.settings.view" },
+      { key: "files", label: "Files & storage", href: "/app/settings/files", permission: "tenant.file.view" },
       { key: "audit", label: "Audit log", href: "/app/settings/audit", permission: "tenant.audit.view" },
       { key: "subscription", label: "Subscription", href: "/app/billing", permission: "tenant.billing.view" },
       { key: "integrations", label: "Integrations", href: "#", permission: "tenant.settings.view", later: true },

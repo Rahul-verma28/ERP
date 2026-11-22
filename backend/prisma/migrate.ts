@@ -1,28 +1,17 @@
-// Applies pending Prisma migrations. Records each migration in `_prisma_migrations` exactly like
-// `prisma migrate deploy`, so both tools can be used interchangeably.
-//   Neon:  over its WebSocket driver (port 443), for networks that block Postgres port 5432
-//   Local: over plain TCP with `pg`
+// Applies pending Prisma migrations to PostgreSQL. Records each migration in `_prisma_migrations`
+// exactly like `prisma migrate deploy`, so both tools can be used interchangeably.
 //
-//   npm run db:migrate        → this script
-//   npx prisma migrate deploy → Prisma CLI (needs port 5432)
+//   npm run db:migrate        → this script (npm run dev and the container run it on start)
+//   npx prisma migrate deploy → Prisma CLI
 import 'dotenv/config';
 import { createHash, randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { Pool as NeonPool, neonConfig } from '@neondatabase/serverless';
 import { Pool as PgPool } from 'pg';
-import ws from 'ws';
 
 const dir = join(__dirname, 'migrations');
 
-export const isNeonUrl = (url: string) => process.env.DB_TRANSPORT !== 'tcp' && /\.neon\.tech/.test(url);
-
-// Neon's Pool follows pg's API, so both are used through pg's type
 function openPool(url: string): PgPool {
-  if (isNeonUrl(url)) {
-    neonConfig.webSocketConstructor = ws;
-    return new NeonPool({ connectionString: url, connectionTimeoutMillis: 20_000 }) as unknown as PgPool;
-  }
   return new PgPool({ connectionString: url, connectionTimeoutMillis: 20_000 });
 }
 
@@ -84,7 +73,7 @@ export async function runMigrations(url: string, log: (s: string) => void = cons
 }
 
 if (require.main === module) {
-  const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
+  const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set');
   runMigrations(url).catch((e) => {
     console.error(e instanceof Error ? e.message : e);

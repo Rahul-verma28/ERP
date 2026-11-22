@@ -17,6 +17,7 @@ import { formatPaise, formatDateTime } from "@/lib/format"
 import { cartTotals, emptyCart, type Cart, type CartLine, type PosItem, type Register, type ShiftSummary, type Tender } from "@/lib/pos"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
+import { FileImg } from "@/components/file-field"
 
 // The POS counter: scan or tap items, set the customer, take payment and print. A barcode scanner
 // types into the search box and presses Enter, so a scan adds the item at once. Keys: F2 search,
@@ -266,8 +267,7 @@ function Till({ reg, shift, onShift }: { reg: Register; shift: ShiftSummary; onS
                   return (
                     <button key={it.id} type="button" onClick={() => add(it)} className="group flex flex-col overflow-hidden rounded-xl border text-left transition-colors hover:border-primary">
                       <span className="relative grid aspect-[4/3] place-items-center bg-muted/50">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        {it.imageUrl ? <img src={it.imageUrl} alt="" className="size-full object-cover" /> : <Package className="size-7 text-muted-foreground/60" />}
+                        <FileImg value={it.imageUrl} className="size-full object-cover" fallback={<Package className="size-7 text-muted-foreground/60" />} />
                         {it.trackStock && <span className={cn("absolute top-1.5 right-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold", out ? "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300" : it.stock < 5 ? "bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300" : "bg-white/90 text-neutral-700")}>{out ? "Out" : `${Number(it.stock.toFixed(2))} ${it.unit}`}</span>}
                       </span>
                       <span className="grid gap-0.5 p-2">

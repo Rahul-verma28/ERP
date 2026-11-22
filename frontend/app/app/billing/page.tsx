@@ -14,6 +14,7 @@ import { useAuth } from "@/lib/auth"
 import { formatDate, formatNumber, formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { ModuleEntitlement, ModuleKey, PlanLimits, TenantStatus } from "@/lib/types"
+import { StorageBar, type StorageUsage } from "@/components/storage-usage"
 
 interface Plans {
   plans: { key: string; name: string; tagline: string; limits: PlanLimits; fullModules: ModuleKey[]; monthlyPaise: number | null; yearlyPaise: number | null }[]
@@ -27,7 +28,7 @@ interface Subscription {
   currentPeriodEnd: string | null
   limits: PlanLimits
   modules: Record<ModuleKey, ModuleEntitlement>
-  usage: { users: number; branches: number }
+  usage: { users: number; branches: number; storage?: StorageUsage }
 }
 
 const STATUS_LABEL: Record<TenantStatus, string> = {
@@ -84,6 +85,7 @@ export default function BillingPage() {
         <CardContent className="grid gap-4 sm:grid-cols-2">
           <Usage label="Users" used={s.usage.users} max={s.limits.users} />
           <Usage label="Branches" used={s.usage.branches} max={s.limits.branches} />
+          {s.usage.storage && <StorageBar usage={s.usage.storage} manageHref={can("tenant.file.view") ? "/app/settings/files" : null} className="sm:col-span-2" />}
         </CardContent>
       </Card>
 

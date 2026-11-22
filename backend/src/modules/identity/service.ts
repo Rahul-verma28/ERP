@@ -16,6 +16,7 @@ import { getSetting } from '../settings/service';
 import { sendMessage } from '../notifications/service';
 import { avatarLink } from '../account/service';
 import { signPurposeToken, startSession } from './tokens';
+import { publicLink } from '../../kernel/storage';
 
 const LOCK_AFTER = 5;
 const LOCK_MS = 15 * 60 * 1000;
@@ -127,7 +128,7 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
       deadline: mfa.deadline,
       mustSetUpMfa,
     },
-    memberships: memberships.map((m) => ({ tenantId: m.tenantId, name: m.tenant.name, status: m.tenant.status, logoUrl: m.tenant.logoUrl, roleName: m.role.name })),
+    memberships: memberships.map((m) => ({ tenantId: m.tenantId, name: m.tenant.name, status: m.tenant.status, logoUrl: publicLink(m.tenant.logoUrl), roleName: m.role.name })),
     /** Present only for AHEAD team members; drives the workspace switcher */
     console: consoleInfo,
     /** Console › Settings › Appearance: the look of the Console and the partner portal */
@@ -155,7 +156,7 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
       ...base,
       tenant: {
         id: tenant.id, name: tenant.name, legalName: tenant.legalName, industryKey: tenant.industryKey, status: tenant.status,
-        logoUrl: tenant.logoUrl, gstin: tenant.gstin, billingStateCode: tenant.billingStateCode, timezone: tenant.timezone, fyStartMonth: tenant.fyStartMonth,
+        logoUrl: publicLink(tenant.logoUrl), gstin: tenant.gstin, billingStateCode: tenant.billingStateCode, timezone: tenant.timezone, fyStartMonth: tenant.fyStartMonth,
         billingOwner: tenant.billingOwner, configApplied: !!tenant.configAppliedAt, needsSeatChoice: tenant.needsSeatChoice,
         isOwner: tenant.ownerUserId === userId, onboarding: tenant.onboarding, createdAt: tenant.createdAt,
         // Workspace look for every member; modules the owner chose at signup come first in the menu

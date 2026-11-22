@@ -16,6 +16,8 @@ const limiter = (windowMs: number, limit: number, keyField?: string) =>
 export const otpLimiter = limiter(10 * 60 * 1000, 5, 'target');
 export const loginLimiter = limiter(15 * 60 * 1000, 20);
 export const publicLimiter = limiter(60 * 1000, 60);
+/** Files sent by customers without a login (request form, tracking link, portal) */
+export const publicUploadLimiter = limiter(10 * 60 * 1000, 20);
 /** Signup "is this email/mobile already registered?" checks — low limit to slow down enumeration */
 export const lookupLimiter = limiter(10 * 60 * 1000, 30);
 /** My account actions that check the password or send a code: per person, not per IP */

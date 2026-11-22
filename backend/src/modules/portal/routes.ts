@@ -1,10 +1,11 @@
-import { Router, type Request } from 'express';
+import express, { Router, type Request } from 'express';
 import { z } from 'zod';
 import { withPlatform } from '../../kernel/db';
 import { IdParam } from '../../kernel/query';
 import { validate } from '../../middleware/request';
 import { publicRoute, requirePermission, tenantAuth, tx } from '../../middleware/auth';
-import { publicLimiter } from '../../middleware/rateLimit';
+import { publicLimiter, publicUploadLimiter } from '../../middleware/rateLimit';
+import { saveUpload } from '../files/service';
 import * as portal from './service';
 
 // Customer portal routes. The customer's sign-in travels in X-Portal-Token and the chosen
@@ -40,6 +41,14 @@ publicPortal.get('/public/portal/:slug/statement', publicRoute, publicLimiter, v
 publicPortal.get('/public/portal/:slug/requests', publicRoute, publicLimiter, validate(Slug, 'params'), async (req, res) => { res.json(await as(req, portal.requests)); });
 publicPortal.post('/public/portal/:slug/requests', publicRoute, publicLimiter, validate(Slug, 'params'), validate(portal.RequestInput), async (req, res) => {
   res.status(201).json(await as(req, (x) => portal.raiseRequest(x, req.body)));
+});
+// A photo or PDF for a request, uploaded before the request is sent (signed-in customers only)
+publicPortal.post('/public/portal/:slug/files', publicRoute, publicUploadLimiter, validate(Slug, 'params'), express.raw({ type: () => true, limit: '6mb' }), async (req, res) => {
+  const name = (() => { try { return decodeURIComponent(String(req.header('x-file-name') ?? 'file')); } catch { return 'file'; } })();
+  res.status(201).json(await as(req, async (x) => {
+    const f = await saveUpload({ tenantId: x.s.tenantId, userId: null, bytes: Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), name, kind: 'customer', entityType: 'ticket', field: 'attachments' });
+    return { id: f.id, name: f.name, size: f.size, mime: f.mime };
+  }));
 });
 publicPortal.get('/public/portal/:slug/bookings', publicRoute, publicLimiter, validate(Slug, 'params'), async (req, res) => { res.json(await as(req, portal.bookings)); });
 

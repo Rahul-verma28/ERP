@@ -5,6 +5,7 @@ import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import { FILE_REF } from '../../kernel/zodRules';
 import { signedFilePath, storage } from '../../kernel/storage';
+import { alertIfNearlyFull, assertRoom, type StorageUsage } from './usage';
 
 // Uploaded photos and documents. Only these types are taken, and the bytes must really be that
 // type (checked from the file's first bytes, not just its name).
@@ -17,6 +18,8 @@ export const KINDS = {
     maxBytes: 10 * 1024 * 1024,
     types: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'application/msword', 'application/vnd.ms-excel'],
   },
+  /** From customers (request form, portal): photos and PDFs only, smaller */
+  customer: { maxBytes: 5 * 1024 * 1024, types: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'] },
 } as const;
 export type FileKind = keyof typeof KINDS;
 
@@ -74,18 +77,37 @@ export async function saveUpload(opts: {
   if (opts.bytes.length > rule.maxBytes) throw new AppError('VALIDATION_FAILED', `The file is larger than ${MB(rule.maxBytes)}.`);
   const mime = sniff(opts.bytes, name);
   if (!mime || !(rule.types as readonly string[]).includes(mime)) {
-    throw new AppError('VALIDATION_FAILED', opts.kind === 'image' ? 'Use a JPG, PNG or WebP photo.' : 'Use a PDF, photo (JPG, PNG, WebP), Word or Excel file.');
+    throw new AppError('VALIDATION_FAILED', opts.kind === 'image' ? 'Use a JPG, PNG or WebP photo.' : opts.kind === 'customer' ? 'Use a photo (JPG, PNG, WebP) or a PDF.' : 'Use a PDF, photo (JPG, PNG, WebP), Word or Excel file.');
+  }
+  // The plan's file storage (Console files and profile photos have no business, and no limit)
+  let room: StorageUsage | null = null;
+  if (opts.tenantId) {
+    try {
+      room = await assertRoom(opts.tenantId, opts.bytes.length);
+    } catch (e) {
+      // A customer on the request form or portal doesn't need the business's plan details
+      if (opts.kind === 'customer' && e instanceof AppError) throw new AppError('LIMIT_REACHED', "This business can't take files right now. Send your request without them, or call them.");
+      throw e;
+    }
   }
   const id = uuidv7();
   const now = new Date();
   const storageKey = `${opts.tenantId ?? 'console'}/${now.getUTCFullYear()}/${String(now.getUTCMonth() + 1).padStart(2, '0')}/${id}`;
   await storage.put(storageKey, opts.bytes, mime);
-  const f = await db().storedFile.create({
-    data: {
-      id, tenantId: opts.tenantId, entityType: opts.entityType ?? null, entityId: opts.entityId ?? null, field: opts.field || 'attachments',
-      name, mime, sizeBytes: opts.bytes.length, sha256: createHash('sha256').update(opts.bytes).digest('hex'), storageKey, uploadedBy: opts.userId,
-    },
-  });
+  let f;
+  try {
+    f = await db().storedFile.create({
+      data: {
+        id, tenantId: opts.tenantId, entityType: opts.entityType ?? null, entityId: opts.entityId ?? null, field: opts.field || 'attachments',
+        name, mime, sizeBytes: opts.bytes.length, sha256: createHash('sha256').update(opts.bytes).digest('hex'), storageKey, uploadedBy: opts.userId,
+      },
+    });
+  } catch (e) {
+    // No row, no bytes: never leave a file on disk that nothing knows about
+    await storage.remove(storageKey).catch(() => undefined);
+    throw e;
+  }
+  if (opts.tenantId && room) await alertIfNearlyFull(opts.tenantId, room, opts.bytes.length);
   return toRow(f);
 }
 
@@ -102,6 +124,19 @@ export async function attachFiles(tenantId: string | null, userId: string, ids: 
     // Only files nobody has tied to a record yet, uploaded by this person
     where: { id: { in: ids }, tenantId, uploadedBy: userId, entityId: null },
     data: { entityType, entityId, ...(field ? { field } : {}) },
+  });
+  return count;
+}
+
+/**
+ * Files a customer uploaded (no login) on the request form or portal, tied to the request they
+ * then sent. Only this business's files, uploaded in the last day and not tied to anything yet.
+ */
+export async function attachCustomerFiles(tenantId: string, ids: string[] | undefined, entityType: string, entityId: string) {
+  if (!ids?.length) return 0;
+  const { count } = await db().storedFile.updateMany({
+    where: { id: { in: ids.slice(0, 5) }, tenantId, uploadedBy: null, entityId: null, createdAt: { gt: new Date(Date.now() - 86_400_000) } },
+    data: { entityType, entityId, field: 'attachments' },
   });
   return count;
 }

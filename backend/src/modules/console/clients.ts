@@ -11,6 +11,7 @@ import { healthFor } from './insights';
 import { clientFacts, type OnboardedKind } from './clientFacts';
 import { progressOf, readHandover } from './onboarding';
 import { pendingChange } from '../platformBilling/service';
+import { storageUsage } from '../files/usage';
 import { listArgs, listPage } from '../../kernel/query';
 
 // Console → Clients (design v2 §3). Only account metadata: plan, status, usage counts and who
@@ -217,7 +218,7 @@ export async function clientDetail(ctx: ConsoleCtx, id: string) {
       cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
     },
     modules: entitlements.map((e) => ({ key: e.moduleKey, status: e.status, tier: (e.limits as { tier?: string }).tier ?? 'basic' })),
-    usage: { activeUsers, branches, thisMonth: Object.fromEntries(usage.map((u) => [u.metric, Number(u.used)])) },
+    usage: { activeUsers, branches, thisMonth: Object.fromEntries(usage.map((u) => [u.metric, Number(u.used)])), storage: await storageUsage(id) },
     acquisition: acquisition && {
       byType: acquisition.acquiredByType,
       by: acquisition.acquiredByUserId ? people.get(acquisition.acquiredByUserId) ?? { id: acquisition.acquiredByUserId, name: 'Unknown user', email: '' } : null,

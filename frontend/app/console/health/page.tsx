@@ -74,6 +74,7 @@ export default function SystemHealthPage() {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2 font-medium">{j.label} <Chip tone={JOB_STATE[j.status].tone}>{JOB_STATE[j.status].label}</Chip></div>
                 <div className="text-xs text-muted-foreground">{j.text}</div>
+                {j.summary && <div className="mt-1 text-xs font-medium">Last run: {j.summary}</div>}
                 {j.lastError && <div className="mt-1 text-xs break-words text-destructive">{j.lastError}</div>}
               </div>
               <div className="text-xs text-muted-foreground">

@@ -1,35 +1,56 @@
-// Runs before `npm run dev`: gets a local PostgreSQL ready with no manual steps.
-//   1. The database in DATABASE_URL doesn't exist → create it
-//   2. Apply any pending migrations (the same SQL that built Neon, so tables, RLS and roles match)
-//   3. Sync reference data from code (modules, plans, permissions, roles, templates)
+// Runs before the API starts (`npm run dev`, and the container's start command): gets PostgreSQL
+// ready with no manual steps, on this computer or in the PostgreSQL container.
+//   1. Wait for the server (a container may still be starting), then create the database if missing
+//   2. Pin its time zone to UTC
+//   3. Apply any pending migrations (tables, row-level security, the app_user role, grants)
+//   4. Sync reference data from code (modules, plans, permissions, roles, templates)
 // On a database that is already up to date it only checks and moves on.
-// Neon (or any non-local URL) is left alone: there it's `npm run db:migrate` + `npm run db:seed`.
 import 'dotenv/config';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { Client } from 'pg';
-import { isNeonUrl, runMigrations } from '../prisma/migrate';
+import { runMigrations } from '../prisma/migrate';
 
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const WAIT_MS = 60_000;
+const quoteIdent = (name: string) => `"${name.replace(/"/g, '""')}"`;
+const dbName = (url: URL) => decodeURIComponent(url.pathname.replace(/^\//, ''));
+
+/** Connect, retrying while the server comes up (a fresh container takes a few seconds) */
+async function connect(connectionString: string, where: URL): Promise<Client> {
+  const until = Date.now() + WAIT_MS;
+  let said = false;
+  for (;;) {
+    const client = new Client({ connectionString, connectionTimeoutMillis: 5_000 });
+    try {
+      await client.connect();
+      return client;
+    } catch (e) {
+      await client.end().catch(() => undefined);
+      const reason = e instanceof Error ? e.message : String(e);
+      // A wrong password or missing role won't fix itself by waiting
+      if (/password|authentication|role .* does not exist/i.test(reason) || Date.now() > until) {
+        throw new Error(`Can't connect to PostgreSQL at ${where.hostname}:${where.port || 5432}. Is it running, and are the user and password in DATABASE_URL right? (${reason})`);
+      }
+      if (!said) console.log(`db: waiting for PostgreSQL at ${where.hostname}:${where.port || 5432}…`);
+      said = true;
+      await new Promise((r) => setTimeout(r, 1_000));
+    }
+  }
+}
 
 async function ensureDatabase(url: URL) {
-  const name = decodeURIComponent(url.pathname.replace(/^\//, ''));
+  const name = dbName(url);
   if (!name) throw new Error('DATABASE_URL has no database name');
-  // Connect to the server's maintenance database to look for (and make) ours
+  // The server's maintenance database, to look for (and make) ours
   const admin = new URL(url.toString());
   admin.pathname = '/postgres';
   admin.search = '';
-  const client = new Client({ connectionString: admin.toString(), connectionTimeoutMillis: 10_000 });
-  try {
-    await client.connect();
-  } catch (e) {
-    throw new Error(`Can't reach PostgreSQL at ${url.hostname}:${url.port || 5432}. Is the service running and the user/password in .env right? (${e instanceof Error ? e.message : e})`);
-  }
+  const client = await connect(admin.toString(), url);
   try {
     const { rowCount } = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [name]);
     if (rowCount) return false;
-    await client.query(`CREATE DATABASE "${name.replace(/"/g, '""')}" ENCODING 'UTF8' TEMPLATE template0`);
-    console.log(`✔ created database "${name}"`);
+    await client.query(`CREATE DATABASE ${quoteIdent(name)} ENCODING 'UTF8' TEMPLATE template0`);
+    console.log(`db: ✔ created database "${name}"`);
     return true;
   } finally {
     await client.end();
@@ -37,21 +58,20 @@ async function ensureDatabase(url: URL) {
 }
 
 /**
- * Neon runs in UTC. A local server takes the computer's zone (India), which shifts every
- * date-vs-timestamp comparison by 5½ hours, so the database is pinned to UTC like Neon.
+ * Dates are compared with timestamps all over the reports; the server's own zone (India on this
+ * computer) would shift them by 5½ hours, so the database always works in UTC.
  */
-async function matchNeonSettings(url: URL) {
-  const name = decodeURIComponent(url.pathname.replace(/^\//, ''));
-  const client = new Client({ connectionString: url.toString(), connectionTimeoutMillis: 10_000 });
-  await client.connect();
+async function pinUtc(url: URL) {
+  const name = dbName(url);
+  const client = await connect(url.toString(), url);
   try {
     const { rows } = await client.query<{ tz: string | null }>(
       `select (select s from unnest(setconfig) s where s like 'TimeZone=%') tz from pg_db_role_setting r join pg_database d on d.oid = r.setdatabase where d.datname = $1 and r.setrole = 0`,
       [name],
     );
     if (rows[0]?.tz !== 'TimeZone=UTC') {
-      await client.query(`ALTER DATABASE "${name.replace(/"/g, '""')}" SET timezone TO 'UTC'`);
-      console.log('db: time zone set to UTC (same as Neon)');
+      await client.query(`ALTER DATABASE ${quoteIdent(name)} SET timezone TO 'UTC'`);
+      console.log('db: time zone set to UTC');
     }
   } finally {
     await client.end();
@@ -61,15 +81,12 @@ async function matchNeonSettings(url: URL) {
 async function main() {
   const raw = process.env.DATABASE_URL;
   if (!raw) throw new Error('DATABASE_URL is not set');
-  if (isNeonUrl(raw)) return console.log('db: Neon in use, skipping local setup');
   const url = new URL(raw);
-  if (!LOCAL_HOSTS.has(url.hostname)) return console.log(`db: ${url.hostname} is not local, skipping local setup`);
-
   const started = Date.now();
   const created = await ensureDatabase(url);
-  await matchNeonSettings(url);
+  await pinUtc(url);
   const ran = await runMigrations(raw, (s) => console.log(`db: ${s}`));
-  // Reference data follows the code; cheap on a local database, so it runs every start
+  // Reference data follows the code; cheap, so it runs every start
   const seed = spawnSync(process.execPath, [require.resolve('tsx/cli'), join(__dirname, '..', 'prisma', 'seed.ts')], { stdio: 'inherit', env: process.env });
   if (seed.status !== 0) throw new Error('Seeding reference data failed');
   console.log(`db: ready${created ? ' (new database)' : ''}${ran ? `, ${ran} migration${ran === 1 ? '' : 's'} applied` : ''} in ${((Date.now() - started) / 1000).toFixed(1)}s`);

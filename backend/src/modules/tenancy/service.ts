@@ -11,8 +11,9 @@ import { publish } from '../events/outbox';
 import { audit } from '../audit/service';
 import { notify, sendMessage } from '../notifications/service';
 import { consumeOtp } from '../identity/otp';
-import { optionalText, zGstin, zPincode, zReason, zStateCode } from '../../kernel/zodRules';
+import { FILE_REF, optionalText, zGstin, zPincode, zReason, zStateCode } from '../../kernel/zodRules';
 import { gstinStateMismatch } from '../../contracts/validation';
+import { publicLink } from '../../kernel/storage';
 
 // Tenant administration (LLD §10.2): profile, branches, members, invitations.
 
@@ -32,6 +33,8 @@ export const Address = z.object({
  */
 const LOGO_DATA_URL = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
 const LogoInput = z.union([
+  // An uploaded logo (file storage); the two below are kept for logos saved before uploads
+  z.string().regex(FILE_REF, 'Upload the logo again'),
   z.string().regex(LOGO_DATA_URL, 'Use a PNG, JPG or WebP image').max(200_000, 'This logo is too large — use a smaller image'),
   z.string().url('Enter a full link, e.g. https://example.com').max(500).refine((v) => /^https?:\/\//.test(v), 'Use a link that starts with https://'),
 ]);
@@ -303,7 +306,7 @@ export async function invitationPreview(token: string) {
       db().role.findUniqueOrThrow({ where: { id: inv.roleId }, select: { name: true } }),
     ]);
     const existing = await db().user.findFirst({ where: { OR: [...(inv.email ? [{ email: inv.email }] : []), ...(inv.mobile ? [{ mobile: inv.mobile }] : [])] }, select: { id: true } });
-    return { tenantName: tenant.name, logoUrl: tenant.logoUrl, roleName: role.name, name: inv.name, email: inv.email, mobile: inv.mobile, hasAccount: !!existing };
+    return { tenantName: tenant.name, logoUrl: publicLink(tenant.logoUrl), roleName: role.name, name: inv.name, email: inv.email, mobile: inv.mobile, hasAccount: !!existing };
   });
 }
 

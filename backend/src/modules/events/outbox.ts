@@ -64,8 +64,16 @@ export function consumer(name: string, type: EventType, handler: Handler, opts: 
 }
 
 export const MAX_ATTEMPTS = 8;
+/** A claimed event is held this long; a relay that dies mid-way frees it for another */
+const LEASE_SECONDS = 300;
+/** Wait before try n+1: 10 s, 20 s, 40 s … up to an hour */
+const backoffSeconds = (attempts: number) => Math.min(3600, 10 * 2 ** Math.max(0, attempts - 1));
 
-/** Claim a batch of unpublished events and dispatch them. Safe with several workers. */
+/**
+ * Claim a batch of due events and dispatch them. Safe with several relays (SKIP LOCKED + lease).
+ * An event counts as published only after every consumer finished; a failure is retried later
+ * with a growing wait, and after MAX_ATTEMPTS it is kept as failed for Console › System health.
+ */
 export async function relayOnce(batchSize = 100): Promise<number> {
   const rows = await prisma.$queryRaw<
     { id: string; tenant_id: string | null; type: EventType; version: number; payload: Record<string, unknown>; actor: EventEnvelope['actor']; occurred_at: Date; attempts: number }[]
@@ -73,11 +81,13 @@ export async function relayOnce(batchSize = 100): Promise<number> {
     WITH batch AS (
       SELECT id FROM outbox_events
        WHERE published_at IS NULL
+         AND (locked_until IS NULL OR locked_until < now())
+         AND (next_attempt_at IS NULL OR next_attempt_at <= now())
        ORDER BY occurred_at
        LIMIT ${batchSize}
        FOR UPDATE SKIP LOCKED
     )
-    UPDATE outbox_events o SET published_at = now(), attempts = attempts + 1
+    UPDATE outbox_events o SET locked_until = now() + make_interval(secs => ${LEASE_SECONDS}::int), attempts = attempts + 1
       FROM batch WHERE o.id = batch.id
     RETURNING o.id, o.tenant_id, o.type, o.version, o.payload, o.actor, o.occurred_at, o.attempts`;
 
@@ -88,16 +98,21 @@ export async function relayOnce(batchSize = 100): Promise<number> {
     };
     try {
       for (const c of consumers.get(evt.type) ?? []) await c.handler(evt);
-      // A later attempt worked: the earlier error is no longer a problem
-      if (row.attempts > 1) await prisma.outboxEvent.update({ where: { id: evt.id }, data: { lastError: null } });
+      // Done: published, and any earlier error is no longer a problem
+      await prisma.outboxEvent.update({ where: { id: evt.id }, data: { publishedAt: new Date(), lockedUntil: null, nextAttemptAt: null, lastError: null } });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      console.error(`[outbox] ${evt.type} ${evt.id} failed (attempt ${row.attempts}):`, message);
-      // Retry later unless attempts are exhausted (then it stays published with last_error = dead letter)
-      await prisma.outboxEvent.update({
-        where: { id: evt.id },
-        data: { lastError: message.slice(0, 1000), publishedAt: row.attempts >= MAX_ATTEMPTS ? undefined : null },
-      });
+      const dead = row.attempts >= MAX_ATTEMPTS;
+      console.error(`[outbox] ${evt.type} ${evt.id} failed (attempt ${row.attempts}${dead ? ', giving up' : ''}):`, message);
+      // Given up: published with its error (a dead letter, shown in System health to retry or dismiss)
+      await prisma.outboxEvent
+        .update({
+          where: { id: evt.id },
+          data: dead
+            ? { lastError: message.slice(0, 1000), publishedAt: new Date(), lockedUntil: null, nextAttemptAt: null }
+            : { lastError: message.slice(0, 1000), lockedUntil: null, nextAttemptAt: new Date(Date.now() + backoffSeconds(row.attempts) * 1000) },
+        })
+        .catch((x) => console.error('[outbox] could not record the failure:', x instanceof Error ? x.message : x));
     }
   }
   return rows.length;

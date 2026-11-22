@@ -4,6 +4,7 @@ import { AppError, notFound } from '../../kernel/errors';
 import type { ConsoleCtx } from '../../kernel/context';
 import { normaliseMobile } from '../../kernel/crypto';
 import { audit } from '../audit/service';
+import { JobTally } from '../../kernel/jobs';
 import { scopedTenantFilter, teamOf } from './service';
 
 // Console › Sales (wireframe 6.5): prospects before signup, follow-ups on prospects and clients,
@@ -188,18 +189,24 @@ export async function runAutoFollowups(now = new Date()) {
     const r = await prisma.consoleFollowup.createMany({ data: [{ autoKey, tenantId, title, dueAt: now, ownerUserId: owner }], skipDuplicates: true });
     return r.count;
   };
+  const tally = new JobTally();
   let made = 0;
+  // Each follow-up on its own: one that fails is counted, the rest are still made
+  const step = (label: string, fn: () => Promise<number>) => tally.item(label, async () => { made += await fn(); });
   const trials = await prisma.tenant.findMany({ where: { status: 'trialing', isInternal: false, createdAt: { lt: new Date(now.getTime() - 3 * DAY) } }, select: { id: true, subscription: { select: { trialEndsAt: true } } } });
   const invoiced = new Set((await prisma.salesDocument.groupBy({ by: ['tenantId'], where: { tenantId: { in: trials.map((t) => t.id) }, kind: 'invoice', number: { not: null } } })).map((x) => x.tenantId));
   for (const t of trials) {
-    if (!invoiced.has(t.id)) made += await make(`noinvoice:${t.id}`, t.id, 'No invoice 3 days after signup — offer a setup call');
+    if (!invoiced.has(t.id)) await step(`no invoice · business ${t.id}`, () => make(`noinvoice:${t.id}`, t.id, 'No invoice 3 days after signup — offer a setup call'));
     const end = t.subscription?.trialEndsAt;
-    if (end && end.getTime() - now.getTime() < 3 * DAY && end > now) made += await make(`trialend:${t.id}:${end.toISOString().slice(0, 10)}`, t.id, 'Trial ends in 3 days — talk about a plan');
+    if (end && end.getTime() - now.getTime() < 3 * DAY && end > now) await step(`trial ending · business ${t.id}`, () => make(`trialend:${t.id}:${end.toISOString().slice(0, 10)}`, t.id, 'Trial ends in 3 days — talk about a plan'));
   }
   const unpaid = await prisma.platformOrder.findMany({ where: { status: 'awaiting_payment', createdAt: { lt: new Date(now.getTime() - 7 * DAY) } }, select: { id: true, tenantId: true } });
-  for (const o of unpaid) made += await make(`unpaid:${o.id}`, o.tenantId, 'Order unpaid for 7 days — send the payment link again');
-  const linked = await withPlatform(() => linkProspectsToTenants());
-  return { made, linked };
+  for (const o of unpaid) await step(`unpaid order ${o.id}`, () => make(`unpaid:${o.id}`, o.tenantId, 'Order unpaid for 7 days — send the payment link again'));
+  let linked = 0;
+  await tally.item('link leads to businesses', async () => { linked = Number(await withPlatform(() => linkProspectsToTenants())) || 0; });
+  tally.note(made > 0 && `${made} follow-up${made === 1 ? '' : 's'} made`);
+  tally.note(linked > 0 && `${linked} lead${linked === 1 ? '' : 's'} linked`);
+  return tally;
 }
 
 // ── Notes ──

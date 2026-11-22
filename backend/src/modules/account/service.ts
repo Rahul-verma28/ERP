@@ -6,7 +6,7 @@ import { AppError } from '../../kernel/errors';
 import { hashPassword, randomToken, sha256, verifyPassword } from '../../kernel/crypto';
 import { describePasswordPolicy, passwordPolicyError, personalWithDefaults, type PersonalPreferences } from '../../contracts/account';
 import { audit } from '../audit/service';
-import { signedFilePath } from '../../kernel/storage';
+import { signedFilePath, publicLink } from '../../kernel/storage';
 import { sendMessage } from '../notifications/service';
 import { consumeOtp, sendOtp } from '../identity/otp';
 import { signPurposeToken, verifyPurposeToken } from '../identity/tokens';
@@ -73,7 +73,7 @@ export async function accountOverview(userId: string, sessionId: string) {
       passwordPolicyWhere: policy.passwordSetWhere,
     },
     businesses: memberships.map((m) => ({
-      tenantId: m.tenantId, name: m.tenant.name, status: m.tenant.status, logoUrl: m.tenant.logoUrl,
+      tenantId: m.tenantId, name: m.tenant.name, status: m.tenant.status, logoUrl: publicLink(m.tenant.logoUrl),
       roleKey: m.role.key, roleName: m.role.name, isOwner: m.tenant.ownerUserId === userId, joinedAt: m.joinedAt,
     })),
     currentFamilyId: current?.familyId ?? null,

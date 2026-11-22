@@ -17,6 +17,7 @@ import { categoryColour, type Category, type Item } from "@/lib/catalog"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
+import { FileImg } from "@/components/file-field"
 
 const PRESETS: ViewPreset[] = [
   { key: "all", label: "All", params: {}, countKey: "all" },
@@ -63,8 +64,7 @@ export default function ItemsPage() {
       cell: (r) => (
         <span className="flex items-center gap-3">
           <span className="grid size-11 shrink-0 place-items-center overflow-hidden rounded-xl border bg-muted/40">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            {r.imageUrl ? <img src={r.imageUrl} alt="" className="size-full object-cover" /> : <Package className="size-5 text-muted-foreground" aria-hidden />}
+            <FileImg value={r.imageUrl} className="size-full object-cover" fallback={<Package className="size-5 text-muted-foreground" aria-hidden />} />
           </span>
           <span className="min-w-0">
             <span className="block font-medium">{r.name}{!r.isActive && <Badge variant="outline" className="ml-2">Inactive</Badge>}</span>

@@ -1,10 +1,11 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { z } from 'zod';
 import { withPlatform } from '../../kernel/db';
 import { DateStr, IdParam } from '../../kernel/query';
 import { validate } from '../../middleware/request';
 import { publicRoute, requirePermission, tenantAuth, tx } from '../../middleware/auth';
-import { publicLimiter } from '../../middleware/rateLimit';
+import { publicLimiter, publicUploadLimiter } from '../../middleware/rateLimit';
+import { saveUpload } from '../files/service';
 import * as sp from './service';
 
 // Customer Service (SUP-01…SUP-06): tickets, replies, the knowledge base, setup and the report;
@@ -19,6 +20,17 @@ publicSupport.post('/public/support/:slug', publicRoute, publicLimiter, validate
   res.status(201).json(await withPlatform(() => sp.publicCreate(String(req.params.slug), req.body)));
 });
 const Token = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{20,40}$/) });
+// A photo or PDF the customer adds before sending the form or a reply (5 MB, photos and PDFs only)
+const rawFile = express.raw({ type: () => true, limit: '6mb' });
+const fileName = (req: express.Request) => { try { return decodeURIComponent(String(req.header('x-file-name') ?? 'file')); } catch { return 'file'; } };
+const customerUpload = (tenantId: string, req: express.Request) =>
+  saveUpload({ tenantId, userId: null, bytes: Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), name: fileName(req), kind: 'customer', entityType: 'ticket', field: 'attachments' }).then((f) => ({ id: f.id, name: f.name, size: f.size, mime: f.mime }));
+publicSupport.post('/public/support/:slug/files', publicRoute, publicUploadLimiter, rawFile, async (req, res) => {
+  res.status(201).json(await withPlatform(async () => customerUpload((await sp.bySlug(String(req.params.slug))).tenantId, req)));
+});
+publicSupport.post('/public/requests/:token/files', publicRoute, publicUploadLimiter, validate(Token, 'params'), rawFile, async (req, res) => {
+  res.status(201).json(await withPlatform(async () => customerUpload(await sp.ticketTenant(String(req.params.token)), req)));
+});
 publicSupport.get('/public/requests/:token', publicRoute, publicLimiter, validate(Token, 'params'), async (req, res) => {
   res.json(await withPlatform(() => sp.publicTicket(String(req.params.token))));
 });

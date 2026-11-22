@@ -1,6 +1,6 @@
 # AHEAD ERP
 
-Multi-tenant ERP + CRM SaaS for Indian SMBs. Next.js frontend, Express + TypeScript API, PostgreSQL (Neon) with row-level security, Prisma ORM.
+Multi-tenant ERP + CRM SaaS for Indian SMBs. Next.js frontend, Express + TypeScript API, PostgreSQL with row-level security, Prisma ORM.
 
 - Build plan and status: [TASKS.md](TASKS.md)
 - Design source: PRD v1, LLD v1 (Platform Core), Roles & Permissions, Onboarding/Trial/Payment Flow, Module Catalogue
@@ -34,10 +34,8 @@ backend/src/
 ```bash
 cd backend
 npm install
-cp .env.example .env   # fill DATABASE_URL, DATABASE_URL_UNPOOLED, JWT_SECRET, PEPPER
-npm run db:migrate     # applies schema + RLS policies (over port 443; `db:migrate:tcp` uses the Prisma CLI on 5432)
-npm run db:seed        # modules, plans, permissions, roles, industry templates
-npm run dev
+cp .env.example .env   # fill DATABASE_URL (local PostgreSQL), JWT_SECRET, PEPPER
+npm run dev            # creates the database if missing, migrates, seeds, then starts the API
 ```
 Runs at `http://localhost:5000` (health: `/api/v1/health`).
 
@@ -50,6 +48,13 @@ npm install
 npm run dev
 ```
 Runs at `http://localhost:3000`. Requests to `/api/v1/*` are proxied to the backend (`BACKEND_URL`, default `http://localhost:5000`).
+
+### Docker (production)
+```bash
+cp .env.docker.example .env   # passwords and secrets
+docker compose up -d --build   # PostgreSQL, API + worker, web app
+```
+The API container waits for PostgreSQL, creates and migrates the database, then starts. Uploaded files are kept in the `uploads` volume, the database in `pgdata`.
 
 ### Troubleshooting
 - `GET /api/v1/health` reports `database: up/down`. If the database is unreachable the API answers 503 `PROVIDER_UNAVAILABLE` and the web app shows a reconnect screen instead of signing you out.

@@ -16,6 +16,7 @@ import { gstinStateMismatch } from '../../contracts/validation';
 import { withDefaults, type WorkspaceProfile } from '../../contracts/workspace';
 import { defaultLocation, postDocumentStock, reverseSource } from '../inventory/engine';
 import { resolveAccount } from '../finance/service';
+import { publicLink } from '../../kernel/storage';
 
 // Sales documents: quotations (SAL-01) and GST tax invoices (BIL-01..04) share one engine.
 
@@ -308,7 +309,7 @@ export async function issueInvoice(ctx: TenantCtx, id: string, opts: { skipCredi
   const pay = prefs.payments;
   const seller = {
     name: tenant.name, legalName: tenant.legalName, gstin: branch?.gstin ?? tenant.gstin,
-    stateCode: branch?.stateCode ?? tenant.billingStateCode, address: branch?.address ?? tenant.address, logoUrl: tenant.logoUrl,
+    stateCode: branch?.stateCode ?? tenant.billingStateCode, address: branch?.address ?? tenant.address, logoUrl: publicLink(tenant.logoUrl),
     phone: profile.phone ?? null, email: profile.email ?? null, brandColor: prefs.branding.brandColor,
     // Frozen with the invoice, so later bank changes never alter an issued invoice
     bank: pay.bankAccount ? { holder: pay.bankHolder, account: pay.bankAccount, ifsc: pay.ifsc } : null,

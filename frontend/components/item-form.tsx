@@ -26,6 +26,7 @@ import { GST_RATES } from "@/lib/money"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
 import { PageLoading } from "@/components/page-states"
+import { FileImg } from "@/components/file-field"
 
 const BLANK = { type: "product" as Item["type"], name: "", sku: "", categoryId: "", unit: "pcs", pricePaise: null as number | null, costPricePaise: null as number | null, gstRateBp: 1800, hsnSac: "", durationMin: "", description: "", imageUrl: null as string | null, trackStock: true, reorderLevel: "", tracking: "none" as NonNullable<Item["tracking"]>, altUnit: "", altFactor: "", barcode: "", openingQty: "", locationId: "", custom: {} as Record<string, unknown> }
 type Form = typeof BLANK
@@ -90,12 +91,7 @@ function Preview({ form, category }: { form: Form; category?: string }) {
       </div>
       <div className="ui-surface overflow-hidden">
         <div className="grid h-48 place-items-center bg-muted/50">
-          {form.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={form.imageUrl} alt="" className="h-full w-full object-contain p-3" />
-          ) : (
-            <span className="grid justify-items-center gap-1 text-sm text-muted-foreground"><Package className="size-9" aria-hidden />No image</span>
-          )}
+          <FileImg value={form.imageUrl} className="h-full w-full object-contain p-3" fallback={<span className="grid justify-items-center gap-1 text-sm text-muted-foreground"><Package className="size-9" aria-hidden />No image</span>} />
         </div>
         <div className="grid gap-3 p-4">
           <div className="flex flex-wrap gap-1.5">

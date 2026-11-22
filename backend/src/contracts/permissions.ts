@@ -40,6 +40,8 @@ export const PERMISSION_CATALOG: Record<PermissionModule, ResourceDef[]> = {
     { resource: 'role', label: 'Roles', actions: CRUD },
     { resource: 'config', label: 'Custom fields & terminology', actions: ['view', 'edit'] },
     { resource: 'audit', label: 'Audit log', actions: ['view'] },
+    // Every uploaded file of the business (HR papers, KYC, bills): Owner and Admin only by default
+    { resource: 'file', label: 'Files & storage', actions: ['view', 'delete'] },
     { resource: 'data', label: 'Data export', actions: ['export'] },
     { resource: 'billing', label: 'Subscription & billing', actions: ['view', 'edit'] },
     { resource: 'account', label: 'Close account', actions: ['delete'] },

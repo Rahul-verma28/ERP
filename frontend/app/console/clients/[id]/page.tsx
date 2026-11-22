@@ -320,10 +320,11 @@ function UsageCards({ client: c }: { client: ClientDetail }) {
     { label: "Users", used: c.usage.activeUsers, max: limits?.users, hint: "Active people" },
     { label: "Branches", used: c.usage.branches, max: limits?.branches },
     { label: "Invoices this month", used: c.usage.thisMonth.invoices ?? 0, max: limits?.invoicesPerMonth },
+    ...(c.usage.storage ? [{ label: "File storage (MB)", used: Math.round(c.usage.storage.usedBytes / 104857.6) / 10, max: c.usage.storage.limitBytes == null ? null : Math.round(c.usage.storage.limitBytes / 1048576), hint: `${c.usage.storage.files} file${c.usage.storage.files === 1 ? "" : "s"}` }] : []),
     { label: "Modules on", used: c.modules.filter((m) => m.status === "active").length, max: c.modules.length, hint: c.modules.some((m) => m.status === "read_only") ? "Some are view only" : undefined },
   ]
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {cards.map((k) => {
         const pct = k.max ? Math.min(100, Math.round((k.used / k.max) * 100)) : 0
         return (

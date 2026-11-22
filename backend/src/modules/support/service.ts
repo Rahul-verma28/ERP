@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { Prisma, type SupportTicket } from '@prisma/client';
 import { db } from '../../kernel/db';
+import { attachCustomerFiles, listFiles } from '../files/service';
 import { bundle, userNames, userPart, type Row } from '../../kernel/bundle';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
@@ -10,6 +11,7 @@ import { todayIST } from '../../kernel/gst';
 import { getRolePermissions } from '../access/service';
 import { notify } from '../notifications/service';
 import { audit } from '../audit/service';
+import { publicLink } from '../../kernel/storage';
 
 // Customer Service (SUP-01…SUP-06): tickets with a conversation, SLA timers per priority, warranty
 // lookup from the sale, customer ratings, a knowledge base with saved replies, and a public form
@@ -184,13 +186,14 @@ export const TicketList = z.object({
 
 const ownSql = (ctx: TenantCtx) => scopeSql(ctx, ['t.assignee_id', 't.created_by']);
 
-/** Resolved tickets close themselves after the set days */
-async function autoClose(ctx: TenantCtx, days: number) {
+/** Resolved tickets close themselves after the set days (on opening the list, and hourly) */
+export async function autoClose(ctx: Pick<TenantCtx, 'tenantId'>, days: number) {
   if (!days) return;
   const ids = await db().$queryRaw<{ id: string }[]>`
     update support_tickets set status = 'closed', closed_at = now(), updated_at = now(), version = version + 1
     where tenant_id = ${ctx.tenantId}::uuid and status = 'resolved' and resolved_at < now() - make_interval(days => ${days}::int) returning id`;
   for (const r of ids) await event({ tenantId: ctx.tenantId }, r.id, 'closed', { auto: true });
+  return ids.length;
 }
 
 export async function listTickets(ctx: TenantCtx, q: z.infer<typeof TicketList>) {
@@ -462,7 +465,8 @@ export async function deleteArticle(ctx: TenantCtx, id: string) {
 
 // ---------------------------------------------------------------- public form and tracking
 
-async function bySlug(slug: string) {
+/** The business behind an enabled request form (also for its file uploads) */
+export async function bySlug(slug: string) {
   const s = await db().supportSettings.findUnique({ where: { slug } });
   if (!s || !s.formEnabled) throw notFound('Request form');
   return s;
@@ -471,11 +475,11 @@ async function bySlug(slug: string) {
 export async function publicForm(slug: string) {
   const s = await bySlug(slug);
   const settings = await getSettings({ tenantId: s.tenantId });
-  const t = await db().tenant.findUnique({ where: { id: s.tenantId }, select: { name: true, profile: true } });
+  const t = await db().tenant.findUnique({ where: { id: s.tenantId }, select: { name: true, profile: true, logoUrl: true } });
   const profile = (t?.profile ?? {}) as { address?: Record<string, string>; phone?: string; logoUrl?: string };
   const articles = await db().kbArticle.findMany({ where: { tenantId: s.tenantId, kind: 'article', published: true }, orderBy: { uses: 'desc' }, take: 6, select: { id: true, title: true, body: true } });
   return {
-    business: { name: t?.name ?? '', phone: profile.phone ?? null, city: profile.address?.city ?? null, logoUrl: profile.logoUrl ?? null },
+    business: { name: t?.name ?? '', phone: profile.phone ?? null, city: profile.address?.city ?? null, logoUrl: publicLink(t?.logoUrl) },
     title: settings.title, intro: settings.intro, categories: settings.categories.map((c) => ({ key: c.key, label: c.label })), articles,
   };
 }
@@ -489,6 +493,8 @@ export const PublicTicketInput = z.object({
   description: z.string().trim().min(10, 'Tell us a little more (at least 10 letters)').max(3000),
   invoiceNumber: z.string().trim().max(40).nullish(),
   serial: z.string().trim().max(60).nullish(),
+  /** Photos or PDFs uploaded on the form first (POST /public/support/:slug/files) */
+  fileIds: z.array(z.string().uuid()).max(5).default([]),
 });
 
 export async function publicCreate(slug: string, b: z.infer<typeof PublicTicketInput>) {
@@ -503,25 +509,36 @@ export async function publicCreate(slug: string, b: z.infer<typeof PublicTicketI
     subject: b.subject, description: b.description, contactId: contact?.id ?? null, guestName: contact ? null : b.name, guestPhone: contact ? null : b.phone, guestEmail: contact ? null : b.email ?? null,
     channel: 'web', category: b.category, priority: 'medium', invoiceId: invoice?.id ?? null, serial: b.serial ?? null,
   }), { by: 'customer' });
+  await attachCustomerFiles(s.tenantId, b.fileIds, 'ticket', t.id);
   if (b.invoiceNumber && !invoice) await db().supportMessage.create({ data: { tenantId: s.tenantId, ticketId: t.id, kind: 'note', authorName: 'System', body: `The customer gave invoice number ${b.invoiceNumber}, which was not found.` } });
   return { number: t.number, token: t.publicToken };
 }
 
 /** What the customer sees on their private link: the status, the replies (never internal notes) */
+/** The business of an open request, by its tracking token (for the customer's file uploads) */
+export async function ticketTenant(tok: string) {
+  const t = await db().supportTicket.findUnique({ where: { publicToken: tok }, select: { tenantId: true, status: true } });
+  if (!t) throw notFound('Request');
+  if (t.status === 'closed') throw new AppError('CONFLICT', 'This request is closed. Please raise a new one.');
+  return t.tenantId;
+}
+
 export async function publicTicket(tok: string) {
   const t = await db().supportTicket.findUnique({ where: { publicToken: tok } });
   if (!t) throw notFound('Request');
-  const [settings, tenant, msgs] = await Promise.all([
+  const [settings, tenant, msgs, files] = await Promise.all([
     getSettings({ tenantId: t.tenantId }),
-    db().tenant.findUnique({ where: { id: t.tenantId }, select: { name: true, profile: true } }),
+    db().tenant.findUnique({ where: { id: t.tenantId }, select: { name: true, profile: true, logoUrl: true } }),
     db().supportMessage.findMany({ where: { ticketId: t.id, kind: { in: ['reply', 'customer', 'event'] } }, orderBy: { createdAt: 'asc' } }),
+    listFiles(t.tenantId, 'ticket', t.id),
   ]);
   const profile = (tenant?.profile ?? {}) as { phone?: string; logoUrl?: string };
   return {
-    business: { name: tenant?.name ?? '', phone: profile.phone ?? null, logoUrl: profile.logoUrl ?? null },
+    business: { name: tenant?.name ?? '', phone: profile.phone ?? null, logoUrl: publicLink(tenant?.logoUrl) },
     number: t.number, subject: t.subject, status: t.status, statusLabel: STATUS_WORD[t.status as Status], createdAt: t.createdAt, resolvedAt: t.resolvedAt,
     category: settings.categories.find((c) => c.key === t.category)?.label ?? t.category, rating: t.rating, feedback: t.feedback,
     canRate: settings.askRating && DONE.includes(t.status as Status) && !t.rating, canReply: t.status !== 'closed',
+    files: files.map((f) => ({ id: f.id, name: f.name, mime: f.mime, size: f.size, url: f.url })),
     messages: msgs.filter((m) => m.kind !== 'event' || ['status', 'reopened', 'raised', 'created'].includes(m.body ?? '')).map((m) => ({
       id: m.id, kind: m.kind, at: m.createdAt, body: m.kind === 'event' ? (m.body === 'raised' || m.body === 'created' ? 'Request received' : `Now: ${STATUS_WORD[((m.meta ?? {}) as { to?: Status }).to ?? 'open']}`) : m.body,
       from: m.kind === 'customer' ? 'You' : m.kind === 'reply' ? tenant?.name ?? 'Support' : null,
@@ -529,13 +546,14 @@ export async function publicTicket(tok: string) {
   };
 }
 
-export const PublicReplyInput = z.object({ body: z.string().trim().min(2, 'Write something').max(3000) });
+export const PublicReplyInput = z.object({ body: z.string().trim().min(2, 'Write something').max(3000), fileIds: z.array(z.string().uuid()).max(5).default([]) });
 
 export async function publicReply(tok: string, b: z.infer<typeof PublicReplyInput>) {
   const t = await db().supportTicket.findUnique({ where: { publicToken: tok } });
   if (!t) throw notFound('Request');
   if (t.status === 'closed') throw new AppError('CONFLICT', 'This request is closed. Please raise a new one.');
   await db().supportMessage.create({ data: { tenantId: t.tenantId, ticketId: t.id, kind: 'customer', body: b.body, authorName: t.guestName ?? 'Customer' } });
+  await attachCustomerFiles(t.tenantId, b.fileIds, 'ticket', t.id);
   // A reply on a resolved or waiting request brings it back to the team
   if (t.status !== 'open' && t.status !== 'new') {
     const reopen = DONE.includes(t.status as Status);

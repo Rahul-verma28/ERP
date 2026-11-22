@@ -15,6 +15,7 @@ import { useForm } from "@/lib/use-form"
 import { UpiQr } from "@/components/upi-qr"
 import { cn } from "@/lib/utils"
 import { StepFooter, StepHeader, type StepProps } from "./wizard"
+import { FileImg } from "@/components/file-field"
 
 /** "26-27" for today in India with the business's FY start month. */
 export function currentFy(startMonth: number) {
@@ -174,8 +175,7 @@ export function InvoicePreview({
         <div className={cn("flex items-start justify-between gap-3", t === "modern" && "-mx-4 -mt-4 rounded-t-xl p-4 text-white")} style={t === "modern" ? { background: brand ?? "#2450D8" } : undefined}>
           <div className="flex items-center gap-2">
             {tenant.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={tenant.logoUrl} alt="" className="size-8 rounded object-contain" />
+              <FileImg value={tenant.logoUrl} className="size-8 rounded object-contain" />
             ) : (
               <span className="grid size-8 place-items-center rounded-md text-[10px] font-bold text-white" style={{ background: t === "modern" ? "rgba(255,255,255,.2)" : (brand ?? "#2450D8") }}>
                 {initials(tenant.name)}

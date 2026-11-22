@@ -11,6 +11,7 @@ import { zPhone, zFileRef } from '../../kernel/zodRules';
 import { notify } from '../notifications/service';
 import { audit } from '../audit/service';
 import { createDocument } from '../billing/service';
+import { publicLink } from '../../kernel/storage';
 
 // Calendar & Bookings: appointments with customer, service, staff and room; services with length,
 // gap and who can do them; rooms, chairs and machines; staff working hours and time off; free slots;
@@ -603,13 +604,13 @@ export async function publicPage(slug: string) {
   if (!s || !s.enabled) throw notFound('Booking page');
   const t = s.tenantId;
   const b = await bundle({
-    tenant: Prisma.sql`select name, profile from tenants where id = ${t}::uuid`,
+    tenant: Prisma.sql`select name, profile, logo_url from tenants where id = ${t}::uuid`,
     services: Prisma.sql`select i.id, i.name, i.description, i.price_paise, coalesce(s.duration_min, i.duration_min, 30) as duration_min, s.staff_ids from items i left join booking_services s on s.item_id = i.id and s.tenant_id = i.tenant_id where i.tenant_id = ${t}::uuid and i.type = 'service' and i.is_active and coalesce(s.online, true) and coalesce(s.is_active, true) order by i.name`,
     people: Prisma.sql`select u.id, u.name from tenant_members m join users u on u.id = m.user_id where m.tenant_id = ${t}::uuid and m.status = 'active' order by u.name`,
   });
   const profile = (b.tenant[0]?.profile ?? {}) as { address?: Record<string, string>; phone?: string; logoUrl?: string };
   return {
-    business: { name: b.tenant[0]?.name, phone: profile.phone ?? null, city: profile.address?.city ?? null, logoUrl: profile.logoUrl ?? null },
+    business: { name: b.tenant[0]?.name, phone: profile.phone ?? null, city: profile.address?.city ?? null, logoUrl: publicLink((b.tenant[0]?.logoUrl as string | null) ?? null) },
     title: s.title, intro: s.intro, maxDaysAhead: s.maxDaysAhead,
     services: b.services.map((x) => ({ id: x.id, name: x.name, description: x.description, pricePaise: big(x.pricePaise), durationMin: x.durationMin, staffIds: x.staffIds ?? [] })),
     staff: b.people.map((p) => ({ id: p.id, name: p.name })),

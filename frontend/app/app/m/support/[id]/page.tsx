@@ -19,6 +19,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatDateTime, formatPaise } from "@/lib/format"
 import { CHANNEL, OPEN_STATUSES, PRIORITY, STATUS, categoryOf, duration, slaText, useAgents, useSupportSettings, waLink, type Article, type Message, type Ticket, type TicketPriority, type TicketStatus } from "@/lib/support"
 import { cn } from "@/lib/utils"
+import { AttachmentsField } from "@/components/file-field"
 
 // One ticket: the conversation with the customer (and the team's internal notes), the SLA clocks,
 // who has it, the product and its warranty, and its history. Reply, take it, put it on hold or
@@ -199,6 +200,9 @@ function TicketPage() {
               <Thread t={t} agent={agent} />
             </Section>
             {canEdit && <ReplyBox t={t} onSent={() => void reload()} />}
+            <Section title="Files" description="Photos and papers from the customer and your team">
+              <AttachmentsField entityType="ticket" entityId={t.id} disabled={!canEdit} prompt="Add photos or files" />
+            </Section>
           </div>
           <div className="grid content-start gap-4">
             <Section title="Customer" action={t.customer.id ? <Link href={t.customer.type === "lead" ? `/app/m/crm/${t.customer.id}` : `/app/m/sales/customers/${t.customer.id}`} className={buttonVariants({ variant: "ghost", size: "sm" })}>Open</Link> : <span className="text-xs text-muted-foreground">Not in your customers</span>}>

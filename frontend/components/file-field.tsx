@@ -308,3 +308,11 @@ export async function attachPending(files: UploadedFile[] | undefined, entityTyp
     toast.error(`Saved, but the files couldn't be added: ${errorMessage(e)}`)
   }
 }
+
+/** A saved photo or logo: an uploaded file ("file:<id>"), an old data image or a link */
+export function FileImg({ value, alt = "", className, fallback = null }: { value: string | null | undefined; alt?: string; className?: string; fallback?: React.ReactNode }) {
+  const { link } = useFileLink(value)
+  if (!value || !link) return <>{fallback}</>
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={link.url} alt={alt} className={className} />
+}

@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { Prisma } from '@prisma/client';
 import { env, isDev } from '../../config/env';
 import { db } from '../../kernel/db';
+import { attachCustomerFiles } from '../files/service';
 import { bundle } from '../../kernel/bundle';
 import { AppError, notFound } from '../../kernel/errors';
 import { randomToken } from '../../kernel/crypto';
@@ -14,6 +15,7 @@ import { signPurposeToken, verifyPurposeToken } from '../identity/tokens';
 import { customerLedger } from '../billing/ledger';
 import { audit } from '../audit/service';
 import * as support from '../support/service';
+import { publicLink } from '../../kernel/storage';
 
 // Customer portal (CUS-01…CUS-05): a business's customers open /portal/<link>, sign in with their
 // mobile number (a code by SMS) or a link the business sent, and see their bills and quotations,
@@ -99,10 +101,10 @@ function signSession(s: Session) {
 
 export async function publicInfo(slug: string) {
   const s = await bySlug(slug);
-  const t = await db().tenant.findUniqueOrThrow({ where: { id: s.tenantId }, select: { name: true, profile: true } });
+  const t = await db().tenant.findUniqueOrThrow({ where: { id: s.tenantId }, select: { name: true, profile: true, logoUrl: true } });
   const p = (t.profile ?? {}) as { phone?: string; logoUrl?: string; address?: Record<string, string>; email?: string };
   return {
-    business: { name: t.name, phone: p.phone ?? null, email: p.email ?? null, city: p.address?.city ?? null, logoUrl: p.logoUrl ?? null },
+    business: { name: t.name, phone: p.phone ?? null, email: p.email ?? null, city: p.address?.city ?? null, logoUrl: publicLink(t.logoUrl) },
     title: s.title, intro: s.intro,
     parts: { bills: s.showBills, quotes: s.showQuotes, statement: s.showStatement, requests: s.showRequests, bookings: s.showBookings },
   };
@@ -253,12 +255,15 @@ export const RequestInput = z.object({
   description: z.string().trim().min(10, 'Tell us a little more (at least 10 letters)').max(3000),
   invoiceId: z.string().uuid().nullish(),
   serial: z.string().trim().max(60).nullish(),
+  /** Photos or PDFs uploaded first (POST /public/portal/:slug/files) */
+  fileIds: z.array(z.string().uuid()).max(5).default([]),
 });
 
 export async function raiseRequest(x: Sess, b: z.infer<typeof RequestInput>) {
   if (!x.s.showRequests) throw new AppError('PERMISSION_DENIED', 'Please call the business.');
   if (b.invoiceId && !(await db().salesDocument.findFirst({ where: { id: b.invoiceId, tenantId: x.s.tenantId, contactId: x.c.id }, select: { id: true } }))) throw notFound('Bill');
   const t = await support.createTicket(x.ctx, support.TicketInput.parse({ subject: b.subject, description: b.description, contactId: x.c.id, channel: 'web', category: b.category, priority: 'medium', invoiceId: b.invoiceId ?? null, serial: b.serial ?? null }), { by: 'customer' });
+  await attachCustomerFiles(x.s.tenantId, b.fileIds, 'ticket', t.id);
   return { number: t.number, token: t.publicToken };
 }
 

@@ -9,6 +9,7 @@ import { ApiError, errorMessage } from "@/lib/api"
 import { formatPaise } from "@/lib/format"
 import { DOC_KIND, DOC_STATUS, REQ_STATUS, loadSession, portalApi, saveSession, type Account, type Booking, type Doc, type Home, type PortalInfo, type PortalSession, type Request } from "@/lib/portal"
 import { cn } from "@/lib/utils"
+import { CustomerFiles, type CustomerFile } from "@/components/customer-files"
 
 // The customer portal a business shares: sign in with a mobile number (a code by SMS) or the link
 // the business sent; then the customer's dues and bills (open, print, pay by UPI), quotations to
@@ -285,6 +286,7 @@ function RequestsTab({ slug, session }: { slug: string; session: PortalSession }
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [done, setDone] = React.useState<string | null>(null)
+  const [files, setFiles] = React.useState<CustomerFile[]>([])
   const load = React.useCallback(() => portalApi<{ data: Request[]; categories: { key: string; label: string }[] }>(slug, "/requests", { session }).then(setRes).catch((e) => setError(errorMessage(e))), [slug, session])
   React.useEffect(() => { void load(); portalApi<{ data: Doc[] }>(slug, "/documents", { session }).then((r) => setBills(r.data.filter((d) => d.kind === "invoice"))).catch(() => undefined) }, [load, slug, session])
   async function submit(e: React.FormEvent) {
@@ -298,8 +300,8 @@ function RequestsTab({ slug, session }: { slug: string; session: PortalSession }
     if (Object.keys(x).length) return
     setBusy(true); setError(null)
     try {
-      const r = await portalApi<{ number: string }>(slug, "/requests", { session, method: "POST", body: { category: f.category, subject: f.subject.trim(), description: f.description.trim(), invoiceId: f.invoiceId || null } })
-      setDone(r.number); setForm(null); await load()
+      const r = await portalApi<{ number: string }>(slug, "/requests", { session, method: "POST", body: { category: f.category, subject: f.subject.trim(), description: f.description.trim(), invoiceId: f.invoiceId || null, fileIds: files.map((x) => x.id) } })
+      setDone(r.number); setForm(null); setFiles([]); await load()
     } catch (err) { if (err instanceof ApiError) setErrors(err.fields); setError(errorMessage(err)) } finally { setBusy(false) }
   }
   if (!res) return error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : <Loading />
@@ -313,8 +315,9 @@ function RequestsTab({ slug, session }: { slug: string; session: PortalSession }
           <label className="grid gap-1 text-sm"><span className="font-medium">In one line <span className="text-rose-600">*</span></span><Input className="h-10 bg-white" maxLength={200} value={form.subject} onChange={(e) => { setForm({ ...form, subject: e.target.value }); setErrors({}) }} />{errors.subject && <span className="text-xs text-rose-600">{errors.subject}</span>}</label>
           <label className="grid gap-1 text-sm"><span className="font-medium">Details <span className="text-rose-600">*</span></span><Textarea rows={4} className="bg-white" maxLength={3000} value={form.description} onChange={(e) => { setForm({ ...form, description: e.target.value }); setErrors({}) }} />{errors.description && <span className="text-xs text-rose-600">{errors.description}</span>}</label>
           {bills.length > 0 && <label className="grid gap-1 text-sm"><span className="font-medium">About a bill</span><select className="h-10 rounded-xl border bg-white px-2" value={form.invoiceId} onChange={(e) => setForm({ ...form, invoiceId: e.target.value })}><option value="">No bill</option>{bills.map((b) => <option key={b.id} value={b.id}>{b.number} · {day(b.issueDate)} · {formatPaise(b.totalPaise)}</option>)}</select></label>}
+          <div className="grid gap-1 text-sm"><span className="font-medium">Photos or a PDF</span><CustomerFiles path={`/public/portal/${slug}/files`} headers={{ "x-portal-token": session.token, "x-portal-account": session.accountId }} files={files} onChange={setFiles} /></div>
           {error && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
-          <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => setForm(null)}>Cancel</Button><Button type="submit" disabled={busy} className="bg-emerald-600 text-white hover:bg-emerald-700">{busy ? "Sending…" : "Send request"}</Button></div>
+          <div className="flex justify-end gap-2"><Button type="button" variant="outline" onClick={() => { setForm(null); setFiles([]) }}>Cancel</Button><Button type="submit" disabled={busy} className="bg-emerald-600 text-white hover:bg-emerald-700">{busy ? "Sending…" : "Send request"}</Button></div>
         </form>
       ) : <Button onClick={() => { setDone(null); setForm({ category: "", subject: "", description: "", invoiceId: "" }) }} className="h-11 w-fit bg-emerald-600 text-white hover:bg-emerald-700"><LifeBuoy /> Raise a request</Button>}
       {!res.data.length && !form && <Empty icon={LifeBuoy} title="No requests yet" text="Complaints, repairs and questions you raise show here." />}

@@ -4,7 +4,6 @@
   "scripts": {
     "dev": "tsx scripts/db-prepare.ts && nodemon",
     "db:prepare": "tsx scripts/db-prepare.ts",
-    "db:copy-from-neon": "tsx scripts/copy-from-neon.ts",
     "build": "tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
@@ -12,14 +11,12 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:generate": "prisma generate",
     "test": "vitest run",
-    "db:migrate:tcp": "prisma migrate deploy",
     "console:member": "tsx scripts/console-member.ts",
-    "entitlements:recompute": "tsx scripts/recompute-entitlements.ts"
+    "entitlements:recompute": "tsx scripts/recompute-entitlements.ts",
+    "files:move-images": "tsx scripts/move-images-to-storage.ts"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.2.0",
     "@node-rs/argon2": "^2.2.2",
-    "@prisma/adapter-neon": "^6.19.3",
     "@prisma/client": "^6.19.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -31,7 +28,6 @@
     "pg": "^8.23.1",
     "prisma": "^6.19.3",
     "uuid": "^11.1.1",
-    "ws": "^8.22.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -41,7 +37,6 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.13.4",
     "@types/pg": "^8.23.1",
-    "@types/ws": "^8.18.2",
     "nodemon": "^3.1.14",
     "ts-node": "^10.9.2",
     "tsx": "^4.23.15",

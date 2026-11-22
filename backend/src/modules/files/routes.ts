@@ -1,11 +1,13 @@
 import express, { Router, type Request } from 'express';
 import { z } from 'zod';
-import { consoleAuth, consoleTx, requirePlatformPermission, tenantAuth, tx } from '../../middleware/auth';
+import { consoleAuth, consoleTx, requirePermission, requirePlatformPermission, tenantAuth, tx } from '../../middleware/auth';
 import { validate } from '../../middleware/request';
 import { getRolePermissions } from '../access/service';
 import { withPlatform } from '../../kernel/db';
 import { AppError } from '../../kernel/errors';
-import { verifyFileSignature } from '../../kernel/storage';
+import { signedFilePath, storage, verifyFileSignature } from '../../kernel/storage';
+import { db } from '../../kernel/db';
+import { assertUnused, fileLibrary, storageUsage } from './usage';
 import * as files from './service';
 
 // Upload: the file is the request body (no multipart); its name rides in X-File-Name.
@@ -66,6 +68,21 @@ router.post('/files/attach', validate(AttachBody), tx(async (req, res) => {
 router.post('/files/links', validate(LinksBody), tx(async (req, res) => {
   res.json({ data: await files.linksFor(req.ctx!.tenantId, req.body.refs) });
 }));
+// Settings › Files & storage: every file of the business, where it is used, and the storage left
+router.get('/files/library', requirePermission('tenant.file.view'), tx(async (req, res) => {
+  res.json(await fileLibrary(req.ctx!.tenantId, (id) => signedFilePath(id)));
+}));
+router.get('/files/usage', requirePermission('tenant.file.view'), tx(async (req, res) => {
+  res.json(await storageUsage(req.ctx!.tenantId));
+}));
+router.delete('/files/library/:id', requirePermission('tenant.file.delete'), validate(IdParam, 'params'), tx(async (req, res) => {
+  const f = await assertUnused(req.ctx!.tenantId, String(req.params.id));
+  await db().storedFile.delete({ where: { id: f.id } });
+  // The row is gone first: if the bytes can't be removed now, the disk keeps an orphan, never a broken record
+  await storage.remove(f.storageKey).catch(() => undefined);
+  res.status(204).end();
+}));
+
 router.delete('/files/:id', validate(IdParam, 'params'), tx(async (req, res) => {
   const canManage = (await getRolePermissions(req.ctx!.roleId)).has('tenant.settings.edit');
   await files.removeFile(req.ctx!.tenantId, String(req.params.id), req.ctx!.userId, canManage);

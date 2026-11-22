@@ -15,6 +15,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { SummaryCards } from "@/components/summary-cards"
 import { qty, type StockLocation, type StockRow } from "@/lib/inventory"
+import { FileImg } from "@/components/file-field"
 
 // Stock on hand: one row per tracked item, all warehouses or one. Sales and purchases move it by themselves.
 
@@ -32,8 +33,7 @@ function StockList() {
       key: "name", header: "Item", hideable: false, sort: (r) => r.name, csv: (r) => r.name,
       cell: (r) => (
         <span className="flex items-center gap-2.5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          {r.imageUrl ? <img src={r.imageUrl} alt="" className="size-9 shrink-0 rounded-lg border object-cover" /> : <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><Package className="size-4" aria-hidden /></span>}
+          <FileImg value={r.imageUrl} className="size-9 shrink-0 rounded-lg border object-cover" fallback={<span className="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"><Package className="size-4" aria-hidden /></span>} />
           <span className="min-w-0">
             <span className="block font-medium">{r.name}{!r.isActive && <Badge variant="outline" className="ml-2">Archived</Badge>}{r.tracking !== "none" && <Badge variant="outline" className="ml-2 capitalize">{r.tracking}</Badge>}</span>
             <span className="block text-xs text-muted-foreground">{[r.sku, r.hsnSac && `HSN ${r.hsnSac}`].filter(Boolean).join(" · ") || "—"}</span>

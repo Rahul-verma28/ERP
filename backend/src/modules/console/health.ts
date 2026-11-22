@@ -43,13 +43,14 @@ export async function healthOverview(now = new Date()) {
     const r = runs.find((x) => x.name === key);
     const unfinished = !!r?.lastStartedAt && (!r.lastFinishedAt || r.lastFinishedAt < r.lastStartedAt);
     // Started but never finished for 30 minutes: the server stopped during the run
-    const running = unfinished && now.getTime() - r!.lastStartedAt!.getTime() < 30 * 60_000;
+    // The lease says who is running now; a lease that ran out means the server stopped mid-run
+    const running = (!!r?.lockedUntil && r.lockedUntil > now) || (unfinished && now.getTime() - r!.lastStartedAt!.getTime() < 30 * 60_000 && !!r?.lockedUntil);
     const stopped = unfinished && !running;
     // Hourly jobs: more than 2 hours without a good run means the worker is not running them
     const late = !r?.lastOkAt || now.getTime() - r.lastOkAt.getTime() > 2 * HOUR;
     const status = running ? 'running' : stopped || r?.lastError ? 'failed' : late ? 'late' : 'ok';
     const lastError = stopped ? 'Stopped before finishing (the server restarted during the run)' : r?.lastError ?? null;
-    return { key, label: JOBS[key].label, text: JOBS[key].text, status, lastRunAt: r?.lastFinishedAt ?? r?.lastStartedAt ?? null, lastOkAt: r?.lastOkAt ?? null, lastError, runs: r?.runs ?? 0, failures: r?.failures ?? 0 };
+    return { key, label: JOBS[key].label, text: JOBS[key].text, summary: r?.lastSummary ?? null, status, lastRunAt: r?.lastFinishedAt ?? r?.lastStartedAt ?? null, lastOkAt: r?.lastOkAt ?? null, lastError, runs: r?.runs ?? 0, failures: r?.failures ?? 0 };
   });
   const stuck = !!oldestWaiting && now.getTime() - oldestWaiting.occurredAt.getTime() > 10 * 60_000;
 
@@ -89,12 +90,12 @@ export async function retryEvent(id: string) {
   const e = await db().outboxEvent.findUnique({ where: { id } });
   if (!e) throw notFound('Event');
   if (!e.lastError || !e.publishedAt) throw new AppError('INVALID_TRANSITION', 'This event has not failed.');
-  await db().outboxEvent.update({ where: { id }, data: { publishedAt: null, attempts: 0 } });
+  await db().outboxEvent.update({ where: { id }, data: { publishedAt: null, attempts: 0, lockedUntil: null, nextAttemptAt: null } });
   await audit({ tenantId: null, action: 'console.event_retried', entity: 'outbox_event', entityId: id, after: { type: e.type } });
 }
 
 export async function retryAllEvents() {
-  const r = await db().outboxEvent.updateMany({ where: { publishedAt: { not: null }, lastError: { not: null } }, data: { publishedAt: null, attempts: 0 } });
+  const r = await db().outboxEvent.updateMany({ where: { publishedAt: { not: null }, lastError: { not: null } }, data: { publishedAt: null, attempts: 0, lockedUntil: null, nextAttemptAt: null } });
   await audit({ tenantId: null, action: 'console.event_retried', entity: 'outbox_event', entityId: 'all', after: { count: r.count } });
   return r.count;
 }

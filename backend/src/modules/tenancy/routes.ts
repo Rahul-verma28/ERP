@@ -25,6 +25,7 @@ import { zReason } from '../../kernel/zodRules';
 import { INDUSTRIES, industryTemplateKey } from '../../contracts/workspace';
 import { zEmail, zMobileIN } from '../../kernel/zodRules';
 import { acceptHandover, handoverForOwner } from '../console/onboarding';
+import { storageUsage } from '../files/usage';
 import * as users from './users';
 
 // Platform routes for the signed-in tenant (LLD §10.2, §10.3) plus a few public lookups.
@@ -373,7 +374,7 @@ router.get(
 router.get('/billing/subscription', requirePermission('tenant.billing.view'), tx(async (req, res) => {
   const ent = await getEntitlements(req.ctx!.tenantId);
   const [activeUsers, branches] = await Promise.all([db().tenantMember.count({ where: { status: 'active' } }), db().branch.count()]);
-  res.json({ status: ent.status, planKey: ent.planKey, trialEndsAt: ent.trialEndsAt, currentPeriodEnd: ent.currentPeriodEnd, limits: ent.limits, modules: ent.modules, usage: { users: activeUsers, branches } });
+  res.json({ status: ent.status, planKey: ent.planKey, trialEndsAt: ent.trialEndsAt, currentPeriodEnd: ent.currentPeriodEnd, limits: ent.limits, modules: ent.modules, usage: { users: activeUsers, branches, storage: await storageUsage(req.ctx!.tenantId) } });
 }));
 
 // ── In-app notifications (no permission: every member sees their own) ──

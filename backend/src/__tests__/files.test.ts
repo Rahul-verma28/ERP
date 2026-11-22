@@ -1,11 +1,19 @@
 import { randomUUID } from 'node:crypto';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+
+// Uploads check the plan's storage; the plan is read outside the test's transaction, so it is
+// given here: 20 GB (Professional)
+vi.mock('../modules/subscription/entitlements', async (orig) => ({
+  ...(await orig<typeof import('../modules/subscription/entitlements')>()),
+  getEntitlements: async () => ({ limits: { storageMb: 20480 }, modules: {}, status: 'active' }),
+}));
 import { prisma, db, withPlatform } from '../kernel/db';
 import type { TenantCtx } from '../kernel/context';
 import { todayIST } from '../kernel/gst';
 import { signedFilePath, verifyFileSignature } from '../kernel/storage';
 import * as fin from '../modules/finance/service';
 import * as files from '../modules/files/service';
+import { alertIfNearlyFull, assertUnused } from '../modules/files/usage';
 
 // Uploaded photos and documents: only real PDFs, photos, Word and Excel are taken; links are
 // signed and run out; files are tied to records; and expenses above the business's amount
@@ -88,6 +96,27 @@ describe('files', () => {
       const bill = await files.saveUpload({ tenantId: ctx.tenantId, userId: ctx.userId, bytes: PDF, name: 'rent.pdf', kind: 'document' });
       const e = await fin.createExpense(ctx, fin.ExpenseInput.parse({ ...base, amountPaise: 250_000, receiptUrl: bill.ref }));
       expect(e.receiptUrl).toBe(bill.ref);
+    });
+  });
+  it('tells the owner once when storage passes 80%, and never deletes a file in use', async () => {
+    await rolledBack(async () => {
+      const { ctx, tenant } = await prepare();
+      const MB = 1024 * 1024;
+      const before = { usedBytes: 70 * MB, files: 3, limitBytes: 100 * MB, percent: 70 };
+      await alertIfNearlyFull(tenant.id, before, 15 * MB);
+      await alertIfNearlyFull(tenant.id, before, 15 * MB);
+      const sent = await db().notification.findMany({ where: { tenantId: tenant.id, userId: ctx.userId } });
+      expect(sent.map((n) => n.title)).toEqual(['File storage is 80% used']);
+      // Under 80% after the upload: no message
+      await alertIfNearlyFull(tenant.id, { ...before, usedBytes: 10 * MB }, MB);
+      expect(await db().notification.count({ where: { tenantId: tenant.id } })).toBe(1);
+
+      const used = await files.saveUpload({ tenantId: null, userId: ctx.userId, bytes: PDF, name: 'used.pdf', kind: 'document', entityType: 'customer', entityId: randomUUID() });
+      const loose = await files.saveUpload({ tenantId: null, userId: ctx.userId, bytes: PDF, name: 'loose.pdf', kind: 'document' });
+      // Console-less files have no business; check through the same rule with tenant null stored rows
+      await db().storedFile.updateMany({ where: { id: { in: [used.id, loose.id] } }, data: { tenantId: tenant.id } });
+      await expect(assertUnused(tenant.id, used.id)).rejects.toMatchObject({ code: 'CONFLICT' });
+      expect((await assertUnused(tenant.id, loose.id)).id).toBe(loose.id);
     });
   });
 });

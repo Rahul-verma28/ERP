@@ -1,5 +1,5 @@
 import { relayOnce } from './modules/events/outbox';
-import { JOB_KEYS, runTracked } from './modules/system/jobs';
+import { ALREADY_RUNNING, JOB_KEYS, runTracked } from './modules/system/jobs';
 
 // Background work (LLD §2.1 worker.ts). Runs in-process in development; in production
 // this becomes its own process with BullMQ queues and Redis-backed schedules.
@@ -42,12 +42,12 @@ export function startWorker() {
   const hourly = async () => {
     for (const key of JOB_KEYS) {
       const error = await runTracked(key);
-      if (error) console.error(`[worker] ${key}:`, error);
+      if (error && error !== ALREADY_RUNNING) console.error(`[worker] ${key}:`, error);
     }
   };
   hourlyTimer = setInterval(hourly, 60 * 60 * 1000);
   setTimeout(hourly, 5000);
-  console.log('⚙️  Worker started (outbox relay every 1s; trial expiry, renewals, dunning and reminders hourly)');
+  console.log(`⚙️  Worker started (background events every second; hourly: ${JOB_KEYS.join(', ')})`);
 }
 
 export function stopWorker() {

@@ -1,11 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, Clock, LifeBuoy, Phone, Send, Star } from "lucide-react"
+import { CheckCircle2, Clock, LifeBuoy, Phone, Send, Star, Paperclip } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { api, errorMessage } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { CustomerFiles, type CustomerFile } from "@/components/customer-files"
 
 // A customer's private link to their request: where it stands, the business's replies, a box to
 // write back (which brings a resolved request back to the team), and a rating once it is resolved.
@@ -24,6 +25,8 @@ interface Request {
   canRate: boolean
   canReply: boolean
   messages: { id: string; kind: "reply" | "customer" | "event"; at: string; body: string | null; from: string | null }[]
+  /** Photos and files on the request, from the customer and the team */
+  files?: { id: string; name: string; mime: string; size: number; url: string }[]
 }
 const when = (iso: string) => new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })
 const TONE: Record<string, string> = { new: "bg-blue-100 text-blue-800", open: "bg-violet-100 text-violet-800", pending: "bg-amber-100 text-amber-800", on_hold: "bg-neutral-200 text-neutral-700", resolved: "bg-emerald-100 text-emerald-800", closed: "bg-neutral-200 text-neutral-700" }
@@ -37,6 +40,7 @@ export default function RequestPage({ params }: { params: Promise<{ token: strin
   const [feedback, setFeedback] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
+  const [files, setFiles] = React.useState<CustomerFile[]>([])
   React.useEffect(() => { api.get<Request>(`/public/requests/${token}`).then(setR).catch(() => setGone(true)) }, [token])
 
   if (gone) return <Shell><div className="grid place-items-center gap-2 py-20 text-center"><LifeBuoy className="size-10 text-neutral-400" /><p className="font-semibold">This link doesn&apos;t work</p><p className="text-sm text-neutral-500">Check the link, or call the business with your request number.</p></div></Shell>
@@ -48,6 +52,7 @@ export default function RequestPage({ params }: { params: Promise<{ token: strin
     try {
       setR(await api.post<Request>(`/public/requests/${token}/${path}`, payload))
       setBody("")
+      setFiles([])
     } catch (e) {
       setError(errorMessage(e))
     } finally {
@@ -78,9 +83,22 @@ export default function RequestPage({ params }: { params: Promise<{ token: strin
             </li>
           ))}
         </ol>
+        {!!r.files?.length && (
+          <div className="grid gap-2 border-t pt-3">
+            <h4 className="text-sm font-medium">Files</h4>
+            {r.files.map((x) => (
+              <a key={x.id} href={x.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 rounded-xl border px-3 py-2 text-sm hover:bg-neutral-50">
+                <Paperclip className="size-4 text-neutral-500" />
+                <span className="min-w-0 flex-1 truncate font-medium">{x.name}</span>
+                <span className="text-xs text-neutral-500">Open</span>
+              </a>
+            ))}
+          </div>
+        )}
         {r.canReply ? (
-          <form onSubmit={(e) => { e.preventDefault(); if (body.trim().length < 2) return setError("Write something"); void send("reply", { body: body.trim() }) }} className="grid gap-2 border-t pt-3">
+          <form onSubmit={(e) => { e.preventDefault(); if (body.trim().length < 2) return setError("Write something"); void send("reply", { body: body.trim(), fileIds: files.map((x) => x.id) }) }} className="grid gap-2 border-t pt-3">
             <Textarea rows={3} maxLength={3000} className="bg-white" value={body} onChange={(e) => { setBody(e.target.value); setError(null) }} placeholder={r.status === "resolved" ? "Still a problem? Write here and it goes back to the team." : "Write back to the team"} aria-label="Your message" />
+            <CustomerFiles path={`/public/requests/${token}/files`} files={files} onChange={setFiles} />
             <Button type="submit" disabled={busy} className="justify-self-end bg-emerald-600 text-white hover:bg-emerald-700"><Send /> {busy ? "Sending…" : "Send"}</Button>
           </form>
         ) : <p className="border-t pt-3 text-sm text-neutral-500">This request is closed. For anything new, please raise another request.</p>}

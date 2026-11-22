@@ -7,6 +7,7 @@ import { quote, saveOrder } from './service';
 import { sendPaymentLink } from './online';
 import { persistEntitlements } from '../subscription/entitlements';
 import { expireOverrides } from '../console/product';
+import { JobTally } from '../../kernel/jobs';
 
 // design v2 Step 4b — hourly billing jobs. Each job scans in one platform transaction and
 // handles every item in its own (so one bad tenant never blocks the rest). Called with a
@@ -21,16 +22,10 @@ const REMIND_AT = [7, 3, 1];
 const rupees = (paise: bigint | number) => `₹${(Number(paise) / 100).toFixed(2)}`;
 const daysLeft = (end: Date, now: Date) => Math.ceil((end.getTime() - now.getTime()) / DAY);
 
-async function each<T>(label: string, items: T[], fn: (item: T) => Promise<void>) {
+/** Each item in its own transaction: a failure is counted in the tally, and the rest go on */
+async function each<T extends { tenantId: string }>(tally: JobTally, label: string, items: T[], fn: (item: T) => Promise<void>) {
   let done = 0;
-  for (const item of items) {
-    try {
-      await withPlatform(() => fn(item));
-      done++;
-    } catch (e) {
-      console.error(`[billing:${label}]`, e instanceof Error ? e.message.split('\n').pop() : e);
-    }
-  }
+  for (const item of items) if (await tally.itemTx(`${label} · business ${item.tenantId}`, () => fn(item))) done++;
   return done;
 }
 
@@ -50,19 +45,21 @@ async function owner(tenantId: string) {
 }
 
 /** Unpaid orders past their date are cancelled; a sales-created client that never paid is closed. */
-export async function runLapseUnpaid(now = new Date()) {
+export async function runLapseUnpaid(now = new Date(), tally = new JobTally()) {
   const due = await withPlatform(() => db().platformOrder.findMany({ where: { status: { in: ['awaiting_payment', 'pending_approval'] }, expiresAt: { lte: now } }, select: { id: true, tenantId: true } }));
-  return each('lapse', due, async (o) => {
+  const n = await each(tally, 'unpaid order', due, async (o) => {
     const tx = db();
     await tx.platformOrder.update({ where: { id: o.id }, data: { status: 'cancelled', cancelledReason: 'Lapsed: not paid in time' } });
     const sub = await tx.subscription.findUnique({ where: { tenantId: o.tenantId } });
     const open = await tx.platformOrder.count({ where: { tenantId: o.tenantId, status: { in: ['awaiting_payment', 'pending_approval', 'paid'] } } });
     if (sub?.status === 'incomplete' && open === 0) await transition(o.tenantId, 'unpaid_cancelled', { now });
   });
+  tally.note(n > 0 && `${n} unpaid order${n === 1 ? '' : 's'} cancelled`);
+  return tally;
 }
 
 /** Seven days before the period ends: a renewal order at today's prices, a payment link, and reminders at 7/3/1 days. */
-export async function runRenewals(now = new Date()) {
+export async function runRenewals(now = new Date(), tally = new JobTally()) {
   const subs = await withPlatform(() =>
     db().subscription.findMany({
       // Partner clients are on the partner's monthly bill, never on AHEAD renewals
@@ -70,7 +67,7 @@ export async function runRenewals(now = new Date()) {
       include: { items: true },
     }),
   );
-  return each('renewal', subs, async (sub) => {
+  await each(tally, 'renewal', subs, async (sub) => {
     const tx = db();
     const end = sub.currentPeriodEnd!;
     let order = await tx.platformOrder.findFirst({ where: { tenantId: sub.tenantId, kind: 'renewal', createdAt: { gte: new Date(end.getTime() - 35 * DAY) }, status: { in: ['awaiting_payment', 'paid'] } }, orderBy: { createdAt: 'desc' } });
@@ -96,11 +93,15 @@ export async function runRenewals(now = new Date()) {
       });
       const graceDays = await getSetting(sub.cycle === 'yearly' ? 'grace.days_yearly' : 'grace.days_monthly');
       order = await saveOrder({ ...q, needsApproval: false }, { tenantId: sub.tenantId, kind: 'renewal', billTo, createdBy: SYSTEM_USER, expiresAt: new Date(end.getTime() + graceDays * DAY) });
+    }
+    // No payment link yet (new order, or the gateway failed last time): try now. A failure here
+    // keeps the order and is retried on the next run; the reminder still goes out below.
+    if (order.status === 'awaiting_payment' && !order.paymentLinkUrl) {
       try {
         await sendPaymentLink(order.id);
         order = await tx.platformOrder.findUniqueOrThrow({ where: { id: order.id } });
       } catch (e) {
-        console.error('[billing:renewal] no payment link:', e instanceof Error ? e.message : e);
+        console.error('[billing:renewal] payment link not made yet, will retry next run:', e instanceof Error ? e.message : e);
       }
     }
 
@@ -114,12 +115,13 @@ export async function runRenewals(now = new Date()) {
       });
     }
   });
+  return tally;
 }
 
 /** Period over without payment → past_due with grace; grace over → Free plan (paid modules read-only). */
-export async function runDunning(now = new Date()) {
+export async function runDunning(now = new Date(), tally = new JobTally()) {
   const lapsed = await withPlatform(() => db().subscription.findMany({ where: { status: 'active', currentPeriodEnd: { lte: now }, tenant: { billingOwner: 'self' } }, select: { tenantId: true } }));
-  const failed = await each('renewal-failed', lapsed, async (s) => {
+  const failed = await each(tally, 'renewal not paid', lapsed, async (s) => {
     await transition(s.tenantId, 'renewal_failed', { now });
     const { tenant, user } = await owner(s.tenantId);
     await once(`dunning:${s.tenantId}:${now.toISOString().slice(0, 10)}`, s.tenantId, {
@@ -129,15 +131,17 @@ export async function runDunning(now = new Date()) {
     });
   });
   const expired = await withPlatform(() => db().subscription.findMany({ where: { status: 'past_due', graceEndsAt: { lte: now } }, select: { tenantId: true } }));
-  const freed = await each('grace-expired', expired, (s) => transition(s.tenantId, 'grace_expired', { now }).then(() => undefined));
-  return { failed, freed };
+  const freed = await each(tally, 'grace over', expired, (s) => transition(s.tenantId, 'grace_expired', { now }).then(() => undefined));
+  tally.note(failed > 0 && `${failed} renewal${failed === 1 ? '' : 's'} unpaid`);
+  tally.note(freed > 0 && `${freed} moved to Free`);
+  return tally;
 }
 
 /** Trial reminders at 7, 3 and 1 days left — once each (notification_log). */
-export async function runTrialReminders(now = new Date()) {
+export async function runTrialReminders(now = new Date(), tally = new JobTally()) {
   const trials = await withPlatform(() => db().subscription.findMany({ where: { status: 'trialing', trialEndsAt: { gt: now, lte: new Date(now.getTime() + 8 * DAY) } }, select: { tenantId: true, trialEndsAt: true } }));
   let sent = 0;
-  await each('trial-reminder', trials, async (t) => {
+  await each(tally, 'trial reminder', trials, async (t) => {
     const left = daysLeft(t.trialEndsAt!, now);
     if (!REMIND_AT.includes(left)) return;
     const { tenant, user } = await owner(t.tenantId);
@@ -146,28 +150,36 @@ export async function runTrialReminders(now = new Date()) {
       : `Hi ${user.name}, ${left} days left in ${tenant.name}'s AHEAD trial. See the plans under Plan & billing to keep every module.`;
     if (await once(`trial:${t.tenantId}:${left}`, t.tenantId, { channel: 'email', to: user.email, template: `trial.reminder_${left}`, subject: `${left} day${left === 1 ? '' : 's'} left in your AHEAD trial`, text })) sent++;
   });
-  return sent;
+  tally.note(sent > 0 && `${sent} trial reminder${sent === 1 ? '' : 's'} sent`);
+  return tally;
 }
 
 /** Everything billing does on the hour. */
 /** Console module switches with an end date (Phase D): remove them once passed and re-compute. */
-export async function runExpireModuleSwitches(now = new Date()) {
+export async function runExpireModuleSwitches(now = new Date(), tally = new JobTally()) {
   const tenantIds = await withPlatform(() => expireOverrides(now));
   for (const tenantId of tenantIds) {
-    await withTenant({ kind: 'system', tenantId }, () => persistEntitlements(tenantId)).catch((e) => console.error('[billing:switches]', e instanceof Error ? e.message : e));
+    await tally.item(`module switch · business ${tenantId}`, () => withTenant({ kind: 'system', tenantId }, () => persistEntitlements(tenantId)));
   }
-  return tenantIds.length;
+  tally.note(tenantIds.length > 0 && `module switches ended for ${tenantIds.length} business(es)`);
+  return tally;
 }
 
+/** Every billing step on the hour. A step that crashes is counted; the next steps still run. */
 export async function runBillingJobs(now = new Date()) {
-  const lapsed = await runLapseUnpaid(now);
-  const renewals = await runRenewals(now);
-  const dunning = await runDunning(now);
-  const reminders = await runTrialReminders(now);
-  const switches = await runExpireModuleSwitches(now);
-  if (switches) console.log(`[billing] module switches ended for ${switches} business(es)`);
-  if (lapsed || renewals || dunning.failed || dunning.freed || reminders) {
-    console.log(`[billing] lapsed ${lapsed}, renewals checked ${renewals}, payment failed ${dunning.failed}, moved to Free ${dunning.freed}, trial reminders ${reminders}`);
+  const tally = new JobTally();
+  const steps: [string, (t: JobTally) => Promise<unknown>][] = [
+    ['unpaid orders', (t) => runLapseUnpaid(now, t)],
+    ['renewals', (t) => runRenewals(now, t)],
+    ['payments due', (t) => runDunning(now, t)],
+    ['trial reminders', (t) => runTrialReminders(now, t)],
+    ['module switches', (t) => runExpireModuleSwitches(now, t)],
+  ];
+  for (const [name, run] of steps) {
+    const step = new JobTally();
+    await tally.item(name, () => run(step)).then((ok) => ok && tally.done--); // the step itself isn't an item
+    tally.add(step, name);
   }
   cache.delPrefix('ent:tenant:');
+  return tally;
 }

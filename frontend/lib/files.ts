@@ -29,7 +29,12 @@ export const LIMIT_TEXT: Record<FileKind, string> = { image: "JPG, PNG or WebP",
 
 const base = (scope: FileScope) => (scope === "console" ? "/console/files" : "/files")
 export const isFileRef = (v: string | null | undefined): boolean => !!v && /^file:[0-9a-f-]{36}$/i.test(v)
-export const formatSize = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`)
+export const formatSize = (n: number) => {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+  if (n < 1024 ** 3) return `${(n / 1024 / 1024).toFixed(1).replace(/\.0$/, "")} MB`
+  return `${(n / 1024 ** 3).toFixed(1).replace(/\.0$/, "")} GB`
+}
 
 /** Photos are made smaller in the browser before upload: long side 1600 px, WebP */
 async function shrinkPhoto(file: File): Promise<{ blob: Blob; name: string }> {

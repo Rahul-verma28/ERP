@@ -55,3 +55,12 @@ export function verifyFileSignature(id: string, exp: number, sig: string) {
   const b = Buffer.from(sig);
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
+/**
+ * A saved logo or photo as something a page can show: an uploaded file ("file:<id>") becomes a
+ * signed link (logos are public anyway: they print on every bill), anything else passes through.
+ */
+export function publicLink(ref: string | null | undefined, ttlSeconds = 7 * 86_400): string | null {
+  if (!ref) return null;
+  return /^file:[0-9a-f-]{36}$/i.test(ref) ? signedFilePath(ref.slice(5), ttlSeconds) : ref;
+}

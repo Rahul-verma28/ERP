@@ -10,7 +10,6 @@ generator client {
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 // ───────────────────────────── Enums ─────────────────────────────
@@ -631,6 +630,10 @@ model JobRun {
   lastError      String?   @map("last_error")
   runs           Int       @default(0)
   failures       Int       @default(0)
+  /// Held while a run is going; a run that dies leaves it to run out
+  lockedUntil    DateTime? @map("locked_until") @db.Timestamptz
+  /// What the last run did, e.g. "40 done, 2 failed"
+  lastSummary    String?   @map("last_summary")
 
   @@map("job_runs")
 }
@@ -1038,6 +1041,10 @@ model OutboxEvent {
   publishedAt DateTime? @map("published_at") @db.Timestamptz
   attempts    Int       @default(0)
   lastError   String?   @map("last_error")
+  /// Claimed by a relay until then (a crash mid-way frees it)
+  lockedUntil DateTime? @map("locked_until") @db.Timestamptz
+  /// After a failure: not tried again before this
+  nextAttemptAt DateTime? @map("next_attempt_at") @db.Timestamptz
 
   @@index([publishedAt, occurredAt])
   @@map("outbox_events")

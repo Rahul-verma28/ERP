@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils"
 import { PageError, PageLoading } from "@/components/page-states"
 import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
 import { AttachmentsField } from "@/components/file-field"
+import { useFileLink } from "@/lib/files"
 
 // One item: what it is and costs, where its stock is and how it moved, and where it was sold and
 // bought. Stock actions are one click away.
@@ -69,6 +70,8 @@ function ItemPage() {
   const { can, me } = useAuth()
   const { data: item, error, reload } = useApi<Item>(`/items/${id}`)
   const categories = useApi<{ data: Category[] }>("/item-categories")
+  // Uploaded photo ("file:<id>") or an older data image
+  const photo = useFileLink(item?.imageUrl).link?.url
   const showStock = can("inventory.stock.view")
   const product = item?.type === "product"
   const ledger = useApi<Ledger>(showStock && product && item?.trackStock ? `/stock/items/${id}` : null)
@@ -106,7 +109,7 @@ function ItemPage() {
       <BackLink href="/app/m/catalog">Items</BackLink>
       <DetailHeader
         title={item.name}
-        imageUrl={item.imageUrl}
+        imageUrl={photo}
         icon={product ? Package : Wrench}
         pills={<>
           <Pill color={product ? "blue" : "violet"}>{product ? "Product" : "Service"}</Pill>
