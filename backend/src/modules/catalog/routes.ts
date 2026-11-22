@@ -10,7 +10,7 @@ import { listItems, listPriceLists, getPriceList } from './lists';
 import { validate } from '../../middleware/request';
 import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { validateCustom } from '../config/service';
-import { optionalText, zHsnOrSac } from '../../kernel/zodRules';
+import { optionalText, zHsnOrSac, zFileRef } from '../../kernel/zodRules';
 import { consumer } from '../events/outbox';
 import { audit } from '../audit/service';
 import { postEntry, reservedByItem, stockByItem, stockByWarehouse } from '../inventory/service';
@@ -37,7 +37,7 @@ const ItemInput = z.object({
   skill: z.string().trim().max(80).optional().nullable(),
   description: z.string().trim().max(2000).optional().nullable(),
   /** A web link, or a small picture the browser has already shrunk */
-  imageUrl: z.string().url().max(500).or(z.string().regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/, 'Use a PNG, JPG or WebP image').max(150_000, 'This image is too large')).optional().nullable().or(z.literal('').transform(() => null)),
+  imageUrl: zFileRef.or(z.string().regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/, 'Use a PNG, JPG or WebP image').max(150_000, 'This image is too large')).optional().nullable().or(z.literal('').transform(() => null)),
   isActive: z.boolean().optional(),
   /** Inventory: sales and returns move this item's stock */
   trackStock: z.boolean().optional(),

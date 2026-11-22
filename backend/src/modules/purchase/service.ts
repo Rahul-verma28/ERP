@@ -6,7 +6,7 @@ import type { TenantCtx } from '../../kernel/context';
 import { GST_RATES_BP, computeDocument, computeLine, dateOnly, divRound, todayIST } from '../../kernel/gst';
 import { allocateNumber } from '../../kernel/sequences';
 import { DateStr, Paise } from '../../kernel/query';
-import { optionalText, zEmail, zGstin, zHsnOrSac, zPhone, zStateCode } from '../../kernel/zodRules';
+import { optionalText, zEmail, zGstin, zHsnOrSac, zPhone, zStateCode, zFileRef } from '../../kernel/zodRules';
 import { gstinStateMismatch } from '../../contracts/validation';
 import { withDefaults } from '../../contracts/workspace';
 import { audit } from '../audit/service';
@@ -130,6 +130,8 @@ export const PurchaseInput = z.object({
   roundOff: z.boolean().default(true),
   notes: optionalText(z.string().trim().max(1000)),
   returnReason: optionalText(z.string().trim().max(40)),
+  /** The supplier's own bill (a file), needed to claim GST input credit: CGST Act s.16(2)(a) */
+  attachmentUrl: zFileRef.optional().nullable().or(z.literal('').transform(() => null)),
   /** GRN or bill from a PO, bill from a GRN, return against a bill */
   sourceId: z.string().uuid().optional().nullable(),
   lines: z.array(Line).min(1, 'Add at least one item').max(300),
@@ -340,6 +342,7 @@ async function prepare(ctx: TenantCtx, kind: PurchaseKind, input: PurchaseInput,
       roundOffPaise, totalPaise: beforeRound + roundOffPaise,
       sourceType: source?.kind ?? null, sourceId: source?.id ?? null, sourceNumber: source?.number ?? null,
       notes: input.notes ?? null,
+      attachmentUrl: input.attachmentUrl ?? null,
       returnReason: kind === 'purchase_return' ? (input.returnReason ?? null) : null,
     },
     lines: lineRows,
@@ -608,6 +611,8 @@ export const SupplierPaymentInput = z.object({
   paidOn: DateStr.optional(),
   /** The cash or bank account it was paid from; empty = by method */
   accountId: z.string().uuid().optional().nullable(),
+  /** Payment proof */
+  attachmentUrl: zFileRef.optional().nullable().or(z.literal('').transform(() => null)),
 });
 
 export async function paySupplier(ctx: TenantCtx, billId: string, input: z.infer<typeof SupplierPaymentInput>) {
@@ -630,7 +635,7 @@ export async function paySupplier(ctx: TenantCtx, billId: string, input: z.infer
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
   const { number } = await allocateNumber(ctx.tenantId, 'supplier_payment', tenant.fyStartMonth, paidOn);
   const pay = await db().supplierPayment.create({
-    data: { tenantId: ctx.tenantId, contactId: bill.contactId, documentId: bill.id, number, amountPaise: BigInt(input.amountPaise), method: input.method, accountId: await resolveAccount(ctx, input.accountId, input.method), reference: input.reference || null, paidOn, createdBy: ctx.userId },
+    data: { tenantId: ctx.tenantId, contactId: bill.contactId, documentId: bill.id, number, amountPaise: BigInt(input.amountPaise), method: input.method, attachmentUrl: input.attachmentUrl ?? null, accountId: await resolveAccount(ctx, input.accountId, input.method), reference: input.reference || null, paidOn, createdBy: ctx.userId },
   });
   await setBillStatus(bill, bill.paidPaise + BigInt(input.amountPaise), bill.returnedPaise);
   await audit({ action: 'inventory.supplier_payment.create', entity: 'supplier_payment', entityId: pay.id, after: { bill: bill.number, amountPaise: input.amountPaise, method: input.method } });

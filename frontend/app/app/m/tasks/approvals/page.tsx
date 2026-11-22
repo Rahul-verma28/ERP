@@ -102,7 +102,7 @@ function ApprovalsPage() {
             { label: "Needed by", value: v.needBy ? formatDate(v.needBy) : null, tone: v.late ? "danger" : undefined },
             { label: "For", value: v.task?.title ?? v.project?.name ?? null },
             { label: "Why", full: true, value: v.details },
-            !!v.attachmentUrl && { label: "Bill or quote", href: v.attachmentUrl, value: v.attachmentUrl },
+            !!v.attachmentUrl && { label: "Bill or quote", href: v.attachmentUrl, value: null },
             !!v.decisionNote && { label: "Decision note", full: true, value: v.decisionNote, tone: v.status === "rejected" ? "danger" : "success" },
           ]}
           footer={<>

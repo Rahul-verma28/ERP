@@ -122,6 +122,8 @@ export interface PurchaseDoc {
   sourceId: string | null
   sourceNumber: string | null
   notes: string | null
+  /** The supplier's own bill or challan: "file:<id>" */
+  attachmentUrl?: string | null
   returnReason: string | null
   cancelReason: string | null
   version: number

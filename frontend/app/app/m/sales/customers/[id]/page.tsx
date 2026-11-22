@@ -27,6 +27,7 @@ import { cn } from "@/lib/utils"
 import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
 import { TicketDialog } from "@/components/support/forms"
 import { PRIORITY as TICKET_PRIORITY, STATUS as TICKET_STATUS, type TicketRow } from "@/lib/support"
+import { AttachmentsField } from "@/components/file-field"
 
 // One customer: what they owe, the ledger of invoices, payments and returns, and their details.
 // Laid out like a supplier in Purchase, so staff learn it once.
@@ -281,6 +282,9 @@ function CustomerPage() {
               {c.notes && <p className="mt-4 rounded-2xl bg-muted/60 p-3 text-sm whitespace-pre-wrap">{c.notes}</p>}
             </Section>
             {can("billing.payment.view") && <AdvancesCard contactId={c.id} />}
+            <Section title="Documents">
+              <AttachmentsField entityType="customer" entityId={c.id} disabled={!can("crm.contact.edit")} prompt="Add GST certificate, agreement or other papers" />
+            </Section>
           </div>
         )}
       </div>

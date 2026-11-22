@@ -14,6 +14,7 @@ import { audit } from '../audit/service';
 import { consoleAccess } from '../console/service';
 import { getSetting } from '../settings/service';
 import { sendMessage } from '../notifications/service';
+import { avatarLink } from '../account/service';
 import { signPurposeToken, startSession } from './tokens';
 
 const LOCK_AFTER = 5;
@@ -115,7 +116,7 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
     workspace: ws,
     user: {
       id: user.id, name: user.name, email: user.email, mobile: user.mobile,
-      emailVerified: !!user.emailVerifiedAt, mobileVerified: !!user.mobileVerifiedAt,
+      emailVerified: !!user.emailVerifiedAt, mobileVerified: !!user.mobileVerifiedAt, avatarUrl: avatarLink(user.avatarUrl),
       preferences: personalWithDefaults(user.preferences),
     },
     /** Two-step verification required by a business (or the Console) and its grace period */

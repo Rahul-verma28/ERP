@@ -17,6 +17,7 @@ import { formatDate } from "@/lib/format"
 import { useHrLookups, type LeaveApp } from "@/lib/hr"
 import { cn } from "@/lib/utils"
 import { useChanged } from "@/lib/use-dirty"
+import { FileChip, FileField } from "@/components/file-field"
 
 // Leave forms: apply (or change a waiting request), and approve or reject.
 
@@ -26,7 +27,7 @@ export function LeaveDialog({ leave, employeeId: fixed, onClose, onSaved }: { le
   const { can } = useAuth()
   const look = useHrLookups()
   const own = !can("hr.leave.approve")
-  const [f, setF] = React.useState({ employeeId: leave?.employeeId ?? fixed ?? "", leaveTypeId: leave?.leaveTypeId ?? "", fromDate: leave?.fromDate.slice(0, 10) ?? todayInIndia(), toDate: leave?.toDate.slice(0, 10) ?? todayInIndia(), halfDay: leave?.halfDay ?? false, reason: leave?.reason ?? "" })
+  const [f, setF] = React.useState({ employeeId: leave?.employeeId ?? fixed ?? "", leaveTypeId: leave?.leaveTypeId ?? "", fromDate: leave?.fromDate.slice(0, 10) ?? todayInIndia(), toDate: leave?.toDate.slice(0, 10) ?? todayInIndia(), halfDay: leave?.halfDay ?? false, reason: leave?.reason ?? "", attachmentUrl: leave?.attachmentUrl ?? "" })
   // Editing: Save works only once something changed
   const unchanged = !useChanged(f)
   const bal = useApi<Balance>(f.employeeId || own ? `/hr/leave-balances${f.employeeId ? `?employeeId=${f.employeeId}` : ""}` : null)
@@ -37,6 +38,7 @@ export function LeaveDialog({ leave, employeeId: fixed, onClose, onSaved }: { le
   const types = (look.data?.leaveTypes ?? []).filter((t) => t.isActive)
   const left = (typeId: string) => bal.data?.data[0]?.leave.find((l) => l.typeId === typeId)
   const sameDay = f.fromDate === f.toDate
+  const proofAfter = types.find((t) => t.id === f.leaveTypeId)?.proofAfterDays ?? null
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -50,7 +52,7 @@ export function LeaveDialog({ leave, employeeId: fixed, onClose, onSaved }: { le
     setErrors(x)
     if (Object.keys(x).length) return setError("Fix the marked fields first.")
     setBusy(true)
-    const body = { ...f, employeeId: f.employeeId || undefined, halfDay: sameDay && f.halfDay, reason: f.reason.trim() }
+    const body = { ...f, employeeId: f.employeeId || undefined, halfDay: sameDay && f.halfDay, reason: f.reason.trim(), attachmentUrl: f.attachmentUrl || null }
     try {
       if (leave) await api.put(`/hr/leaves/${leave.id}`, { ...body, version: leave.version })
       else await api.post("/hr/leaves", body)
@@ -89,6 +91,7 @@ export function LeaveDialog({ leave, employeeId: fixed, onClose, onSaved }: { le
           <Field label="To" required error={errors.toDate}><Input type="date" value={f.toDate} min={f.fromDate} onChange={(e) => set("toDate", e.target.value)} /></Field>
           {sameDay && <label className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm sm:col-span-2"><span><span className="font-medium">Half day</span><span className="block text-xs text-muted-foreground">Counts as 0.5 day</span></span><Switch checked={f.halfDay} onCheckedChange={(v) => set("halfDay", v)} aria-label="Half day" /></label>}
           <Field label="Reason" required error={errors.reason} className="sm:col-span-2"><Textarea rows={2} maxLength={500} value={f.reason} onChange={(e) => set("reason", e.target.value)} placeholder="e.g. Sister's wedding in Kanpur" /></Field>
+          <Field label="Proof" error={errors.attachmentUrl} className="sm:col-span-2" hint={proofAfter != null ? `Needed when this leave is longer than ${proofAfter} day${proofAfter === 1 ? "" : "s"}, e.g. a medical certificate` : "Optional: a medical certificate or other proof"}><FileField value={f.attachmentUrl} onChange={(v) => set("attachmentUrl", v ?? "")} prompt="Upload proof" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
@@ -126,6 +129,7 @@ export function DecideDialog({ leave, status, onClose, onSaved }: { leave: Leave
         </DialogHeader>
         <form onSubmit={save} className="grid gap-4" noValidate>
           <p className="rounded-xl bg-muted/60 p-3 text-sm">“{leave.reason}”</p>
+          {leave.attachmentUrl && <FileChip value={leave.attachmentUrl} />}
           <Field label={status === "rejected" ? "Why rejected" : "Note"} required={status === "rejected"}><Textarea rows={2} maxLength={500} value={comment} autoFocus onChange={(e) => { setComment(e.target.value); setError(null) }} placeholder={status === "rejected" ? "e.g. Stock-taking that week, please pick other dates" : "Optional"} /></Field>
           {status === "approved" && <p className="text-xs text-muted-foreground">Each working day is marked as leave in attendance{leave.paid ? "" : ", unpaid (loss of pay)"}.</p>}
           <FormError message={error} />

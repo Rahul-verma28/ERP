@@ -24,6 +24,7 @@ import { KIND_LABEL, KIND_PATH, type PurchaseDoc, type PurchaseKind } from "@/li
 import { useApi } from "@/lib/use-api"
 import { todayInIndia } from "@contracts/validation"
 import { PageLoading } from "@/components/page-states"
+import { FileField } from "@/components/file-field"
 
 // One screen for a purchase invoice, order or goods receipt: details and items on the left, the
 // money on the right. A receipt or invoice can start from an order, an invoice from a receipt; the
@@ -82,6 +83,8 @@ function PurchaseForm({ kind, editId, fromId, supplierId }: { kind: FormKind; ed
   const [chargesGstBp, setChargesGstBp] = React.useState(1800)
   const [showMore, setShowMore] = React.useState(false)
   const [notes, setNotes] = React.useState("")
+  // The supplier's own bill or challan (a file)
+  const [billFile, setBillFile] = React.useState<string | null>(null)
   const [lines, setLines] = React.useState<Line[]>([])
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
@@ -108,6 +111,7 @@ function PurchaseForm({ kind, editId, fromId, supplierId }: { kind: FormKind; ed
         setIssueDate(s.issueDate.slice(0, 10))
         setDueDate(s.dueDate?.slice(0, 10) ?? "")
         setNotes(s.notes ?? "")
+        setBillFile(s.attachmentUrl ?? null)
         setChargesPaise(s.chargesPaise || null)
         setChargesGstBp(s.chargesGstBp)
         setSupplierRef(s.supplierRef ?? "")
@@ -177,7 +181,7 @@ function PurchaseForm({ kind, editId, fromId, supplierId }: { kind: FormKind; ed
     setError(null)
     const body = {
       contactId: supplier!.id, issueDate, dueDate: dueDate || null, supplierRef: supplierRef.trim() || null, supplierDate: supplierRef.trim() ? issueDate : null,
-      locationId: warehouse || null, reverseCharge, chargesPaise: charges, chargesGstBp, roundOff: true, notes: notes.trim() || null,
+      locationId: warehouse || null, reverseCharge, chargesPaise: charges, chargesGstBp, roundOff: true, notes: notes.trim() || null, attachmentUrl: billFile,
       sourceId: fromId, lines: lines.map((l) => ({
         itemId: l.itemId, description: l.description, hsnSac: l.hsnSac, unit: l.unit, quantity: lineQty(l), unitPricePaise: l.unitPricePaise ?? 0, discountPaise: discount(l), gstRateBp: l.gstRateBp, sourceLineId: l.sourceLineId,
         ...(l.isProduct && l.tracking === "batch" && kind !== "purchase_order" ? { batchNo: l.batchNo.trim() || null, mfgDate: l.mfgDate || null, expiryDate: l.expiryDate || null } : {}),
@@ -218,6 +222,7 @@ function PurchaseForm({ kind, editId, fromId, supplierId }: { kind: FormKind; ed
               <Field label={kind === "purchase_order" ? "Deliver to" : "Warehouse"} required error={errors.locationId}><WarehouseSelect value={warehouse} onChange={setLocationId} aria-label="Warehouse" /></Field>
               {kind !== "purchase_order" && <Field label={invoice ? "Supplier invoice no." : "Challan no."} required={invoice} error={errors.supplierRef}><Input value={supplierRef} onChange={(e) => setSupplierRef(e.target.value)} maxLength={40} placeholder={invoice ? "Printed on the supplier's bill" : undefined} /></Field>}
               <Field label="Notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} maxLength={1000} placeholder="Additional notes" /></Field>
+              {kind !== "purchase_order" && <Field label={invoice ? "Supplier's bill" : "Supplier's challan"} hint={invoice && supplier?.gstin && !billFile ? "Keep the supplier's tax invoice: GST credit needs it (Section 16(2)(a))" : "Optional: a photo or PDF"}><FileField value={billFile} onChange={setBillFile} prompt={invoice ? "Upload the supplier's bill" : "Upload the challan"} /></Field>}
             </div>
             {fromDoc?.kind === "goods_receipt" && <p className="mx-5 mb-5 rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">Stock already came in on {fromDoc.number}. This invoice only records what you owe.</p>}
             {supplier && !supplier.gstin && !reverseCharge && <p className="mx-5 mb-5 rounded-2xl bg-muted px-3 py-2 text-sm text-muted-foreground">This supplier has no GSTIN, so no GST is charged on this purchase.</p>}

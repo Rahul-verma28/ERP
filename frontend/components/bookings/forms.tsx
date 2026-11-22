@@ -26,6 +26,7 @@ import { usePeople } from "@/lib/tasks"
 import { cn } from "@/lib/utils"
 import { RESOURCE_KIND, SOURCE, STATUS, WEEKDAYS, isOpen, reminderLink, timeOf, type Appointment, type Resource, type Service, type Slot, type StaffRow } from "@/lib/bookings"
 import { useChanged } from "@/lib/use-dirty"
+import { FileChip, FileField } from "@/components/file-field"
 
 // Every Bookings form, and the one window that shows an appointment with all it can do.
 
@@ -59,7 +60,7 @@ export function AppointmentDialog({ appt, defaults, onClose, onSaved }: {
   const [f, setF] = React.useState({
     title: appt?.kind === "event" ? appt.title : "", guestName: appt?.guestName ?? "", guestPhone: appt?.guestPhone ?? "", itemId: appt?.itemId ?? "",
     staffId: appt?.staffId ?? defaults?.staffId ?? "", resourceId: appt?.resourceId ?? "", start: toLocal(start), minutes: String(appt?.durationMin ?? 30),
-    source: appt?.source ?? "walk_in", pricePaise: appt?.pricePaise ?? null as number | null, status: appt?.status === "confirmed" ? "confirmed" : "scheduled", notes: appt?.notes ?? "", outsideHours: false,
+    source: appt?.source ?? "walk_in", pricePaise: appt?.pricePaise ?? null as number | null, status: appt?.status === "confirmed" ? "confirmed" : "scheduled", notes: appt?.notes ?? "", attachmentUrl: appt?.attachmentUrl ?? "", outsideHours: false,
   })
   // Editing: Save works only once something changed
   const unchanged = !useChanged(f)
@@ -100,7 +101,7 @@ export function AppointmentDialog({ appt, defaults, onClose, onSaved }: {
         guestName: kind === "appointment" && guest ? f.guestName.trim() : null, guestPhone: kind === "appointment" && guest ? f.guestPhone || null : null,
         itemId: kind === "appointment" ? f.itemId : null, staffId: f.staffId || null, resourceId: f.resourceId || null, startAt,
         endAt: new Date(new Date(startAt).getTime() + mins * 60_000).toISOString(), source: f.source, pricePaise: kind === "appointment" ? f.pricePaise : null,
-        notes: f.notes.trim() || null, outsideHours: f.outsideHours, ...(edit ? { version: appt!.version } : { status: f.status }),
+        notes: f.notes.trim() || null, attachmentUrl: f.attachmentUrl || null, outsideHours: f.outsideHours, ...(edit ? { version: appt!.version } : { status: f.status }),
       }
       if (edit) await api.patch(`/appointments/${appt!.id}`, Object.fromEntries(Object.entries(body).filter(([k]) => k !== "kind")))
       else await api.post("/appointments", body)
@@ -161,6 +162,7 @@ export function AppointmentDialog({ appt, defaults, onClose, onSaved }: {
             {outside && <label className="flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm sm:col-span-2 dark:bg-amber-500/10"><span>Book outside working hours anyway</span><Switch checked={f.outsideHours} onCheckedChange={(v) => set("outsideHours", v)} aria-label="Outside working hours" /></label>}
             {!edit && kind === "appointment" && <label className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm sm:col-span-2"><span><span className="font-medium">Already confirmed with the customer</span><span className="block text-xs text-muted-foreground">Otherwise it shows as booked until you confirm</span></span><Switch checked={f.status === "confirmed"} onCheckedChange={(v) => set("status", v ? "confirmed" : "scheduled")} aria-label="Confirmed" /></label>}
             <Field label="Notes" className="sm:col-span-2"><Textarea rows={2} maxLength={2000} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Anything the staff should know" /></Field>
+            <Field label="File" className="sm:col-span-2" hint="Optional: a report, prescription or reference photo"><FileField value={f.attachmentUrl} onChange={(v) => set("attachmentUrl", v ?? "")} prompt="Upload a file" /></Field>
           </FormSection>
           <FormError message={error} />
           <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!appt && unchanged)}>{busy ? "Saving…" : edit ? "Save" : kind === "appointment" ? "Book" : "Add event"}</Button></DialogFooter>
@@ -240,6 +242,7 @@ export function AppointmentView({ appt: a, onClose, onChanged }: { appt: Appoint
         !!a.invoice && { label: "Invoice", value: <Link href={`/app/m/billing/${a.invoice!.id}`} className="font-medium text-primary hover:underline">{a.invoice!.number ?? "Draft"}</Link> },
         !!a.cancelReason && { label: "Why cancelled", value: a.cancelReason, tone: "danger", full: true },
         !!a.notes && { label: "Notes", value: a.notes, full: true },
+        !!a.attachmentUrl && { label: "File", value: <FileChip value={a.attachmentUrl} />, full: true },
       ]}
       footer={<>
         {a.customerPhone && <a href={`tel:${a.customerPhone}`} className={buttonVariants({ variant: "outline", size: "icon" })} title="Call" aria-label="Call"><Phone /></a>}

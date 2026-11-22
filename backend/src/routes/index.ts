@@ -16,6 +16,7 @@ import reportRoutes from '../modules/reports/routes';
 import inventoryRoutes from '../modules/inventory/routes';
 import purchaseRoutes from '../modules/purchase/routes';
 import posRoutes from '../modules/pos/routes';
+import fileRoutes, { consoleFiles, publicFiles } from '../modules/files/routes';
 import consoleRoutes from '../modules/console/routes';
 import { publicPayments, tenantPayments } from '../modules/platformBilling/routes';
 import { isDev } from '../config/env';
@@ -37,7 +38,9 @@ router.get('/health', async (_req, res) => {
 router.use('/auth', identityRoutes);
 router.use('/me', meHandler);
 router.use('/account', accountRoutes); // My account: every business
+router.use('/console/files', consoleFiles); // KYC papers, before the rest of the Console
 router.use('/console', consoleRoutes); // AHEAD team workspace; before the tenant routers
+router.use('/', publicFiles); // signed file links: an <img> or a download sends no login header
 router.use('/', publicBilling); // public share links, before any authenticated router
 router.use('/', publicBookings); // the online booking page, no login
 router.use('/', publicSupport); // the request form and tracking link, no login
@@ -47,6 +50,7 @@ router.get('/dev/messages', (_req, res) => { if (!isDev) { res.status(404).json(
 router.use('/', publicPayments); // gateway webhooks (+ dev test gateway), signed, no login
 router.use('/', tenantPayments); // what the client owes AHEAD
 router.use('/', tenancyRoutes);
+router.use('/', fileRoutes);
 router.use('/', catalogRoutes);
 router.use('/', crmRoutes);
 router.use('/', billingRoutes);

@@ -25,6 +25,7 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { EMPLOYMENT_LABEL, useHrLookups, type Employee, type EmploymentType } from "@/lib/hr"
 import { useChanged } from "@/lib/use-dirty"
 import { activeOr } from "@/lib/active"
+import { AvatarField } from "@/components/file-field"
 
 // Add or edit an employee in four short steps, with a live card on the side.
 
@@ -35,14 +36,14 @@ const STEPS = [
   { key: "pay", label: "Pay & IDs", icon: IndianRupee },
 ]
 const STEP_FIELDS: Record<string, string[]> = {
-  personal: ["name", "phone", "email", "gender", "dob"],
+  personal: ["photoUrl", "name", "phone", "email", "gender", "dob"],
   job: ["employmentType", "joinedOn", "probationEndsOn", "branchId", "departmentId", "designationId", "managerId", "shiftId", "memberId"],
   contact: ["address.line1", "address.line2", "address.country", "address.city", "address.state", "address.pincode", "emergency.name", "emergency.relation", "emergency.phone", "bank.holder", "bank.bankName", "bank.branch", "bank.accountNo", "bank.ifsc"],
   pay: ["payType", "basicPaise", "pf", "esi", "pt", "pan", "aadhaarLast4", "uan", "esiNo", "notes"],
 }
 
 const blank = (e?: Employee | null) => ({
-  name: e?.name ?? "", phone: e?.phone ?? "", email: e?.email ?? "", gender: e?.gender ?? "", dob: e?.dob?.slice(0, 10) ?? "",
+  photoUrl: e?.photoUrl ?? "", name: e?.name ?? "", phone: e?.phone ?? "", email: e?.email ?? "", gender: e?.gender ?? "", dob: e?.dob?.slice(0, 10) ?? "",
   employmentType: (e?.employmentType ?? "full_time") as EmploymentType, joinedOn: e?.joinedOn.slice(0, 10) ?? todayInIndia(), probationEndsOn: e?.probationEndsOn?.slice(0, 10) ?? "",
   branchId: e?.branchId ?? "", departmentId: e?.departmentId ?? "", designationId: e?.designationId ?? "", managerId: e?.managerId ?? "", shiftId: e?.shiftId ?? "", memberId: e?.memberId ?? "",
   line1: e?.address?.line1 ?? "", line2: e?.address?.line2 ?? "", country: e?.address?.country ?? "India", city: e?.address?.city ?? "", state: e?.address?.state ?? "", pincode: e?.address?.pincode ?? "",
@@ -115,7 +116,7 @@ export function EmployeeForm({ employee }: { employee?: Employee | null }) {
     setBusy(true)
     const n = (v: string) => v.trim() || null
     const body = {
-      name: f.name.trim(), phone: n(f.phone), email: n(f.email), gender: n(f.gender), dob: n(f.dob),
+      photoUrl: f.photoUrl || null, name: f.name.trim(), phone: n(f.phone), email: n(f.email), gender: n(f.gender), dob: n(f.dob),
       employmentType: f.employmentType, joinedOn: f.joinedOn, probationEndsOn: n(f.probationEndsOn),
       branchId: n(f.branchId), departmentId: n(f.departmentId), designationId: n(f.designationId), managerId: n(f.managerId), shiftId: n(f.shiftId), memberId: n(f.memberId),
       address: { line1: n(f.line1), line2: n(f.line2), country: n(f.country), city: n(f.city), state: n(f.state), pincode: n(f.pincode) },
@@ -153,6 +154,7 @@ export function EmployeeForm({ employee }: { employee?: Employee | null }) {
           {STEPS[at].key === "personal" && (
             <FormSection icon={UserRound} title="Who they are">
               <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Photo" error={errors.photoUrl} className="sm:col-span-2" hint="Optional: shows on their profile and ID card"><AvatarField value={f.photoUrl} onChange={(v) => set("photoUrl", v ?? "")} name={f.name} /></Field>
                 <Field label="Full name" required error={errors.name} className="sm:col-span-2"><Input value={f.name} autoFocus maxLength={120} onChange={(e) => set("name", e.target.value)} placeholder="As on their ID, e.g. Asha Verma" /></Field>
                 <Field label="Mobile" error={errors.phone} hint="Used to find them and for WhatsApp payslips"><Input value={f.phone} inputMode="numeric" maxLength={10} onChange={(e) => set("phone", e.target.value.replace(/\D/g, ""))} placeholder="10-digit mobile" /></Field>
                 <Field label="Email" error={errors.email}><Input type="email" value={f.email} maxLength={160} onChange={(e) => set("email", e.target.value)} placeholder="name@example.com" /></Field>

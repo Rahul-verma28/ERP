@@ -5,6 +5,7 @@ import type { TenantCtx } from '../../kernel/context';
 import { dateOnly, todayIST } from '../../kernel/gst';
 import { allocateNumber } from '../../kernel/sequences';
 import { DateStr } from '../../kernel/query';
+import { zFileRef } from '../../kernel/zodRules';
 import { audit } from '../audit/service';
 import { resolveAccount } from '../finance/service';
 import { checkDate, getPurchase, setBillStatus } from './service';
@@ -23,6 +24,8 @@ export const PayInput = z.object({
   paidOn: DateStr.optional(),
   /** The cash or bank account it was paid from; empty = by method */
   accountId: z.string().uuid().optional().nullable(),
+  /** Payment proof: bank slip or UPI screenshot */
+  attachmentUrl: zFileRef.optional().nullable().or(z.literal('').transform(() => null)),
   allocations: z.array(z.object({ documentId: z.string().uuid(), amountPaise: z.number().int().positive() })).min(1, 'Put the payment on at least one invoice').max(200),
 }).superRefine((v, ctx) => {
   if (['cheque', 'bank'].includes(v.method) && !v.reference?.trim()) {
@@ -74,7 +77,7 @@ export async function paySuppliers(ctx: TenantCtx, input: PayInput) {
   for (const a of input.allocations) {
     const bill = await getPurchase(ctx, a.documentId, 'purchase_bill');
     const row = await db().supplierPayment.create({
-      data: { tenantId: ctx.tenantId, contactId: input.contactId, documentId: bill.id, number, amountPaise: BigInt(a.amountPaise), method: input.method, accountId, reference: input.reference?.trim() || null, paidOn, createdBy: ctx.userId },
+      data: { tenantId: ctx.tenantId, contactId: input.contactId, documentId: bill.id, number, amountPaise: BigInt(a.amountPaise), method: input.method, accountId, reference: input.reference?.trim() || null, attachmentUrl: input.attachmentUrl ?? null, paidOn, createdBy: ctx.userId },
     });
     first ||= row.id;
     await setBillStatus(bill, bill.paidPaise + BigInt(a.amountPaise), bill.returnedPaise);

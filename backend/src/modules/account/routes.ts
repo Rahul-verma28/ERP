@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { z } from 'zod';
 import { db, withPlatform } from '../../kernel/db';
 import { AppError } from '../../kernel/errors';
@@ -12,6 +12,8 @@ import { clearRefreshCookie } from '../identity/tokens';
 import { cache } from '../../kernel/cache';
 import { audit } from '../audit/service';
 import * as account from './service';
+import { saveUpload } from '../files/service';
+import { storage } from '../../kernel/storage';
 
 // /api/v1/account — the signed-in person, in every business (My account).
 
@@ -25,6 +27,22 @@ router.get('/', async (req, res) => {
   const out = await run(() => account.accountOverview(me(req), req.auth!.sid));
   const trusted = await account.trustedUserAgents(me(req));
   res.json({ ...out, trustedDevices: trusted.size });
+});
+
+// Profile photo: one per person, kept with no business (it shows in every business they belong to)
+router.post('/avatar', express.raw({ type: () => true, limit: '6mb' }), async (req, res) => {
+  const name = String(req.header('x-file-name') ?? 'photo');
+  const out = await run(async () => {
+    const f = await saveUpload({ tenantId: null, userId: me(req), bytes: Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), name: decodeURIComponent(name), kind: 'image', entityType: 'user', entityId: me(req), field: 'avatar' });
+    await account.setAvatar(me(req), f.ref);
+    return f;
+  });
+  res.status(201).json(out);
+});
+router.delete('/avatar', async (req, res) => {
+  const old = await run(() => account.setAvatar(me(req), null));
+  if (old) await storage.remove(old).catch(() => undefined);
+  res.status(204).end();
 });
 
 router.patch('/profile', validate(z.object({ name: zPersonName })), async (req, res) => {

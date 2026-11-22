@@ -22,6 +22,7 @@ import { invoiceStatus, returnStatus, type Supplier } from "@/lib/purchase"
 import { cn } from "@/lib/utils"
 import { PageLoading } from "@/components/page-states"
 import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
+import { AttachmentsField } from "@/components/file-field"
 
 // One supplier, laid out like a statement: totals for a period on top, then their invoices, returns,
 // payments and the running ledger. The cards and the first three tabs come from one request.
@@ -210,6 +211,11 @@ function SupplierPage() {
             ["Last purchase", s.lastBillOn ? formatDate(s.lastBillOn) : "Never"], ["Supplier since", s.createdAt ? formatDate(s.createdAt) : null],
           ]} />
           {s.notes && <p className="mt-4 rounded-2xl bg-muted/60 p-3 text-sm whitespace-pre-wrap">{s.notes}</p>}
+        </Section>
+      )}
+      {tab === "details" && (
+        <Section title="Documents">
+          <AttachmentsField entityType="supplier" entityId={s.id} disabled={!can("inventory.supplier.edit")} prompt="Add GST certificate, agreement or price list" />
         </Section>
       )}
       <SupplierDialog open={editing} onOpenChange={setEditing} supplier={s} onSaved={() => void res.reload()} />

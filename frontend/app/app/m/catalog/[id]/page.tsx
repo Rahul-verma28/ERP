@@ -18,6 +18,7 @@ import { qty } from "@/lib/inventory"
 import { cn } from "@/lib/utils"
 import { PageError, PageLoading } from "@/components/page-states"
 import { AboutCard, RecordHistory, useTabParam } from "@/components/record-kit"
+import { AttachmentsField } from "@/components/file-field"
 
 // One item: what it is and costs, where its stock is and how it moved, and where it was sold and
 // bought. Stock actions are one click away.
@@ -170,6 +171,12 @@ function ItemPage() {
               history.data && product && ["Bought, all time", `${qty(history.data.totals.bought.quantity)} ${item.unit} · ${formatPaise(history.data.totals.bought.valuePaise)}`],
             ]} />
             <p className="mt-4 text-xs text-muted-foreground">Customer-specific rates live in <Link href="/app/m/catalog/price-lists" className="underline">Price lists</Link>.</p>
+          </Section>
+          <Section title="Photos">
+            <AttachmentsField entityType="item" entityId={item.id} field="photos" kind="image" max={5} disabled={!can("catalog.item.edit")} prompt="Add photos" />
+          </Section>
+          <Section title="Files">
+            <AttachmentsField entityType="item" entityId={item.id} field="files" disabled={!can("catalog.item.edit")} prompt="Add a spec sheet, manual or warranty card" />
           </Section>
         </div>
       )}

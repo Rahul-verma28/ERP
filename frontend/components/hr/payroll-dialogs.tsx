@@ -19,6 +19,7 @@ import { formatPaise } from "@/lib/format"
 import { useFinAccounts } from "@/lib/finance"
 import { monthLabel, useCurrentEmployees } from "@/lib/hr"
 import { useChanged } from "@/lib/use-dirty"
+import { FileField } from "@/components/file-field"
 
 // Loan and overtime forms, used on their own pages and on an employee's Set Salary page
 // (where the employee is already chosen).
@@ -30,7 +31,7 @@ export interface OT { id: string; employeeId: string; employee: string; employee
 export function LoanDialog({ employeeId, onClose, onSaved }: { employeeId?: string; onClose: () => void; onSaved: () => void }) {
   const { can } = useAuth()
   const accounts = useFinAccounts()
-  const [f, setF] = React.useState({ employeeId: employeeId ?? "", title: "Salary advance", kind: "Salary advance", amountPaise: null as number | null, emiPaise: null as number | null, givenOn: todayInIndia(), startsMonth: todayInIndia().slice(0, 7), accountId: "", paidOut: true, reason: "" })
+  const [f, setF] = React.useState({ employeeId: employeeId ?? "", title: "Salary advance", kind: "Salary advance", amountPaise: null as number | null, emiPaise: null as number | null, givenOn: todayInIndia(), startsMonth: todayInIndia().slice(0, 7), accountId: "", paidOut: true, reason: "", documentUrl: "" })
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -52,7 +53,7 @@ export function LoanDialog({ employeeId, onClose, onSaved }: { employeeId?: stri
     if (Object.keys(x).length) return
     setBusy(true)
     try {
-      await api.post("/hr/loans", { ...f, title: f.title.trim(), reason: f.reason.trim() || null, accountId: books && f.paidOut ? account || null : null })
+      await api.post("/hr/loans", { ...f, title: f.title.trim(), reason: f.reason.trim() || null, documentUrl: f.documentUrl || null, accountId: books && f.paidOut ? account || null : null })
       toast.success(`${f.title} recorded: ${months} instalment${months === 1 ? "" : "s"} from ${monthLabel(f.startsMonth)}`)
       onSaved()
     } catch (err) {
@@ -78,6 +79,7 @@ export function LoanDialog({ employeeId, onClose, onSaved }: { employeeId?: stri
             {f.paidOut && <Field label="Paid from" className="sm:col-span-2"><AccountSelect value={account} onChange={(v) => set("accountId", v)} aria-label="Paid from" /></Field>}
           </>}
           <Field label="Reason" className="sm:col-span-2"><Textarea rows={2} maxLength={500} value={f.reason} onChange={(e) => set("reason", e.target.value)} placeholder="Optional, e.g. Medical emergency" /></Field>
+          <Field label="Signed agreement" className="sm:col-span-2" hint="Optional"><FileField value={f.documentUrl} onChange={(v) => set("documentUrl", v ?? "")} prompt="Upload the agreement" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
           <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Record"}</Button></DialogFooter>
         </form>

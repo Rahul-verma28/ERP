@@ -7,7 +7,7 @@ import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
 import { DateStr, Paise, assertVersion, inScope, scopeSql } from '../../kernel/query';
 import { todayIST } from '../../kernel/gst';
-import { zPhone } from '../../kernel/zodRules';
+import { zPhone, zFileRef } from '../../kernel/zodRules';
 import { notify } from '../notifications/service';
 import { audit } from '../audit/service';
 import { createDocument } from '../billing/service';
@@ -49,6 +49,8 @@ export const AppointmentInput = z.object({
   branchId: z.string().uuid().optional().nullable(),
   /** Book even outside the person's working hours */
   outsideHours: z.boolean().optional(),
+  /** A report, prescription or reference photo */
+  attachmentUrl: zFileRef.optional().nullable().or(z.literal('').transform(() => null)),
 });
 export type AppointmentInput = z.infer<typeof AppointmentInput>;
 
@@ -240,7 +242,7 @@ export async function createAppointment(ctx: TenantCtx, b: AppointmentInput) {
         kind: b.kind, title: r.title, contactId: b.contactId ?? null, guestName: b.contactId ? null : b.guestName ?? null, guestPhone: b.contactId ? null : b.guestPhone ?? null,
         itemId: b.itemId ?? null, staffId, resourceId: b.resourceId ?? null, startAt: r.startAt, endAt: r.endAt, status, source: b.source ?? 'walk_in',
         pricePaise: b.pricePaise != null ? BigInt(b.pricePaise) : r.item ? r.item.pricePaise : null, confirmedAt: status === 'confirmed' ? new Date() : null,
-        notes: b.notes ?? null, tenantId: ctx.tenantId, createdBy: ctx.userId, branchId: b.branchId ?? ctx.branchIds[0] ?? null,
+        notes: b.notes ?? null, attachmentUrl: b.attachmentUrl ?? null, tenantId: ctx.tenantId, createdBy: ctx.userId, branchId: b.branchId ?? ctx.branchIds[0] ?? null,
       },
     });
     if (staffId && staffId !== ctx.userId) await notify(staffId, `New ${b.kind}: ${r.title}`, `${istDay(r.startAt)} ${hhmm(istMinutes(r.startAt))}`, '/app/m/bookings');

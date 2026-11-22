@@ -189,7 +189,7 @@ async function autoClose(ctx: TenantCtx, days: number) {
   if (!days) return;
   const ids = await db().$queryRaw<{ id: string }[]>`
     update support_tickets set status = 'closed', closed_at = now(), updated_at = now(), version = version + 1
-    where tenant_id = ${ctx.tenantId}::uuid and status = 'resolved' and resolved_at < now() - make_interval(days => ${days}) returning id`;
+    where tenant_id = ${ctx.tenantId}::uuid and status = 'resolved' and resolved_at < now() - make_interval(days => ${days}::int) returning id`;
   for (const r of ids) await event({ tenantId: ctx.tenantId }, r.id, 'closed', { auto: true });
 }
 

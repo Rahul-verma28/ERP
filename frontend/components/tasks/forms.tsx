@@ -20,6 +20,8 @@ import { formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { APPROVAL_KIND, COLORS, PRIORITY, PROJECT_STATUS, REPEAT_LABEL, STATUS, fmtMin, usePeople, type Approval, type ChecklistStep, type Project, type Task } from "@/lib/tasks"
 import { useChanged } from "@/lib/use-dirty"
+import { AttachmentsField, attachPending, FileField } from "@/components/file-field"
+import type { UploadedFile } from "@/lib/files"
 
 // Every Tasks form: task, project, time, approval request and decision. Dialogs only (one list page
 // per screen); each groups its fields in titled sections, marks and enforces what is required, and
@@ -133,6 +135,7 @@ export function TaskDialog({ task, parentId, defaults, labels = [], onClose, onS
     assigneeId: task ? task.assigneeId ?? "" : me?.user.id ?? "", projectId: task?.projectId ?? defaults?.projectId ?? "", repeat: task?.repeat ?? "none",
     labels: task?.labels ?? [], checklist: task?.checklist ?? [],
   })
+  const [files, setFiles] = React.useState<UploadedFile[]>([])
   // Editing: Save works only once something changed
   const unchanged = !useChanged(f)
   const [contact, setContact] = React.useState<ContactOption | null>(task?.contact ? { id: task.contact.id, name: task.contact.name } : defaults?.contact ?? null)
@@ -159,6 +162,7 @@ export function TaskDialog({ task, parentId, defaults, labels = [], onClose, onS
         checklist: f.checklist.map((s) => ({ id: s.id, text: s.text.trim(), done: s.done })),
       }
       const t = edit ? await api.patch<Task>(`/tasks/${task!.id}`, { ...body, version: task!.version }) : await api.post<Task>("/tasks", { ...body, parentId: parentId ?? null })
+      if (!edit) await attachPending(files, "task", t.id)
       toast.success(edit ? "Task saved" : parentId ? "Subtask added" : "Task created")
       onSaved(t)
     } catch (err) {
@@ -193,6 +197,9 @@ export function TaskDialog({ task, parentId, defaults, labels = [], onClose, onS
           <FormSection title={`Checklist${f.checklist.length ? ` · ${f.checklist.filter((s) => s.done).length}/${f.checklist.length}` : ""}`} className="sm:grid-cols-1">
             <ChecklistEditor value={f.checklist} onChange={(v) => set("checklist", v)} />
             {errors.checklist && <p className="text-xs text-destructive">{errors.checklist}</p>}
+          </FormSection>
+          <FormSection title="Files" className="sm:grid-cols-1">
+            <AttachmentsField entityType="task" entityId={task?.id} pending={files} onPendingChange={setFiles} prompt="Add files or photos" />
           </FormSection>
           <FormError message={error} />
           <DialogFooter><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!task && unchanged)}>{busy ? "Saving…" : edit ? "Save task" : "Create task"}</Button></DialogFooter>
@@ -335,7 +342,6 @@ export function ApprovalDialog({ task, projectId, onClose, onSaved }: { task?: {
     if (needsAmount && !f.amountPaise) x.amountPaise = "Enter the amount"
     if (!f.approverId) x.approverId = "Choose who approves it"
     if (f.needBy && f.needBy < todayInIndia()) x.needBy = "Can't be in the past"
-    if (f.attachmentUrl && !/^https?:\/\//.test(f.attachmentUrl)) x.attachmentUrl = "Paste a full link starting with https://"
     setErrors(x)
     if (Object.keys(x).length) return
     setBusy(true)
@@ -355,7 +361,7 @@ export function ApprovalDialog({ task, projectId, onClose, onSaved }: { task?: {
             <Field label="Type"><NativeSelect value={f.kind} onChange={(e) => set("kind", e.target.value as Approval["kind"])}>{Object.entries(APPROVAL_KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</NativeSelect></Field>
             <Field label="Amount" required={needsAmount} error={errors.amountPaise}><MoneyInput value={f.amountPaise} onChange={(v) => set("amountPaise", v)} aria-label="Amount" /></Field>
             <Field label="Why" className="sm:col-span-2" count={[f.details.length, 4000]}><Textarea rows={3} maxLength={4000} value={f.details} onChange={(e) => set("details", e.target.value)} placeholder="Reason, quotes compared, anything that helps decide" /></Field>
-            <Field label="Bill or quote link" error={errors.attachmentUrl} className="sm:col-span-2" hint="Optional"><Input value={f.attachmentUrl} onChange={(e) => set("attachmentUrl", e.target.value)} placeholder="https://…" /></Field>
+            <Field label="Bill or quote" error={errors.attachmentUrl} className="sm:col-span-2" hint="Optional"><FileField value={f.attachmentUrl} onChange={(v) => set("attachmentUrl", v ?? "")} prompt="Upload the bill or quote" /></Field>
           </FormSection>
           <FormSection title="Who and when">
             <Field label="Approver" required error={errors.approverId} hint="Only people whose role can approve are listed"><PersonSelect value={f.approverId} onChange={(v) => set("approverId", v)} filter={(p) => p.canApprove} aria-label="Approver" /></Field>

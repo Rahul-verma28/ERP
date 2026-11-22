@@ -7,6 +7,7 @@ import { DateStr, Paise } from '../../kernel/query';
 import { audit } from '../audit/service';
 import { bundle, nameParts, namesFrom } from './bundle';
 import { ensureHr, getConfig } from './setup';
+import { zFileRef } from '../../kernel/zodRules';
 
 // Employees: who they are, where they work, how they are paid, and the salary structure
 // (allowances and deductions on top of basic). Self-service people see only themselves.
@@ -23,7 +24,7 @@ export const EmployeeInput = z.object({
   phone: opt(Phone),
   gender: opt(z.enum(['male', 'female', 'other'])),
   dob: opt(DateStr),
-  photoUrl: opt(z.string().url().max(500)),
+  photoUrl: opt(zFileRef),
   memberId: opt(z.string().uuid()),
   branchId: opt(z.string().uuid()),
   departmentId: opt(z.string().uuid()),

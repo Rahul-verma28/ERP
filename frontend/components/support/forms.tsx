@@ -17,6 +17,8 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { CHANNEL, PRIORITY, useAgents, useSupportSettings, type Article, type Channel, type Ticket, type TicketPriority } from "@/lib/support"
 import { useChanged } from "@/lib/use-dirty"
+import { AttachmentsField, attachPending } from "@/components/file-field"
+import type { UploadedFile } from "@/lib/files"
 
 // Every Customer Service form: a new ticket (or its details), resolving one, and a knowledge base
 // article or saved reply. Each groups its fields, marks what is required, checks it before sending
@@ -42,6 +44,7 @@ export function TicketDialog({ ticket, defaults, onClose, onSaved }: { ticket?: 
     channel: ticket?.channel ?? ("phone" as Channel), assigneeId: ticket ? ticket.assigneeId ?? "" : agents.some((a) => a.id === me?.user.id) ? me?.user.id ?? "" : "",
     guestName: "", guestPhone: "", guestEmail: "", invoiceId: ticket?.invoiceId ?? defaults?.invoiceId ?? "", serial: ticket?.serial ?? "", labels: ticket?.labels ?? [],
   })
+  const [files, setFiles] = React.useState<UploadedFile[]>([])
   // Editing: Save works only once something changed
   const unchanged = !useChanged(f)
   const [item, setItem] = React.useState<{ id: string; name: string } | null>(ticket?.item ? { id: ticket.item.id, name: ticket.item.name } : null)
@@ -70,6 +73,7 @@ export function TicketDialog({ ticket, defaults, onClose, onSaved }: { ticket?: 
       const t = edit
         ? await api.patch<{ id: string }>(`/support/tickets/${ticket!.id}`, { ...common, version: ticket!.version })
         : await api.post<{ id: string }>("/support/tickets", { ...common, ...(who === "customer" ? { contactId: contact!.id } : { guestName: f.guestName.trim(), guestPhone: f.guestPhone || null, guestEmail: f.guestEmail.trim() || null }) })
+      if (!edit) await attachPending(files, "ticket", t.id)
       toast.success(edit ? "Ticket saved" : "Ticket created")
       onSaved(t)
     } catch (err) {
@@ -123,6 +127,7 @@ export function TicketDialog({ ticket, defaults, onClose, onSaved }: { ticket?: 
             <Field label="Product" className="sm:col-span-2">
               {item ? <div className="flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm"><span className="font-medium">{item.name}</span><Button type="button" variant="ghost" size="icon-sm" aria-label="Remove product" onClick={() => setItem(null)}><X /></Button></div> : <ItemPicker onPick={(i) => setItem({ id: i.id, name: i.name })} placeholder="Search the product it is about" />}
             </Field>
+            <Field label="Screenshots and files" className="sm:col-span-2" hint="Optional: photos of the problem, the bill, a report"><AttachmentsField entityType="ticket" entityId={ticket?.id} pending={files} onPendingChange={setFiles} prompt="Add photos or files" /></Field>
             <Field label="Serial / IMEI" hint="Finds the sale and the warranty" className="sm:col-span-2"><Input value={f.serial} maxLength={60} onChange={(e) => set("serial", e.target.value)} /></Field>
           </FormSection>
           <FormError message={error} />

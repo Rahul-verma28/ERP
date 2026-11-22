@@ -19,6 +19,7 @@ import { EMPLOYMENT_LABEL, useCurrentEmployees, type EmploymentType } from "@/li
 import { cn } from "@/lib/utils"
 import { useChanged } from "@/lib/use-dirty"
 import { activeOr } from "@/lib/active"
+import { FileField } from "@/components/file-field"
 
 // Recruitment forms: job opening, candidate, interview, and hiring a candidate as an employee.
 
@@ -117,7 +118,8 @@ export function CandidateDialog({ candidate, jobId, onClose, onSaved }: { candid
     if (!f.phone && !f.email) x.phone = "Enter a mobile number or email"
     if (f.phone && !/^[6-9]\d{9}$/.test(f.phone)) x.phone = "Enter a 10-digit mobile number"
     if (f.email && !/^\S+@\S+\.\S+$/.test(f.email)) x.email = "Enter a valid email"
-    if (f.resumeUrl && !/^https?:\/\//.test(f.resumeUrl)) x.resumeUrl = "Enter a full link, starting with https://"
+    // A new candidate comes with a resume; one added before uploads existed can still be saved
+    if (!candidate && !f.resumeUrl) x.resumeUrl = "Upload the resume"
     setErrors(x)
     if (Object.keys(x).length) return
     setBusy(true)
@@ -147,7 +149,7 @@ export function CandidateDialog({ candidate, jobId, onClose, onSaved }: { candid
           <Field label="Experience (years)"><NumberStepper decimals max={60} step={0.5} value={f.experience} onChange={(v) => set("experience", v)} placeholder="e.g. 2" aria-label="Experience" /></Field>
           <Field label="Current salary (a month)"><MoneyInput value={f.currentCtcPaise} onChange={(v) => set("currentCtcPaise", v)} aria-label="Current salary" /></Field>
           <Field label="Expects (a month)"><MoneyInput value={f.expectedCtcPaise} onChange={(v) => set("expectedCtcPaise", v)} aria-label="Expected salary" /></Field>
-          <Field label="Resume link" error={errors.resumeUrl} className="sm:col-span-2"><Input value={f.resumeUrl} maxLength={500} onChange={(e) => set("resumeUrl", e.target.value)} placeholder="https://…" /></Field>
+          <Field label="Resume" required={!candidate} error={errors.resumeUrl} className="sm:col-span-2" hint="PDF or Word"><FileField value={f.resumeUrl} onChange={(v) => set("resumeUrl", v ?? "")} prompt="Upload the resume" /></Field>
           <Field label="Your rating" className="sm:col-span-2"><span className="flex gap-1">{[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" aria-label={`${n} of 5`} aria-pressed={f.rating === n} onClick={() => set("rating", f.rating === n ? 0 : n)} className={cn("size-8 rounded-lg border text-sm font-semibold", n <= f.rating && "border-amber-400 bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-200")}>{n}</button>)}</span></Field>
           <Field label="Notes" className="sm:col-span-2"><Textarea rows={2} maxLength={3000} value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Anything from the call or CV" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>

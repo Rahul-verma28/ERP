@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { AlertTriangle, Briefcase, CheckCircle2, Clock, ExternalLink, FileText, Landmark, MapPin, Phone, Plus, Trash2, UserRound, XCircle } from "lucide-react"
+import { AlertTriangle, Briefcase, CheckCircle2, Clock, FileText, Landmark, MapPin, Phone, Plus, Trash2, UserRound, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -18,6 +18,8 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { EMP_STATUS, EMPLOYMENT_LABEL, useHrLookups, type Employee, type HrRecord } from "@/lib/hr"
 import { cn } from "@/lib/utils"
+import { FileField } from "@/components/file-field"
+import { DocLink } from "@/components/record-view"
 
 // Employee overview, laid out like a profile: who they are, their job, how to reach them,
 // where their salary goes, their hours and rates, and the papers they have handed in.
@@ -56,8 +58,7 @@ function DocDialog({ employeeId, missing, onClose, onSaved }: { employeeId: stri
     e.preventDefault()
     const x: Record<string, string> = {}
     if (!f.documentType) x.documentType = "Choose the document"
-    if (f.url && !/^https?:\/\//.test(f.url)) x.url = "Enter a full link, starting with https://"
-    if (!f.url && !f.number) x.url = "Add the link to the scan, or at least its number"
+    if (!f.url) x.url = "Upload the scan or photo of the document"
     if (f.issuedOn && f.expiresOn && f.expiresOn < f.issuedOn) x.expiresOn = "Must be after the issue date"
     setErrors(x)
     if (Object.keys(x).length) return
@@ -76,12 +77,12 @@ function DocDialog({ employeeId, missing, onClose, onSaved }: { employeeId: stri
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader><DialogTitle>Add document</DialogTitle><DialogDescription>Keep the scan in Google Drive or similar and paste the link.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Add document</DialogTitle><DialogDescription>Upload a scan or a clear photo. It stays with the employee&apos;s record.</DialogDescription></DialogHeader>
         <form onSubmit={save} className="grid gap-4 sm:grid-cols-2" noValidate>
           <Field label="Document" required error={errors.documentType} className="sm:col-span-2"><SearchSelect value={f.documentType} onChange={(v) => set("documentType", v)} searchable options={types.map((t) => ({ value: t.name, label: `${t.name}${t.required ? " (required)" : ""}` }))} onCreate={(t) => t.trim() && set("documentType", t.trim())} createLabel="Use what I typed" placeholder="Choose the document" aria-label="Document" /></Field>
           <Field label="Number" hint="e.g. PAN or licence number"><Input value={f.number} maxLength={40} onChange={(e) => set("number", e.target.value.toUpperCase())} placeholder="Optional" /></Field>
           <Field label="Valid till" error={errors.expiresOn}><Input type="date" value={f.expiresOn} onChange={(e) => set("expiresOn", e.target.value)} /></Field>
-          <Field label="Link to the scan" error={errors.url} className="sm:col-span-2"><Input value={f.url} maxLength={500} onChange={(e) => set("url", e.target.value)} placeholder="https://drive.google.com/…" /></Field>
+          <Field label="Scan or photo" required error={errors.url} className="sm:col-span-2"><FileField value={f.url} onChange={(v) => set("url", v ?? "")} prompt="Upload the document" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
           <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy}>{busy ? "Saving…" : "Add document"}</Button></DialogFooter>
         </form>
@@ -113,7 +114,7 @@ function Documents({ e }: { e: Employee }) {
                 <FileText className="size-4 text-muted-foreground" />
                 <span className="min-w-0 flex-1"><span className="block font-medium">{d.data.documentType}</span><span className="text-xs text-muted-foreground">{[d.data.number, d.data.expiresOn && `valid till ${formatDate(d.data.expiresOn)}`].filter(Boolean).join(" · ") || "—"}</span></span>
                 {expired ? <Pill color="rose">Expired</Pill> : <Pill color={DOC_STATUS[d.status]?.color} dot>{DOC_STATUS[d.status]?.label}</Pill>}
-                {d.data.url && <a href={d.data.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"><ExternalLink className="size-3.5" />View</a>}
+                {d.data.url && <DocLink href={d.data.url} label="View" />}
                 {can("hr.employee.edit") && <ActionMenu label={`More actions for ${d.data.documentType}`} items={[d.status !== "verified" && { label: "Mark verified", icon: CheckCircle2, onClick: () => void status(d, "verified") }, d.status !== "rejected" && { label: "Reject (ask again)", icon: XCircle, onClick: () => void status(d, "rejected") }, "-", { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(d) }]} />}
               </li>
             )

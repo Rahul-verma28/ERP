@@ -16,6 +16,7 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate } from "@/lib/format"
+import { openFile } from "@/lib/files"
 
 // Acknowledgments: for every document that must be read, one row per employee — who has
 // confirmed, when, who shared it, and how long the rest have been pending.
@@ -54,7 +55,7 @@ export default function AcknowledgmentsPage() {
           {r.status === "pending" && r.employeeId === myId && <Button size="sm" className="h-8" onClick={() => void ack(r)}><CheckCircle2 /> I have read it</Button>}
           <Button variant="ghost" size="icon-sm" title="View" aria-label={`View acknowledgment of ${r.employee}`} onClick={() => setViewing(r)}><Eye /></Button>
           <ActionMenu label="More actions" items={[
-            r.url && { label: "Open document", icon: ExternalLink, onClick: () => window.open(r.url!, "_blank") },
+            r.url && { label: "Open document", icon: ExternalLink, onClick: () => void openFile(r.url) },
             hr && r.status === "pending" && { label: "Mark as read (signed copy)", icon: CheckCircle2, onClick: () => void ackFor(r) },
             hr && r.status === "acknowledged" && { label: "Back to pending", icon: RotateCcw, onClick: () => void ackFor(r, true) },
           ]} />

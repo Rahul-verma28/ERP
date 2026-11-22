@@ -23,10 +23,10 @@ import { useChanged } from "@/lib/use-dirty"
 // days a year, paid or unpaid, and whether it can be applied for.
 
 const COLORS = ["emerald", "rose", "amber", "blue", "violet", "slate", "orange"]
-const blank = { name: "", code: "", description: "", daysPerYear: "12", paid: true, carryForward: false, color: "emerald", isActive: true }
+const blank = { name: "", code: "", description: "", daysPerYear: "12", paid: true, carryForward: false, color: "emerald", isActive: true, proofAfterDays: "" }
 
 function LeaveTypeForm({ editing, onDone }: { editing: LeaveType | null; onDone: () => void }) {
-  const [f, setF] = React.useState(() => (editing ? { name: editing.name, code: editing.code, description: editing.description ?? "", daysPerYear: String(editing.daysPerYear), paid: editing.paid, carryForward: editing.carryForward, color: editing.color, isActive: editing.isActive } : blank))
+  const [f, setF] = React.useState(() => (editing ? { name: editing.name, code: editing.code, description: editing.description ?? "", daysPerYear: String(editing.daysPerYear), paid: editing.paid, carryForward: editing.carryForward, color: editing.color, isActive: editing.isActive, proofAfterDays: editing.proofAfterDays == null ? "" : String(editing.proofAfterDays) } : blank))
   const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
@@ -41,7 +41,7 @@ function LeaveTypeForm({ editing, onDone }: { editing: LeaveType | null; onDone:
     setErrors(x)
     if (Object.keys(x).length) return
     setBusy(true)
-    const body = { ...f, name: f.name.trim(), code, description: f.description.trim() || null, daysPerYear: Number(f.daysPerYear || 0) }
+    const body = { ...f, name: f.name.trim(), code, description: f.description.trim() || null, daysPerYear: Number(f.daysPerYear || 0), proofAfterDays: f.proofAfterDays === "" ? null : Number(f.proofAfterDays) }
     try {
       if (editing) await api.put(`/hr/leave-types/${editing.id}`, body)
       else await api.post("/hr/leave-types", body)
@@ -64,6 +64,7 @@ function LeaveTypeForm({ editing, onDone }: { editing: LeaveType | null; onDone:
         <Field label="Max days / year" required hint="0 = no limit"><NumberStepper decimals max={366} value={f.daysPerYear} onChange={(v) => set("daysPerYear", v)} aria-label="Max days a year" /></Field>
         <Field label="Short code" error={errors.code} hint="Shows in the register"><Input value={f.code} maxLength={6} onChange={(e) => set("code", e.target.value.toUpperCase())} placeholder="e.g. CL" className="font-mono uppercase" /></Field>
       </div>
+      <Field label="Ask for proof after" error={errors.proofAfterDays} hint="Days. Longer leave needs proof such as a medical certificate. Empty = never"><NumberStepper decimals max={366} value={f.proofAfterDays} onChange={(v) => set("proofAfterDays", v)} aria-label="Ask for proof after days" placeholder="Never" /></Field>
       <Field label="Colour"><div className="flex flex-wrap gap-2">{COLORS.map((c) => <button key={c} type="button" aria-label={c} aria-pressed={f.color === c} onClick={() => set("color", c)} className={cn("size-7 rounded-full ring-offset-2 ring-offset-background", tone(c).dot, f.color === c && "ring-2 ring-primary")} />)}</div></Field>
       <label className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm"><span><span className="font-medium">Paid leave</span><span className="block text-xs text-muted-foreground">Employees get salary for these days</span></span><Switch checked={f.paid} onCheckedChange={(v) => set("paid", v)} aria-label="Paid leave" /></label>
       <label className="flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm"><span><span className="font-medium">Carry forward</span><span className="block text-xs text-muted-foreground">Unused days move to next year</span></span><Switch checked={f.carryForward} onCheckedChange={(v) => set("carryForward", v)} aria-label="Carry forward" /></label>

@@ -18,6 +18,7 @@ import { PAYMENT_METHODS } from "@/lib/money"
 import { PaymentAccountField } from "@/components/finance/forms"
 import type { SalesDoc } from "@/lib/sales"
 import { cn } from "@/lib/utils"
+import { FileField } from "@/components/file-field"
 
 // The one "Receive payment" form, on Payments Received, the invoice page and the customer page.
 // One payment can clear several bills; what is not put on a bill stays as the customer's advance.
@@ -132,6 +133,7 @@ export function ReceiveDialog({ initial, bill, onClose, onSaved }: {
   const [reference, setReference] = React.useState("")
   const [accountId, setAccountId] = React.useState("")
   const [notes, setNotes] = React.useState("")
+  const [proof, setProof] = React.useState<string | null>(null)
   // Opened from a bill: the payment goes on that bill until changed by hand
   const [put, setPut] = React.useState<Record<string, number | null>>(bill ? { [bill.id]: bill.duePaise } : {})
   const [touched, setTouched] = React.useState(!!bill)
@@ -189,7 +191,7 @@ export function ReceiveDialog({ initial, bill, onClose, onSaved }: {
     setError(null)
     if (!check()) return setError("Fix the marked fields first.")
     setBusy(true)
-    const pay = { amountPaise: amount, paidOn, method, accountId: accountId || undefined, reference: reference.trim() || null, notes: notes.trim() || null }
+    const pay = { amountPaise: amount, paidOn, method, accountId: accountId || undefined, reference: reference.trim() || null, notes: notes.trim() || null, attachmentUrl: proof }
     const allocations = open.filter((b) => (shares[b.id] ?? 0) > 0).map((b) => ({ documentId: b.id, amountPaise: shares[b.id]! }))
     try {
       if (walkIn) {
@@ -265,6 +267,7 @@ export function ReceiveDialog({ initial, bill, onClose, onSaved }: {
               <Input value={reference} maxLength={100} placeholder={ref.placeholder} onChange={(e) => { setReference(e.target.value); clear("reference") }} />
             </Field>
             <PaymentAccountField label="Received in" method={method} value={accountId} onChange={setAccountId} />
+            <Field label="Proof" className="sm:col-span-2" error={errors.attachmentUrl} hint="Optional: cheque photo, bank slip or UPI screenshot"><FileField value={proof} onChange={(v) => setProof(v)} prompt="Upload proof" /></Field>
           </div>
 
           {!walkIn && contact && (

@@ -10,6 +10,7 @@ import { hrReach, myEmployee, names } from './employees';
 import { hireCandidate } from './people';
 import { Prisma } from '@prisma/client';
 import { bundle, nameParts, namesFrom } from './bundle';
+import { zFileRef } from '../../kernel/zodRules';
 
 // Trainers, candidate assessments, offers, onboarding checklists and candidate onboardings.
 // They share one table; each kind has its own fields and statuses, checked here.
@@ -63,7 +64,7 @@ const EmpDoc = z.object({
   employeeId: z.string().uuid({ message: 'Choose the employee' }),
   documentType: z.string().trim().min(2, 'Choose the document type').max(60),
   number: opt(z.string().trim().max(40)),
-  url: opt(z.string().url('Enter a full link, starting with https://').max(500)),
+  url: opt(zFileRef),
   issuedOn: opt(DateStr),
   expiresOn: opt(DateStr),
   notes: opt(z.string().trim().max(500)),

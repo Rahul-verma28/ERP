@@ -17,6 +17,7 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
+import { openFile } from "@/lib/files"
 
 // Candidates as a board (Applied → Screening → Interview → Offer) or a list. Hire makes them an employee.
 
@@ -49,7 +50,7 @@ function Candidates() {
   const menu = (c: Candidate) => [
     edit && c.stage !== "hired" && { label: "Edit", icon: Pencil, onClick: () => setEditing(c) },
     can("hr.recruitment.create") && !["hired", "rejected"].includes(c.stage) && { label: "Schedule interview", icon: CalendarClock, onClick: () => setInterviewing(c) },
-    c.resumeUrl && { label: "Open resume", icon: ExternalLink, onClick: () => window.open(c.resumeUrl!, "_blank", "noopener") },
+    c.resumeUrl && { label: "Open resume", icon: ExternalLink, onClick: () => void openFile(c.resumeUrl) },
     c.phone && { label: `Call ${c.phone}`, icon: Phone, onClick: () => window.open(`tel:${c.phone}`) },
     ...(edit && c.stage !== "hired" ? FLOW.filter((s) => s !== c.stage).map((s) => ({ label: `Move to ${STAGE[s].label}`, icon: ArrowRight, onClick: () => void move(c, s) })) : []),
     can("hr.employee.create") && !["hired", "rejected"].includes(c.stage) && { label: "Hire", icon: UserCheck, onClick: () => setHiring(c) },

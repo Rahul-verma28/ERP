@@ -86,11 +86,16 @@ export const ApproveInput = z.object({ discountPercent: z.number().min(0, 'From 
 /** Partner: creates the partner and its owner; vendor: adds a Console user with the Vendor role. */
 export async function approveApplication(ctx: ConsoleCtx, id: string, input: z.infer<typeof ApproveInput>) {
   const a = await pendingApplication(id);
+  // A partner sells AHEAD and gets paid commission: their PAN/GST papers come before approval
+  const kyc = a.kind === 'partner' ? await db().storedFile.findMany({ where: { tenantId: null, entityType: 'application', entityId: id }, select: { id: true } }) : [];
+  if (a.kind === 'partner' && !kyc.length) throw new AppError('VALIDATION_FAILED', 'Add the partner\'s KYC papers (PAN, GST certificate or agreement) before approving.', { fields: { kyc: 'Add KYC papers' } });
   const created =
     a.kind === 'partner'
       ? await createPartner(ctx, { name: a.company ?? a.name, contactName: a.name, email: a.email, mobile: a.mobile, gstin: a.gstin, stateCode: a.stateCode as never, discountPercent: input.discountPercent })
       : await addMember(ctx, { email: a.email, name: a.name, mobile: a.mobile, roleKey: 'vendor' });
   await db().consoleApplication.update({ where: { id }, data: { status: 'approved', decidedBy: ctx.userId, decidedAt: new Date(), resultId: created.id } });
+  // The papers now belong to the partner
+  if (kyc.length) await db().storedFile.updateMany({ where: { id: { in: kyc.map((k) => k.id) } }, data: { entityType: 'partner', entityId: created.id, field: 'kyc' } });
   await audit({ tenantId: null, action: 'console.application_approved', entity: 'console_application', entityId: id, after: { kind: a.kind, email: a.email } });
   return { kind: a.kind, resultId: created.id, loginLink: created.loginLink, mobile: a.mobile };
 }

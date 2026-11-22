@@ -7,7 +7,7 @@ import { Building2, Loader2, LogOut, Menu, UserRound, X } from "lucide-react"
 import { toast } from "sonner"
 import { errorMessage } from "@/lib/api"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { WorkspaceSwitcher } from "@/components/app-shell"
 import { ConsolePalette } from "@/components/console/console-palette"
@@ -113,6 +113,7 @@ function AccountMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger className="rounded-full outline-offset-2" aria-label="Account menu">
         <Avatar className="size-9">
+          {me.user.avatarUrl && <AvatarImage src={me.user.avatarUrl} alt="" />}
           <AvatarFallback className="bg-accent text-xs font-semibold text-accent-foreground">{initials(me.user.name)}</AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>

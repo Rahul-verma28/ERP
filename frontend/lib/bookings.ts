@@ -20,6 +20,8 @@ export interface Appointment {
   source: Source
   pricePaise: number | null
   notes: string | null
+  /** A report, prescription or reference photo: "file:<id>" */
+  attachmentUrl?: string | null
   cancelReason: string | null
   confirmedAt: string | null
   checkedInAt: string | null

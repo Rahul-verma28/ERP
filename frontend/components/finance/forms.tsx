@@ -18,6 +18,7 @@ import { useSharedApi } from "@/lib/use-api"
 import { formatPaise } from "@/lib/format"
 import { KIND_LABEL, useFinAccounts, type AccountKind, type Expense, type FinAccount, type Income } from "@/lib/finance"
 import { useChanged } from "@/lib/use-dirty"
+import { FileField } from "@/components/file-field"
 
 // Finance forms: account, expense, other income, transfer; and the account and category pickers
 // that every money form uses, each with "add" inside the list.
@@ -212,6 +213,10 @@ export function ExpenseDialog({ expense, copyOf, onClose, onSaved }: { expense?:
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => { setF((x) => ({ ...x, [k]: v })); setErrors((e) => (e[k] ? { ...e, [k]: "" } : e)); setError(null) }
   const account = f.accountId || accountForMethod(accounts.data?.data ?? [], "cash")
   const cashAccount = accounts.data?.data.find((a) => a.id === account)?.kind === "cash"
+  // Settings › Finance: bills above this amount must be attached
+  const prefs = useSharedApi<{ preferences: { finance?: { receiptRequiredAbovePaise: number | null } } }>("/tenant/workspace").data?.preferences.finance
+  const receiptAbove = prefs?.receiptRequiredAbovePaise ?? null
+  const receiptNeeded = receiptAbove != null && (f.amountPaise ?? 0) > receiptAbove
   const taxable = f.gstBill && f.amountPaise ? Math.round((f.amountPaise * 10_000) / (10_000 + f.gstRateBp)) : null
 
   async function save(ev: React.FormEvent) {
@@ -227,12 +232,12 @@ export function ExpenseDialog({ expense, copyOf, onClose, onSaved }: { expense?:
       if (!f.vendorGstin) e.vendorGstin = "Enter the supplier's GSTIN"
       else if (gstinRule(f.vendorGstin)) e.vendorGstin = gstinRule(f.vendorGstin)!
     }
-    if (f.receiptUrl && !/^https?:\/\//.test(f.receiptUrl)) e.receiptUrl = "Paste a full link starting with https://"
+    if (receiptNeeded && !f.receiptUrl) e.receiptUrl = `Attach the bill: needed above ${formatPaise(receiptAbove!)}`
     setErrors(e)
     if (Object.keys(e).length) return setError("Fix the marked fields first.")
     setBusy(true)
     const body = {
-      category: f.category, amountPaise: f.amountPaise, paidOn: f.paidOn, accountId: account, payee: f.payee.trim() || null, reference: f.reference.trim() || null, notes: f.notes.trim() || null, receiptUrl: f.receiptUrl.trim() || null,
+      category: f.category, amountPaise: f.amountPaise, paidOn: f.paidOn, accountId: account, payee: f.payee.trim() || null, reference: f.reference.trim() || null, notes: f.notes.trim() || null, receiptUrl: f.receiptUrl || null,
       gstBill: f.gstBill, ...(f.gstBill ? { billNo: f.billNo.trim(), vendorGstin: f.vendorGstin, gstRateBp: f.gstRateBp } : {}),
     }
     try {
@@ -279,7 +284,7 @@ export function ExpenseDialog({ expense, copyOf, onClose, onSaved }: { expense?:
           </FormSection>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Notes"><Textarea value={f.notes} rows={2} maxLength={1000} onChange={(e) => set("notes", e.target.value)} placeholder="e.g. November rent, shop 12" /></Field>
-            <Field label="Bill photo link" error={errors.receiptUrl} hint="A link to the photo or PDF"><Input value={f.receiptUrl} maxLength={500} onChange={(e) => set("receiptUrl", e.target.value)} placeholder="https://…" /></Field>
+            <Field label="Bill or receipt" required={receiptNeeded} error={errors.receiptUrl} hint={receiptAbove != null ? `Needed above ${formatPaise(receiptAbove)}` : "Photo or PDF of the bill"}><FileField value={f.receiptUrl} onChange={(v) => set("receiptUrl", v ?? "")} prompt="Upload the bill" /></Field>
           </div>
           <FormError message={error} />
           <DialogFooter>
@@ -297,7 +302,7 @@ export function ExpenseDialog({ expense, copyOf, onClose, onSaved }: { expense?:
 export function IncomeDialog({ income, onClose, onSaved }: { income?: Income | null; onClose: () => void; onSaved: (i: Income) => void }) {
   const today = todayInIndia()
   const accounts = useFinAccounts()
-  const [f, setF] = React.useState({ category: income?.category ?? "", amountPaise: income?.amountPaise ?? (null as number | null), receivedOn: income?.receivedOn.slice(0, 10) ?? today, accountId: income?.accountId ?? "", payer: income?.payer ?? "", reference: income?.reference ?? "", notes: income?.notes ?? "" })
+  const [f, setF] = React.useState({ category: income?.category ?? "", amountPaise: income?.amountPaise ?? (null as number | null), receivedOn: income?.receivedOn.slice(0, 10) ?? today, accountId: income?.accountId ?? "", payer: income?.payer ?? "", reference: income?.reference ?? "", notes: income?.notes ?? "", attachmentUrl: income?.attachmentUrl ?? "" })
   // Editing: Save works only once something changed
   const unchanged = !useChanged(f)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
@@ -317,7 +322,7 @@ export function IncomeDialog({ income, onClose, onSaved }: { income?: Income | n
     setErrors(e)
     if (Object.keys(e).length) return setError("Fix the marked fields first.")
     setBusy(true)
-    const body = { ...f, accountId: account, payer: f.payer.trim() || null, reference: f.reference.trim() || null, notes: f.notes.trim() || null }
+    const body = { ...f, accountId: account, payer: f.payer.trim() || null, reference: f.reference.trim() || null, notes: f.notes.trim() || null, attachmentUrl: f.attachmentUrl || null }
     try {
       const saved = income ? await api.put<Income>(`/incomes/${income.id}`, { ...body, version: income.version }) : await api.post<Income>("/incomes", body)
       toast.success(income ? "Income saved" : `${saved.number} saved`)
@@ -344,6 +349,7 @@ export function IncomeDialog({ income, onClose, onSaved }: { income?: Income | n
           <Field label="Received from"><Input value={f.payer} maxLength={160} onChange={(e) => set("payer", e.target.value)} placeholder="e.g. HDFC Bank" /></Field>
           <Field label="Reference"><Input value={f.reference} maxLength={60} onChange={(e) => set("reference", e.target.value)} placeholder="UTR or receipt no." /></Field>
           <Field label="Notes" className="sm:col-span-2"><Input value={f.notes} maxLength={1000} onChange={(e) => set("notes", e.target.value)} placeholder="Optional" /></Field>
+          <Field label="Proof" className="sm:col-span-2" error={errors.attachmentUrl} hint="Optional: bank statement line, receipt"><FileField value={f.attachmentUrl} onChange={(v) => set("attachmentUrl", v ?? "")} prompt="Upload proof" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
           <DialogFooter className="sm:col-span-2">
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>

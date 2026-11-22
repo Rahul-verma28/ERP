@@ -13,6 +13,7 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useSharedApi } from "@/lib/use-api"
 import { formatPaise } from "@/lib/format"
+import { InlineSave } from "@/components/save-bar"
 
 // Finance setup: the categories expenses and other income are filed under. Accounts live on Cash & Bank.
 
@@ -116,6 +117,54 @@ function Categories({ kind }: { kind: "expense" | "income" }) {
   )
 }
 
+/** Settings for bills on expenses: above an amount, the bill or receipt must be attached */
+function ReceiptRule() {
+  const { can } = useAuth()
+  const { data, reload } = useSharedApi<{ preferences: { finance?: { receiptRequiredAbovePaise: number | null } } }>("/tenant/workspace")
+  const saved = data?.preferences.finance?.receiptRequiredAbovePaise ?? null
+  const [on, setOn] = React.useState<boolean | null>(null)
+  const [above, setAbove] = React.useState<number | null | undefined>(undefined)
+  const [busy, setBusy] = React.useState(false)
+  if (!data) return null
+  const edit = can("tenant.settings.edit")
+  const isOn = on ?? saved != null
+  const value = above === undefined ? saved : above
+  const next = isOn ? value ?? 0 : null
+  const dirty = next !== saved
+  async function save() {
+    setBusy(true)
+    try {
+      await api.put("/tenant/preferences/finance", { receiptRequiredAbovePaise: next })
+      await reload()
+      setOn(null)
+      setAbove(undefined)
+      toast.success(next == null ? "Bills are optional on expenses" : next === 0 ? "Every expense needs its bill" : `Expenses above ${formatPaise(next)} need their bill`)
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Section title="Bills on expenses" description="Ask for the bill or receipt when an expense is above an amount. Good for audit and GST credit.">
+      <div className="grid gap-4">
+        <label className="flex items-start gap-3 text-sm">
+          <input type="checkbox" className="mt-0.5 size-4 accent-primary" disabled={!edit} checked={isOn} onChange={(e) => setOn(e.target.checked)} />
+          <span><span className="font-medium">Bill or receipt is required</span><span className="block text-muted-foreground">An expense can&apos;t be saved without its bill attached.</span></span>
+        </label>
+        {isOn && (
+          <div className="grid max-w-xs gap-1.5">
+            <span className="text-sm font-medium">For expenses above</span>
+            <MoneyInput value={value} disabled={!edit} onChange={(v) => setAbove(v)} aria-label="Bill needed above" />
+            <span className="text-xs text-muted-foreground">0 = every expense</span>
+          </div>
+        )}
+        {edit && <InlineSave dirty={dirty} saving={busy} onDiscard={() => { setOn(null); setAbove(undefined) }} onSave={() => void save()} saveLabel="Save" />}
+      </div>
+    </Section>
+  )
+}
+
 export default function FinanceSettingsPage() {
   const { can } = useAuth()
   if (!can("finance.expense.view")) return <PageHeader title="Finance setup" description="You don't have access to finance. Ask your admin." />
@@ -126,6 +175,7 @@ export default function FinanceSettingsPage() {
         <Categories kind="expense" />
         <Categories kind="income" />
       </div>
+      <ReceiptRule />
     </div>
   )
 }

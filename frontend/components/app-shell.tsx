@@ -5,7 +5,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Bell, Check, ChevronDown, ChevronsUpDown, CreditCard, Lock, LogOut, Menu, Search, Settings, ShieldCheck, UserRound, X, type LucideIcon } from "lucide-react"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -214,7 +214,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <>
-      <div className="relative px-3 pt-2">
+      <div className="relative px-3 p-2">
         <Search className="pointer-events-none absolute top-1/2 left-6 mt-1 size-4 -translate-y-1/2 text-muted-foreground" />
         <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search menu…" aria-label="Search menu" className="h-9 w-full rounded-xl border border-sidebar-border bg-transparent pr-3 pl-9 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring" />
       </div>
@@ -368,6 +368,7 @@ export function UserMenu() {
     <DropdownMenu>
       <DropdownMenuTrigger className="rounded-full" aria-label="Account menu">
         <Avatar>
+          {me.user.avatarUrl && <AvatarImage src={me.user.avatarUrl} alt="" />}
           <AvatarFallback>{initials(me.user.name)}</AvatarFallback>
         </Avatar>
       </DropdownMenuTrigger>

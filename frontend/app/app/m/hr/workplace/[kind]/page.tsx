@@ -26,6 +26,8 @@ import { formatDate } from "@/lib/format"
 import { useHrLookups, type Post } from "@/lib/hr"
 import { cn } from "@/lib/utils"
 import { useChanged } from "@/lib/use-dirty"
+import { openFile } from "@/lib/files"
+import { FileField } from "@/components/file-field"
 
 // Workplace: announcements, events, and documents and policies staff confirm they have read.
 
@@ -56,8 +58,7 @@ function PostDialog({ kind, post, onClose, onSaved }: { kind: Kind; post: Post |
     if (f.title.trim().length < 3) x.title = "Enter the title"
     if (kind === "announcement" && f.body.trim().length < 3) x.body = "Write the announcement"
     if (kind === "event" && !f.startsOn) x.startsOn = "Choose the date"
-    if (kind === "document" && !f.url.trim() && !f.body.trim()) x.url = "Add a link to the document, or its text"
-    if (f.url && !/^https?:\/\//.test(f.url)) x.url = "Enter a full link, starting with https://"
+    if (kind === "document" && !f.url.trim() && !f.body.trim()) x.url = "Upload the document, or write its text below"
     if (f.startsOn && f.endsOn && f.endsOn < f.startsOn) x.endsOn = "Must be on or after the start"
     setErrors(x)
     if (Object.keys(x).length) return setError("Fix the marked fields first.")
@@ -93,7 +94,7 @@ function PostDialog({ kind, post, onClose, onSaved }: { kind: Kind; post: Post |
             <Field label="Where" className="sm:col-span-2"><Input value={f.location} maxLength={160} onChange={(e) => set("location", e.target.value)} placeholder="e.g. Main shop, first floor" /></Field>
           </>}
           {kind === "announcement" && <Field label="Status"><NativeSelect value={f.status} aria-label="Status" onChange={(e) => set("status", e.target.value as Post["status"])}><option value="active">Active</option><option value="draft">Draft</option><option value="inactive">Inactive</option></NativeSelect></Field>}
-          {kind === "document" && <Field label="Link to the document" error={errors.url} className="sm:col-span-2" hint="Google Drive, Dropbox or any shared link"><Input value={f.url} maxLength={500} onChange={(e) => set("url", e.target.value)} placeholder="https://…" /></Field>}
+          {kind === "document" && <Field label="Document" error={errors.url} className="sm:col-span-2" hint="The policy or handbook file"><FileField value={f.url} onChange={(v) => set("url", v ?? "")} prompt="Upload the document" /></Field>}
           <Field label={kind === "announcement" ? "Announcement" : kind === "event" ? "Details" : "Or the text"} required={kind === "announcement"} error={errors.body} className="sm:col-span-2"><Textarea rows={4} maxLength={5000} value={f.body} onChange={(e) => set("body", e.target.value)} placeholder={kind === "announcement" ? "Write what everyone should know" : "Optional"} /></Field>
           {depts.length > 0 && kind !== "document" && (
             <Field label="Who sees it" className="sm:col-span-2" hint="None chosen = everyone">
@@ -184,7 +185,7 @@ function Workplace() {
             edit && kind !== "announcement" && p.status !== "pending" && { label: "Back to pending", icon: RotateCcw, onClick: () => void decide(p, "pending") },
             edit && kind === "announcement" && p.status !== "active" && { label: "Publish (active)", icon: CheckCircle2, onClick: () => void decide(p, "active") },
             edit && kind === "announcement" && p.status === "active" && { label: "Make inactive", icon: XCircle, onClick: () => void decide(p, "inactive") },
-            p.url && { label: "Open document", icon: ExternalLink, onClick: () => window.open(p.url!, "_blank", "noopener") },
+            p.url && { label: "Open document", icon: ExternalLink, onClick: () => void openFile(p.url) },
             kind === "document" && p.needsAck && edit && { label: "Who has read it", icon: Users, onClick: () => setAcks(p) },
             "-",
             can("hr.workplace.delete") && { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(p) },
@@ -261,7 +262,7 @@ function Workplace() {
             !!viewing.body && { label: kind === "announcement" ? "Announcement" : "Details", value: viewing.body, full: true },
           ]}
           footer={<>
-            {viewing.url && <Button variant="outline" onClick={() => window.open(viewing.url!, "_blank")}><ExternalLink /> Open document</Button>}
+            {viewing.url && <Button variant="outline" onClick={() => void openFile(viewing.url)}><ExternalLink /> Open document</Button>}
             {kind === "document" && viewing.needsAck && viewing.ackedByMe === false && LIVE.includes(viewing.status) && <Button variant="outline" onClick={() => { void ack(viewing); setViewing(null) }}><CheckCircle2 /> I have read it</Button>}
             {edit && <Button variant="outline" onClick={() => { setEditing(viewing); setViewing(null) }}><Pencil /> Edit</Button>}
             {edit && kind !== "announcement" && viewing.status !== "rejected" && <Button variant="outline" onClick={() => { void decide(viewing, "rejected"); setViewing(null) }}><XCircle /> Reject</Button>}

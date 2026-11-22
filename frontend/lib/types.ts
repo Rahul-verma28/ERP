@@ -55,7 +55,7 @@ export interface Me {
   consoleBranding: WorkspacePreferences["branding"] | null
   /** Platform-wide banner set from the Console */
   announcement: { text: string; tone: "info" | "warning" } | null
-  user: { id: string; name: string; email: string; mobile: string; emailVerified: boolean; mobileVerified: boolean; preferences: PersonalPreferences }
+  user: { id: string; name: string; email: string; mobile: string; emailVerified: boolean; mobileVerified: boolean; preferences: PersonalPreferences; /** Signed link to the profile photo */ avatarUrl?: string | null }
   /** Two-step verification required by a business (or the Console) and its grace period */
   security: { mfaEnabled: boolean; mfaRequired: boolean; requiredBy: string[]; deadline: string | null; mustSetUpMfa: boolean }
   memberships: { tenantId: string; name: string; status: TenantStatus; logoUrl: string | null; roleName: string }[]

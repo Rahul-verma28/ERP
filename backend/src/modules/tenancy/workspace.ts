@@ -186,6 +186,9 @@ export const PREFERENCE_SCHEMAS = {
     nearExpiryDays: z.number().int().min(1, 'Enter 1 to 365').max(365, 'Enter 1 to 365'),
     purchaseOrders: z.boolean(),
   }),
+  finance: z.object({
+    receiptRequiredAbovePaise: z.number().int().min(0, 'Enter 0 or more').max(10_000_000_000).nullable(),
+  }),
   branding: z.object({
     brandColor: z.string().superRefine((v, c) => {
       const message = brandColorError(v);

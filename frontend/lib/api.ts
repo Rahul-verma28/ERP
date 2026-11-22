@@ -55,17 +55,19 @@ export async function refreshAccessToken(): Promise<string | null> {
 
 type Method = "GET" | "POST" | "PATCH" | "PUT" | "DELETE"
 
-async function request<T>(method: Method, path: string, body?: unknown, retried = false): Promise<T> {
+async function request<T>(method: Method, path: string, body?: unknown, retried = false, fileName?: string): Promise<T> {
   let res: Response
+  // A file goes as the body itself, its name in a header (see backend modules/files)
+  const isFile = body instanceof Blob
   try {
     res = await fetch(`/api/v1${path}`, {
     method,
     credentials: "include",
     headers: {
-      ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      ...(isFile ? { "content-type": body.type || "application/octet-stream", "x-file-name": encodeURIComponent(fileName ?? "file") } : body !== undefined ? { "content-type": "application/json" } : {}),
       ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: isFile ? body : body !== undefined ? JSON.stringify(body) : undefined,
     })
   } catch {
     throw new ApiError(0, "NETWORK", "Can't reach the server. Check your connection and try again.")
@@ -73,7 +75,7 @@ async function request<T>(method: Method, path: string, body?: unknown, retried 
 
   if (res.status === 401 && !retried && !path.startsWith("/auth/")) {
     const token = await refreshAccessToken()
-    if (token) return request<T>(method, path, body, true)
+    if (token) return request<T>(method, path, body, true, fileName)
   }
 
   if (res.status === 204) return undefined as T
@@ -100,6 +102,8 @@ export const api = {
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
   delete: <T>(path: string, body?: unknown) => request<T>("DELETE", path, body),
+  /** Send one file as the request body */
+  upload: <T>(path: string, file: Blob, name: string) => request<T>("POST", path, file, false, name),
 }
 
 export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : "Something went wrong.")

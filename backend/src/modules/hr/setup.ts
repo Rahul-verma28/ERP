@@ -234,11 +234,13 @@ export const LeaveTypeInput = z.object({
   color: z.string().max(12).default('blue'),
   isActive: z.boolean().default(true),
   description: z.string().trim().max(300).optional().nullable().or(z.literal('').transform(() => null)),
+  /** Ask for proof (e.g. a medical certificate) when the leave is longer than this many days */
+  proofAfterDays: z.number().min(0).max(366).optional().nullable(),
 });
 
 export async function listLeaveTypes(ctx: TenantCtx) {
   await ensureHr(ctx);
-  return (await db().leaveType.findMany({ where: { tenantId: ctx.tenantId }, orderBy: [{ position: 'asc' }, { name: 'asc' }] })).map((t) => ({ ...t, daysPerYear: Number(t.daysPerYear) }));
+  return (await db().leaveType.findMany({ where: { tenantId: ctx.tenantId }, orderBy: [{ position: 'asc' }, { name: 'asc' }] })).map((t) => ({ ...t, daysPerYear: Number(t.daysPerYear), proofAfterDays: t.proofAfterDays == null ? null : Number(t.proofAfterDays) }));
 }
 
 export async function saveLeaveType(ctx: TenantCtx, input: z.infer<typeof LeaveTypeInput>, id?: string) {

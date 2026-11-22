@@ -10,6 +10,7 @@ import { getConfig, listLeaveTypes, shiftMinutes, toMinutes, type HrConfig } fro
 import { Prisma } from '@prisma/client';
 import { bundle, nameParts, namesFrom } from './bundle';
 import { HrConfig as HrConfigSchema } from './setup';
+import { zFileRef } from '../../kernel/zodRules';
 
 // Attendance and leave. Days with no attendance mark count as worked (most shops only mark who
 // was absent); approved leave fills the attendance register; holidays and weekly offs are known
@@ -202,6 +203,8 @@ export const LeaveInput = z.object({
   toDate: DateStr,
   halfDay: z.boolean().default(false),
   reason: z.string().trim().min(3, 'Say why the leave is needed').max(500),
+  /** Proof such as a medical certificate; needed when the leave type asks for it */
+  attachmentUrl: zFileRef.optional().nullable().or(z.literal('').transform(() => null)),
 }).refine((l) => l.toDate >= l.fromDate, { message: 'The end date must be on or after the start', path: ['toDate'] })
   .refine((l) => !l.halfDay || l.fromDate === l.toDate, { message: 'A half day is for one date only', path: ['halfDay'] });
 
@@ -265,7 +268,11 @@ async function leaveData(ctx: TenantCtx, b: z.infer<typeof LeaveInput>, exceptId
     const left = mine ? Number(type.daysPerYear) - mine.used - mine.pending + (exceptId ? Number((await db().leaveApplication.findUnique({ where: { id: exceptId } }))?.days ?? 0) : 0) : 0;
     if (days > left) throw new AppError('VALIDATION_FAILED', `Only ${left} day${left === 1 ? '' : 's'} of ${type.name} left. Choose "Loss of pay" for the rest.`, { fields: { toDate: 'Not enough balance' } });
   }
-  return { employeeId: employeeId!, leaveTypeId: type.id, fromDate: day(b.fromDate), toDate: day(b.toDate), halfDay: b.halfDay, days, reason: b.reason };
+  // The leave type asks for proof past a number of days (Leave types › Proof after)
+  if (type.proofAfterDays != null && days > Number(type.proofAfterDays) && !b.attachmentUrl) {
+    throw new AppError('VALIDATION_FAILED', `${type.name} longer than ${Number(type.proofAfterDays)} day${Number(type.proofAfterDays) === 1 ? '' : 's'} needs proof, such as a medical certificate.`, { fields: { attachmentUrl: 'Upload the proof' } });
+  }
+  return { employeeId: employeeId!, leaveTypeId: type.id, fromDate: day(b.fromDate), toDate: day(b.toDate), halfDay: b.halfDay, days, reason: b.reason, attachmentUrl: b.attachmentUrl ?? null };
 }
 
 export async function applyLeave(ctx: TenantCtx, b: z.infer<typeof LeaveInput>) {

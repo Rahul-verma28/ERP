@@ -58,7 +58,7 @@ export interface SalaryItem { id?: string; kind: "allowance" | "deduction"; name
 export interface Department { id: string; name: string; branchId: string | null; headId: string | null; isActive: boolean; employees: number }
 export interface Designation { id: string; name: string; departmentId: string | null; isActive: boolean; employees: number }
 export interface Shift { id: string; name: string; startsAt: string; endsAt: string; breakMinutes: number; graceMinutes: number; isNight: boolean; isDefault: boolean; isActive: boolean; version: number; workingMinutes: number; employees: number }
-export interface LeaveType { id: string; name: string; description?: string | null; code: string; daysPerYear: number; paid: boolean; carryForward: boolean; color: string; isActive: boolean }
+export interface LeaveType { id: string; name: string; description?: string | null; code: string; daysPerYear: number; paid: boolean; carryForward: boolean; color: string; isActive: boolean; /** Proof needed when the leave is longer than this many days */ proofAfterDays?: number | null }
 export interface HrConfig {
   workingDays: number[]
   employeePrefix: string
@@ -105,7 +105,7 @@ export const ATT: Record<string, { label: string; short: string; color: string }
 }
 export const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
-export interface LeaveApp { id: string; employeeId: string; employee: string; employeeCode: string; employeeSub?: string | null; leaveTypeId: string; leaveType: string; leaveCode: string; color: string; paid: boolean; fromDate: string; toDate: string; halfDay: boolean; days: number; reason: string; status: "pending" | "approved" | "rejected" | "cancelled"; comment: string | null; decidedByName?: string | null; decidedAt?: string | null; createdAt: string; version: number }
+export interface LeaveApp { id: string; employeeId: string; employee: string; employeeCode: string; employeeSub?: string | null; leaveTypeId: string; leaveType: string; leaveCode: string; color: string; paid: boolean; fromDate: string; toDate: string; halfDay: boolean; days: number; reason: string; attachmentUrl?: string | null; status: "pending" | "approved" | "rejected" | "cancelled"; comment: string | null; decidedByName?: string | null; decidedAt?: string | null; createdAt: string; version: number }
 export const LEAVE_STATUS: Record<string, { label: string; color: string }> = { pending: { label: "Waiting", color: "amber" }, approved: { label: "Approved", color: "emerald" }, rejected: { label: "Rejected", color: "rose" }, cancelled: { label: "Cancelled", color: "slate" } }
 
 export interface Line { name: string; amountPaise: number; code?: string; loanId?: string; manual?: boolean }

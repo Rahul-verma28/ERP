@@ -5,7 +5,7 @@ import type { TenantCtx } from '../../kernel/context';
 import { GST_RATES_BP, dateOnly, divRound, todayIST } from '../../kernel/gst';
 import { allocateNumber } from '../../kernel/sequences';
 import { DateStr, Paise } from '../../kernel/query';
-import { zGstin } from '../../kernel/zodRules';
+import { zGstin, zFileRef } from '../../kernel/zodRules';
 import { withDefaults } from '../../contracts/workspace';
 import { audit } from '../audit/service';
 import { loadSnapshot, type Snap } from './snapshot';
@@ -299,7 +299,7 @@ export const ExpenseInput = z.object({
   contactId: z.string().uuid().optional().nullable(),
   reference: z.string().trim().max(60).optional().nullable(),
   notes: z.string().trim().max(1000).optional().nullable(),
-  receiptUrl: z.string().url().max(500).optional().nullable().or(z.literal('').transform(() => null)),
+  receiptUrl: zFileRef.optional().nullable().or(z.literal('').transform(() => null)),
   /** A GST bill: the supplier's bill number and GSTIN, the rate; the amount includes GST */
   gstBill: z.boolean().default(false),
   billNo: z.string().trim().max(30).optional().nullable(),
@@ -330,7 +330,18 @@ export async function expenseData(ctx: TenantCtx, b: z.infer<typeof ExpenseInput
   return { ...rest, ...gst, accountId, method: METHOD_OF[account.kind as AccountKind], amountPaise: BigInt(b.amountPaise), paidOn: dateOnly(b.paidOn) };
 }
 
+/** Settings › Finance: expenses above an amount need their bill or receipt attached */
+async function assertReceipt(ctx: TenantCtx, b: z.infer<typeof ExpenseInput>) {
+  if (b.receiptUrl) return;
+  const t = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { preferences: true } });
+  const above = withDefaults(t.preferences).finance.receiptRequiredAbovePaise;
+  if (above != null && b.amountPaise > above) {
+    throw new AppError('VALIDATION_FAILED', `Expenses above ₹${(above / 100).toLocaleString('en-IN')} need the bill or receipt attached.`, { fields: { receiptUrl: 'Attach the bill or receipt' } });
+  }
+}
+
 export async function createExpense(ctx: TenantCtx, b: z.infer<typeof ExpenseInput>) {
+  await assertReceipt(ctx, b);
   const data = await expenseData(ctx, b);
   const tenant = await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } });
   const { number } = await allocateNumber(ctx.tenantId, 'expense', tenant.fyStartMonth, data.paidOn);
@@ -343,6 +354,7 @@ export async function updateExpense(ctx: TenantCtx, id: string, b: z.infer<typeo
   const e = await db().expense.findFirst({ where: { id, tenantId: ctx.tenantId } });
   if (!e) throw notFound('Expense');
   if (e.version !== version) throw new AppError('VERSION_CONFLICT', 'This expense was changed by someone else. Reload and try again.');
+  await assertReceipt(ctx, b);
   const data = await expenseData(ctx, b);
   // Older expenses got their number when first edited
   const number = e.number ?? (await allocateNumber(ctx.tenantId, 'expense', (await db().tenant.findUniqueOrThrow({ where: { id: ctx.tenantId }, select: { fyStartMonth: true } })).fyStartMonth, data.paidOn)).number;
@@ -359,6 +371,8 @@ export const IncomeInput = z.object({
   payer: z.string().trim().max(160).optional().nullable(),
   reference: z.string().trim().max(60).optional().nullable(),
   notes: z.string().trim().max(1000).optional().nullable(),
+  /** Proof of the income */
+  attachmentUrl: zFileRef.optional().nullable().or(z.literal('').transform(() => null)),
 });
 
 async function incomeData(ctx: TenantCtx, b: z.infer<typeof IncomeInput>) {

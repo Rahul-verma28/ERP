@@ -239,6 +239,10 @@ export interface WorkspacePreferences {
     /** Off: purchases start at the invoice. On: Purchase Orders and Goods Receipts appear too */
     purchaseOrders: boolean;
   };
+  finance: {
+    /** Expenses above this amount need the bill or receipt attached (null = never required) */
+    receiptRequiredAbovePaise: number | null;
+  };
   branding: {
     brandColor: string;
     /** THEME_PRESETS key */
@@ -255,6 +259,7 @@ export const DEFAULT_PREFERENCES: WorkspacePreferences = {
   payments: { bankHolder: '', bankAccount: '', ifsc: '', upiId: '', showUpiQr: false },
   taxes: { composition: false, compositionRateBp: null, pricesIncludeTax: true, roundOff: false, defaultGstRateBp: 1800, hsnDigits: 4, reverseCharge: false, eInvoicing: false },
   inventory: { blockNegative: false, adjustmentApprovalPaise: 500_000, backdateDays: 7, valuation: 'average', nearExpiryDays: 30, purchaseOrders: false },
+  finance: { receiptRequiredAbovePaise: null },
   branding: { brandColor: '#2450D8', preset: 'default', theme: 'system', font: 'inter', density: 'comfortable' },
 };
 
@@ -269,6 +274,7 @@ export function withDefaults(stored: unknown, profile?: unknown): WorkspacePrefe
     payments: { ...DEFAULT_PREFERENCES.payments, ...(s.payments ?? {}) },
     taxes: { ...DEFAULT_PREFERENCES.taxes, ...(s.taxes ?? {}) },
     inventory: { ...DEFAULT_PREFERENCES.inventory, ...(s.inventory ?? {}) },
+    finance: { ...DEFAULT_PREFERENCES.finance, ...(s.finance ?? {}) },
     branding: { ...DEFAULT_PREFERENCES.branding, ...(s.branding ?? {}) },
   } as WorkspacePreferences;
 }

@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { prisma, db, withPlatform } from '../kernel/db';
 import type { ConsoleCtx } from '../kernel/context';
 import { ApplicationInput, approveApplication, rejectApplication, submitApplication } from '../modules/console/applications';
+import { saveUpload } from '../modules/files/service';
 import { listViews, saveViews } from '../modules/console/views';
 
 // Blueprint Phase G: website applications (submit, approve, reject) and saved views. Rolled back.
@@ -68,7 +69,11 @@ describe('applications', () => {
       const p = form('partner');
       await submitApplication(p);
       const app = await db().consoleApplication.findFirstOrThrow({ where: { email: p.email } });
+      // No KYC papers yet: can't approve
+      await expect(approveApplication(ctx, app.id, { discountPercent: 15 })).rejects.toMatchObject({ code: 'VALIDATION_FAILED' });
+      const kyc = await saveUpload({ tenantId: null, userId: ctx.userId, bytes: Buffer.from('%PDF-1.4\n%%EOF\n'), name: 'PAN.pdf', kind: 'document', entityType: 'application', entityId: app.id, field: 'kyc' });
       const done = await approveApplication(ctx, app.id, { discountPercent: 15 });
+      expect(await db().storedFile.findUniqueOrThrow({ where: { id: kyc.id } })).toMatchObject({ entityType: 'partner', entityId: done.resultId });
       const partner = await db().partner.findUniqueOrThrow({ where: { id: done.resultId } });
       expect(partner.name).toBe('Rao Systems');
       expect(partner.discountBp).toBe(1500);

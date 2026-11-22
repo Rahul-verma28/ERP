@@ -26,3 +26,6 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Uploaded files in development (kernel/storage.ts)
+storage/

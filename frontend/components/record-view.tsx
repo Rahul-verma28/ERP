@@ -5,6 +5,7 @@ import { ExternalLink, type LucideIcon } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Avatar } from "@/components/page-parts"
 import { cn } from "@/lib/utils"
+import { isFileRef, openFile } from "@/lib/files"
 
 // One "View" dialog for every record: a title with its status, then a grid of small
 // cards — one per field — so everything about the record is on one screen.
@@ -41,7 +42,7 @@ export function RecordView({ title, icon: Icon, status, fields, footer, onClose,
               {f.person ? (
                 <span className="flex items-center gap-2.5"><Avatar name={f.person.name} className="size-8" /><span className="min-w-0"><span className="block truncate text-sm font-semibold">{f.person.name}</span>{f.person.sub && <span className="block truncate text-xs text-muted-foreground">{f.person.sub}</span>}</span></span>
               ) : f.href ? (
-                <a href={f.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"><ExternalLink className="size-3.5" /> Open</a>
+                <DocLink href={f.href} />
               ) : (
                 <div className={cn("text-sm font-medium break-words", f.full && "font-normal whitespace-pre-line")}>{f.value === null || f.value === undefined || f.value === "" ? <span className="text-muted-foreground">—</span> : f.value}</div>
               )}
@@ -55,8 +56,10 @@ export function RecordView({ title, icon: Icon, status, fields, footer, onClose,
 }
 
 /** A small "Open" link for a document column, or a dash */
+/** Opens a saved document: an uploaded file ("file:<id>") through a signed link, or an old link as it is */
 export function DocLink({ href, label = "Open" }: { href: string | null | undefined; label?: string }) {
   if (!href) return <span className="text-muted-foreground">—</span>
+  if (isFileRef(href)) return <button type="button" onClick={(e) => { e.stopPropagation(); void openFile(href) }} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"><ExternalLink className="size-3.5" /> {label}</button>
   return <a href={href} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"><ExternalLink className="size-3.5" /> {label}</a>
 }
 

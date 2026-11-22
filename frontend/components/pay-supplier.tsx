@@ -17,6 +17,7 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { PAYMENT_METHODS } from "@/lib/money"
 import { PaymentAccountField } from "@/components/finance/forms"
 import { cn } from "@/lib/utils"
+import { FileField } from "@/components/file-field"
 
 // The one "Pay supplier" form, on Payments Made and the purchase invoice page. One payment can
 // clear several invoices of a supplier, all under one payment number. What is paid goes on invoices.
@@ -104,6 +105,7 @@ export function PaySupplierDialog({ initial, bill, onClose, onSaved }: {
   const [method, setMethod] = React.useState("bank")
   const [reference, setReference] = React.useState("")
   const [accountId, setAccountId] = React.useState("")
+  const [proof, setProof] = React.useState<string | null>(null)
   const [put, setPut] = React.useState<Record<string, number | null>>(bill ? { [bill.id]: bill.duePaise } : {})
   const [touched, setTouched] = React.useState(!!bill)
   const [errors, setErrors] = React.useState<Record<string, string>>({})
@@ -150,7 +152,7 @@ export function PaySupplierDialog({ initial, bill, onClose, onSaved }: {
     setBusy(true)
     const allocations = open.filter((b) => (shares[b.id] ?? 0) > 0).map((b) => ({ documentId: b.id, amountPaise: shares[b.id]! }))
     try {
-      setSaved(await api.post<SupplierPayment>("/payments-made", { contactId: supplier!.id, amountPaise: amount, paidOn, method, accountId: accountId || undefined, reference: reference.trim() || null, allocations }))
+      setSaved(await api.post<SupplierPayment>("/payments-made", { contactId: supplier!.id, amountPaise: amount, paidOn, method, accountId: accountId || undefined, reference: reference.trim() || null, attachmentUrl: proof, allocations }))
     } catch (err) {
       if (err instanceof ApiError) {
         const mapped: Record<string, string> = {}
@@ -213,6 +215,7 @@ export function PaySupplierDialog({ initial, bill, onClose, onSaved }: {
               <Input value={reference} maxLength={100} placeholder={ref.placeholder} onChange={(e) => { setReference(e.target.value); clear("reference") }} />
             </Field>
             <PaymentAccountField label="Paid from" method={method} value={accountId} onChange={setAccountId} />
+            <Field label="Proof" className="sm:col-span-2" error={errors.attachmentUrl} hint="Optional: cheque photo, bank slip or UPI screenshot"><FileField value={proof} onChange={(v) => setProof(v)} prompt="Upload proof" /></Field>
           </div>
 
           {supplier && (

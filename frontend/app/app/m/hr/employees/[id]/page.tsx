@@ -16,6 +16,7 @@ import { todayInIndia } from "@contracts/validation"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
+import { useFileLink } from "@/lib/files"
 import { formatDate, formatPaise } from "@/lib/format"
 import { ACTION_STATUS, ATT, EMP_STATUS, EMPLOYMENT_LABEL, LEAVE_STATUS, monthLabel, RUN_STATUS, type Employee, type HrAction, type LeaveApp, type Payslip } from "@/lib/hr"
 import { cn } from "@/lib/utils"
@@ -146,6 +147,7 @@ function EmployeeView() {
   const router = useRouter()
   const { can } = useAuth()
   const { data: e, error, reload } = useApi<Employee>(`/hr/employees/${id}`)
+  const photo = useFileLink(e?.photoUrl).link?.url
   const [tab, setTab] = useTabParam<Tab>(TAB_KEYS, "overview")
   const [open, setOpen] = React.useState<"salary" | "exit" | "delete" | "login" | null>(null)
   const branches = useApi<{ data: { id: string; name: string }[] }>(open === "login" ? "/branches" : null)
@@ -172,6 +174,7 @@ function EmployeeView() {
       <BackLink href="/app/m/hr/employees">Employees</BackLink>
       <DetailHeader
         title={e.name}
+        imageUrl={photo}
         initials={e.name.split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
         pills={<><Pill color="slate">{e.code}</Pill><Pill color={EMP_STATUS[e.status].color} dot>{EMP_STATUS[e.status].label}{e.status === "on_notice" && e.exitOn ? ` till ${formatDate(e.exitOn)}` : ""}</Pill><Pill color="blue">{EMPLOYMENT_LABEL[e.employmentType]}</Pill></>}
         subtitle={[e.designation, e.department, e.branch].filter(Boolean).join(" · ") || "No designation yet"}

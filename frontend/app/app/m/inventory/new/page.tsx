@@ -22,6 +22,7 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { ENTRY_LABEL, REASONS, qty, type BatchRow, type StockEntry, type StockLocation, type StockRow, type Tracking } from "@/lib/inventory"
 import { todayInIndia } from "@contracts/validation"
 import { PageLoading } from "@/components/page-states"
+import { FileField } from "@/components/file-field"
 
 // One form for opening stock, stock in, adjustments and transfers. Lines are items with a quantity
 // (in the base unit or the second unit), a cost where stock comes in from outside, a batch with expiry
@@ -81,6 +82,8 @@ function EntryForm() {
   const [party, setParty] = React.useState("")
   const [reference, setReference] = React.useState("")
   const [note, setNote] = React.useState("")
+  // Photo of the damage, or the supplier's challan for stock in
+  const [proof, setProof] = React.useState<string | null>(null)
   const [lines, setLines] = React.useState<Line[]>([])
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [error, setError] = React.useState<string | null>(null)
@@ -125,7 +128,7 @@ function EntryForm() {
       const entry = await api.post<StockEntry>("/stock/entries", {
         kind, locationId: from, toLocationId: kind === "transfer" ? toLocationId : null, date, receiveNow: kind === "transfer" ? receiveNow : undefined,
         reason: kind === "adjustment" ? reason : null, direction: kind === "adjustment" ? direction : undefined,
-        party: party || null, reference: reference || null, note: note || null,
+        party: party || null, reference: reference || null, note: note || null, attachmentUrl: proof,
         lines: lines.map((l) => ({
           itemId: l.itemId, quantity: lineQty(l), unit: l.useAlt ? "alt" : "base",
           ...(costed ? { ratePaise: l.ratePaise ?? 0 } : {}),
@@ -255,7 +258,10 @@ function EntryForm() {
             {costed && total > 0 && <p className="text-right text-sm font-medium">Value: <span className="tabular-nums">{formatPaise(Math.round(total))}</span></p>}
           </div>
 
-          <Field label="Note"><Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} /></Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Note"><Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Optional" /></Field>
+            {kind !== "transfer" && <Field label={kind === "adjustment" ? "Photo proof" : "Challan or bill"} hint={kind === "adjustment" ? "Optional: a photo of the damaged or expired stock" : "Optional"}><FileField value={proof} onChange={setProof} kind={kind === "adjustment" ? "image" : "document"} prompt={kind === "adjustment" ? "Upload a photo" : "Upload the challan"} /></Field>}
+          </div>
           <FormError message={error} />
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => router.back()}>Cancel</Button>

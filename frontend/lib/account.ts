@@ -3,7 +3,7 @@ import type { PersonalPreferences, SecurityPolicy } from "@contracts/account"
 // Shapes returned by /api/v1/account (My account).
 
 export interface AccountOverview {
-  profile: { id: string; name: string; email: string; mobile: string; emailVerified: boolean; mobileVerified: boolean }
+  profile: { id: string; name: string; email: string; mobile: string; emailVerified: boolean; mobileVerified: boolean; /** Signed link to the profile photo */ avatarUrl?: string | null }
   preferences: PersonalPreferences
   security: {
     mfaEnabled: boolean

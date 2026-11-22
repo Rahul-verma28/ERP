@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Copy, ExternalLink, Pencil, Receipt, Trash2 } from "lucide-react"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { ConfirmDialog } from "@/components/common"
 import { PageError, PageLoading } from "@/components/page-states"
 import { ActionMenu, BackLink, DetailHeader, DetailList, Pill, Section, StatGrid } from "@/components/page-parts"
@@ -16,6 +16,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import type { Expense } from "@/lib/finance"
 import { AboutCard, RecordHistory } from "@/components/record-kit"
+import { openFile } from "@/lib/files"
 
 // One expense: what, how much, from which account, and its GST bill.
 
@@ -39,7 +40,7 @@ export default function ExpensePage() {
         pills={<>{gst && <Pill color="blue">GST bill</Pill>}<Pill>{e.category}</Pill></>}
         subtitle={[formatDate(e.paidOn), e.payee, e.account ? `from ${e.account}` : null].filter(Boolean).join(" · ")}
         actions={<>
-          {e.receiptUrl && <a href={e.receiptUrl} target="_blank" rel="noreferrer" className={buttonVariants({ variant: "outline" })}><ExternalLink /> Bill photo</a>}
+          {e.receiptUrl && <Button variant="outline" onClick={() => void openFile(e.receiptUrl)}><ExternalLink /> Bill</Button>}
           {can("finance.expense.edit") && <Button onClick={() => setEditing("edit")}><Pencil /> Edit</Button>}
           <ActionMenu items={[
             can("finance.expense.create") && { label: "Add another like this", icon: Copy, onClick: () => setEditing("copy") },

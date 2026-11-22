@@ -16,6 +16,7 @@ import { useApi } from "@/lib/use-api"
 import { useClientTable } from "@/lib/use-table"
 import { formatDate, GST_STATES } from "@/lib/format"
 import type { ApplicationRow } from "@/lib/console"
+import { AttachmentsField } from "@/components/file-field"
 
 // Applications (blueprint Phase G): people who asked on the website (/apply) to become a vendor
 // or a partner. Approve to create them with a login link, or turn them down. Admin only.
@@ -187,6 +188,8 @@ function ApproveDialog({ a, onClose }: { a: ApplicationRow; onClose: () => void 
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [done, setDone] = React.useState<{ loginLink: LoginLink; mobile: string } | null>(null)
+  // A partner's KYC papers go on the application; approving moves them to the partner
+  const [kyc, setKyc] = React.useState(0)
 
   async function approve(e: React.FormEvent) {
     e.preventDefault()
@@ -225,6 +228,11 @@ function ApproveDialog({ a, onClose }: { a: ApplicationRow; onClose: () => void 
               </DialogDescription>
             </DialogHeader>
             {a.kind === "partner" && (
+              <Field label="KYC papers" required hint="PAN, GST certificate or the signed agreement. Needed before approving.">
+                <AttachmentsField entityType="application" entityId={a.id} scope="console" max={6} prompt="Add PAN, GST certificate or agreement" onChange={(f) => setKyc(f.length)} />
+              </Field>
+            )}
+            {a.kind === "partner" && (
               <Field label="Partner discount (%)" hint="Off AHEAD's list price on their monthly bill. You can change it later.">
                 <Input type="number" min={0} max={90} value={discount} onChange={(e) => setDiscount(e.target.value)} className="w-32" />
               </Field>
@@ -232,7 +240,7 @@ function ApproveDialog({ a, onClose }: { a: ApplicationRow; onClose: () => void 
             <FormError message={error} />
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-              <Button type="submit" disabled={busy}>{busy ? "Approving…" : "Approve and send login link"}</Button>
+              <Button type="submit" disabled={busy || (a.kind === "partner" && !kyc)}>{busy ? "Approving…" : "Approve and send login link"}</Button>
             </DialogFooter>
           </form>
         )}

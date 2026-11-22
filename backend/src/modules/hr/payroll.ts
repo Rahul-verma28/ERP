@@ -11,6 +11,7 @@ import { JournalInput, createJournal, deleteJournal } from '../finance/books';
 import { myEmployee, names } from './employees';
 import { getConfig, type HrConfig } from './setup';
 import { isWorkingDay, lopDays } from './time';
+import { zFileRef } from '../../kernel/zodRules';
 
 // Payroll, month by month. A run makes one payslip per employee: basic and allowances for the days
 // paid (loss-of-pay days off), overtime, then PF, ESI, Professional Tax, loan instalments and other
@@ -409,6 +410,8 @@ export const LoanInput = z.object({
   startsMonth: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Choose the first month'),
   accountId: z.string().uuid().optional().nullable(),
   reason: z.string().trim().max(500).optional().nullable(),
+  /** The signed agreement */
+  documentUrl: zFileRef.optional().nullable().or(z.literal('').transform(() => null)),
 }).refine((l) => l.emiPaise <= l.amountPaise, { message: 'The instalment cannot be more than the amount', path: ['emiPaise'] });
 
 export async function createLoan(ctx: TenantCtx, b: z.infer<typeof LoanInput>) {

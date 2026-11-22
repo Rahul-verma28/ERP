@@ -8,6 +8,7 @@ import { audit } from '../audit/service';
 import { createEmployee, EmployeeInput, hrReach, myEmployee, names } from './employees';
 import { Prisma } from '@prisma/client';
 import { bundle, nameParts, namesFrom } from './bundle';
+import { zFileRef } from '../../kernel/zodRules';
 
 // Career and conduct records, workplace posts, performance, training and recruitment.
 
@@ -43,7 +44,7 @@ export const ActionInput = z.object({
   description: opt(z.string().trim().max(2000)),
   severity: opt(z.enum(['low', 'medium', 'high'])),
   to: Move.optional().nullable(),
-  documentUrl: opt(z.string().url().max(500)),
+  documentUrl: opt(zFileRef),
 });
 
 async function actionCheck(ctx: TenantCtx, b: z.infer<typeof ActionInput>) {
@@ -174,7 +175,7 @@ export const PostInput = z.object({
   location: opt(z.string().trim().max(160)),
   priority: z.enum(['low', 'normal', 'high']).default('normal'),
   departmentIds: z.array(z.string().uuid()).max(50).default([]),
-  url: opt(z.string().url('Enter a full link, starting with https://').max(500)),
+  url: opt(zFileRef),
   needsAck: z.boolean().default(false),
   status: z.enum(['active', 'draft', 'inactive', 'pending', 'approved', 'rejected']).optional(),
   color: opt(z.string().max(12)),
@@ -444,10 +445,13 @@ export const CandidateInput = z.object({
   experience: z.number().min(0).max(60).optional().nullable(),
   currentCtcPaise: Paise.optional().nullable(),
   expectedCtcPaise: Paise.optional().nullable(),
-  resumeUrl: opt(z.string().url('Enter a full link').max(500)),
+  resumeUrl: opt(zFileRef),
   rating: z.number().int().min(1).max(5).optional().nullable(),
   notes: opt(z.string().trim().max(3000)),
 }).refine((c) => c.email || c.phone, { message: 'Enter a mobile number or email', path: ['phone'] });
+
+/** Adding a candidate needs their resume (staff add them; editing an old one without it still works) */
+export const ResumeRequired = z.object({ resumeUrl: z.string({ required_error: 'Upload the resume', invalid_type_error: 'Upload the resume' }).min(1, 'Upload the resume').pipe(zFileRef) }).passthrough();
 
 const candData = (b: z.infer<typeof CandidateInput>) => ({ ...b, currentCtcPaise: b.currentCtcPaise == null ? null : BigInt(b.currentCtcPaise), expectedCtcPaise: b.expectedCtcPaise == null ? null : BigInt(b.expectedCtcPaise) });
 

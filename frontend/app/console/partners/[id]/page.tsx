@@ -16,6 +16,7 @@ import { useApi } from "@/lib/use-api"
 import { GST_STATES, formatDate } from "@/lib/format"
 import type { PartnerDetail } from "@/lib/console"
 import { useChanged } from "@/lib/use-dirty"
+import { AttachmentsField } from "@/components/file-field"
 
 // One partner: contact, discount, status, their people and this month's bill.
 
@@ -134,6 +135,9 @@ export default function PartnerPage({ params }: { params: Promise<{ id: string }
                 <Row key={m.id} icon={UserRound} tone="grey" title={m.user.name} detail={`${m.role.name} · ${m.status !== "active" ? "turned off" : m.user.lastLoginAt ? `signed in ${ago(m.user.lastLoginAt)}` : "not signed in yet"}`} />
               ))}
             </div>
+          </Panel>
+          <Panel title="KYC papers" description="PAN, GST certificate and the signed agreement">
+            <AttachmentsField entityType="partner" entityId={p.id} scope="console" max={10} disabled={!canEdit} prompt="Add KYC papers" />
           </Panel>
         </div>
       </div>

@@ -11,7 +11,7 @@ import { getEntitlements } from '../subscription/entitlements';
 import { validateCustom } from '../config/service';
 import { audit } from '../audit/service';
 import { publish } from '../events/outbox';
-import { optionalText, zEmail, zGstin, zHsnOrSac, zPhone, zPincode, zStateCode } from '../../kernel/zodRules';
+import { optionalText, zEmail, zGstin, zHsnOrSac, zPhone, zPincode, zStateCode, zFileRef } from '../../kernel/zodRules';
 import { gstinStateMismatch } from '../../contracts/validation';
 import { withDefaults, type WorkspaceProfile } from '../../contracts/workspace';
 import { defaultLocation, postDocumentStock, reverseSource } from '../inventory/engine';
@@ -363,6 +363,8 @@ export const PaymentInput = z.object({
   notes: z.string().trim().max(500).optional().nullable(),
   /** The cash or bank account it went into; empty = by method */
   accountId: z.string().uuid().optional().nullable(),
+  /** Cheque photo or UPI screenshot */
+  attachmentUrl: zFileRef.optional().nullable().or(z.literal('').transform(() => null)),
 });
 
 /** BIL-03: record a receipt against an issued invoice; status moves to partially paid / paid. */

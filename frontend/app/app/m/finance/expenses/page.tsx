@@ -18,6 +18,8 @@ import { useAuth } from "@/lib/auth"
 import { useSharedApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useFinAccounts, type Expense, type Recurring } from "@/lib/finance"
+import { openFile } from "@/lib/files"
+import { DocLink } from "@/components/record-view"
 
 const vsLast = (now: number, before: number) => (before ? `${now >= before ? "▲" : "▼"} ${Math.abs(Math.round(((now - before) / before) * 100))}% vs last month (${formatPaise(before)})` : "Nothing last month")
 
@@ -43,7 +45,7 @@ export default function ExpensesPage() {
     { key: "account", header: "Paid from", csv: (r) => r.account ?? "", cell: (r) => (r.account ? <span className="inline-flex items-center gap-1.5 rounded-lg bg-blue-50 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">{r.accountKind === "cash" ? <Banknote className="size-3.5" /> : <Landmark className="size-3.5" />}{r.account}</span> : "—") },
     { key: "method", header: "Paid by", defaultHidden: true, csv: (r) => r.method, cell: (r) => <span className="capitalize">{r.method}</span> },
     { key: "gst", header: "GST bill", csv: (r) => (r.gstPaise ? (r.gstPaise / 100).toFixed(2) : ""), cell: (r) => (r.gstPaise ? <span className="grid gap-0.5"><Pill color="blue">{(r.gstRateBp ?? 0) / 100}% GST</Pill><span className="text-xs text-muted-foreground tabular-nums">{formatPaise(r.gstPaise)} to claim</span></span> : <span className="text-muted-foreground">—</span>) },
-    { key: "photo", header: "Bill photo", defaultHidden: true, csv: (r) => (r.receiptUrl ? "Yes" : ""), cell: (r) => (r.receiptUrl ? <a href={r.receiptUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-sm font-medium text-primary hover:underline">Open</a> : <span className="text-muted-foreground">—</span>) },
+    { key: "photo", header: "Bill photo", defaultHidden: true, csv: (r) => (r.receiptUrl ? "Yes" : ""), cell: (r) => <DocLink href={r.receiptUrl} /> },
     { key: "createdBy", header: "Entered by", defaultHidden: true, csv: (r) => r.createdByName ?? "", cell: (r) => <span className="text-sm">{r.createdByName ?? "—"}<span className="block text-[11px] text-muted-foreground">{formatDate(r.createdAt)}</span></span> },
     { key: "ref", header: "Reference", defaultHidden: true, csv: (r) => r.reference ?? r.billNo ?? "", cell: (r) => <span className="font-mono text-xs">{r.billNo ?? r.reference ?? "—"}</span> },
     { key: "amount", header: "Amount", align: "right", sort: (r) => r.amountPaise, csv: (r) => (r.amountPaise / 100).toFixed(2), cell: (r) => <span className="font-semibold tabular-nums">{formatPaise(r.amountPaise)}</span> },
@@ -55,7 +57,7 @@ export default function ExpensesPage() {
           <ActionMenu label={`More actions for ${r.number ?? "expense"}`} items={[
             { label: "Open", icon: Eye, href: `/app/m/finance/expenses/${r.id}` },
             can("finance.expense.create") && { label: "Add another like this", icon: Copy, onClick: () => setEditing({ copy: r }) },
-            r.receiptUrl && { label: "Open bill photo", icon: Receipt, onClick: () => window.open(r.receiptUrl!, "_blank", "noopener") },
+            r.receiptUrl && { label: "Open bill photo", icon: Receipt, onClick: () => void openFile(r.receiptUrl) },
             "-",
             can("finance.expense.delete") && { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(r) },
           ]} />

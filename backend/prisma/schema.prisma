@@ -237,6 +237,7 @@ model User {
   passwordChangedAt DateTime?  @map("password_changed_at") @db.Timestamptz
   createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  avatarUrl String? @map("avatar_url")
 
   sessions        UserSession[]
   mfa             UserMfa?
@@ -1519,6 +1520,8 @@ model Payment {
   reversal    Payment?            @relation("PaymentReversal")
   adjustments AdvanceAdjustment[]
 
+  /// Cheque photo or UPI screenshot
+  attachmentUrl String? @map("attachment_url")
   @@index([tenantId, documentId])
   @@index([tenantId, paidOn])
   @@index([tenantId, contactId])
@@ -1738,6 +1741,7 @@ model Appointment {
   createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz
   updatedAt DateTime          @updatedAt @map("updated_at") @db.Timestamptz
   version   Int               @default(1)
+  attachmentUrl String? @map("attachment_url")
 
   @@index([tenantId, startAt])
   @@index([tenantId, staffId, startAt])
@@ -1996,6 +2000,8 @@ model StockEntry {
   createdBy    String?   @map("created_by") @db.Uuid
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
+  /// Photo proof of damage or loss
+  attachmentUrl String? @map("attachment_url")
   @@index([tenantId, entryDate])
   @@map("stock_entries")
 }
@@ -2149,6 +2155,8 @@ model PurchaseDocument {
 
   lines PurchaseDocumentLine[]
 
+  /// The supplier own bill: needed to claim GST input credit (CGST Act s.16(2)(a))
+  attachmentUrl String? @map("attachment_url")
   @@unique([tenantId, kind, number])
   @@index([tenantId, kind, status, issueDate])
   @@index([tenantId, contactId])
@@ -2204,6 +2212,7 @@ model SupplierPayment {
   accountId   String?  @map("account_id") @db.Uuid
   createdBy   String?  @map("created_by") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  attachmentUrl String? @map("attachment_url")
 
   @@index([tenantId, contactId])
   @@index([tenantId, documentId])
@@ -2356,6 +2365,7 @@ model Income {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
   version     Int      @default(1)
+  attachmentUrl String? @map("attachment_url")
 
   @@index([tenantId, receivedOn])
   @@map("incomes")
@@ -2606,6 +2616,7 @@ model HrLoan {
   reason      String?
   createdBy   String?  @map("created_by") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  documentUrl String? @map("document_url")
 
   @@index([employeeId])
   @@map("hr_loans")
@@ -2664,6 +2675,8 @@ model LeaveType {
   isActive     Boolean @default(true) @map("is_active")
   position     Int     @default(0)
   description  String?
+  /// Ask for proof when the leave is longer than this many days (empty = never)
+  proofAfterDays Decimal? @map("proof_after_days") @db.Decimal(5, 1)
 
   @@unique([tenantId, name])
   @@map("leave_types")
@@ -2688,6 +2701,8 @@ model LeaveApplication {
   createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
   version     Int       @default(1)
 
+  /// Proof such as a medical certificate ("file:<id>" or a link)
+  attachmentUrl String? @map("attachment_url")
   @@index([tenantId, fromDate])
   @@index([employeeId])
   @@map("leave_applications")
@@ -3212,4 +3227,23 @@ model PosHeldBill {
 
   @@index([counterId])
   @@map("pos_held_bills")
+}
+
+/// An uploaded photo or document; the bytes are in file storage (kernel/storage.ts)
+model StoredFile {
+  id         String   @id @db.Uuid
+  tenantId   String?  @map("tenant_id") @db.Uuid
+  entityType String?  @map("entity_type") @db.VarChar(32)
+  entityId   String?  @map("entity_id") @db.Uuid
+  field      String   @default("attachments") @db.VarChar(32)
+  name       String   @db.VarChar(200)
+  mime       String   @db.VarChar(100)
+  sizeBytes  Int      @map("size_bytes")
+  sha256     String   @db.Char(64)
+  storageKey String   @map("storage_key") @db.VarChar(300)
+  uploadedBy String?  @map("uploaded_by") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([tenantId, entityType, entityId])
+  @@map("files")
 }

@@ -65,6 +65,8 @@ export interface Income {
   payer: string | null
   reference: string | null
   notes: string | null
+  /** Proof: "file:<id>" or a link */
+  attachmentUrl?: string | null
   version: number
   createdAt?: string
   createdByName?: string | null

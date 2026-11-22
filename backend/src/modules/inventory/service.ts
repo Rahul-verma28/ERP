@@ -5,7 +5,7 @@ import { db } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { TenantCtx } from '../../kernel/context';
 import { DateStr } from '../../kernel/query';
-import { zPhone, zPincode, zStateCode } from '../../kernel/zodRules';
+import { zPhone, zPincode, zStateCode, zFileRef } from '../../kernel/zodRules';
 import { dateOnly, todayIST } from '../../kernel/gst';
 import { getRolePermissions } from '../access/service';
 import { audit } from '../audit/service';
@@ -366,6 +366,8 @@ export const EntryInput = z
     party: z.string().trim().max(100).optional().nullable(),
     reference: z.string().trim().max(50).optional().nullable(),
     note: z.string().trim().max(500).optional().nullable(),
+    /** Photo proof of damage or loss */
+    attachmentUrl: zFileRef.optional().nullable().or(z.literal('').transform(() => null)),
     /** Transfer: false keeps it in transit until the other warehouse receives it */
     receiveNow: z.boolean().optional(),
     lines: z.array(Line).min(1, 'Add at least one item').max(300),
@@ -483,7 +485,7 @@ export async function postEntry(ctx: TenantCtx, input: z.infer<typeof EntryInput
   const entry = await db().stockEntry.create({
     data: {
       tenantId: ctx.tenantId, kind: input.kind, locationId: from.id, toLocationId: to?.id ?? null, entryDate: date, status: inTransit ? 'in_transit' : 'posted',
-      party: input.party || null, reference: input.reference || null, reason: input.kind === 'adjustment' ? input.reason : null, note: input.note || null,
+      party: input.party || null, reference: input.reference || null, reason: input.kind === 'adjustment' ? input.reason : null, note: input.note || null, attachmentUrl: input.attachmentUrl ?? null,
       createdBy: ctx.userId,
     },
   });

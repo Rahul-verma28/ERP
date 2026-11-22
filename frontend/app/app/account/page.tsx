@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { BadgeCheck, Bell, Laptop, type LucideIcon, Pencil, ShieldCheck, SlidersHorizontal, UserRound } from "lucide-react"
+import { BadgeCheck, Bell, Camera, Laptop, Loader2, type LucideIcon, Pencil, ShieldCheck, SlidersHorizontal, UserRound, X } from "lucide-react"
 import { email as emailRule, emailSuggestion, mobileIN, personName, squish, cleanMobile } from "@contracts/validation"
 import { DATE_FORMATS, type PersonalPreferences } from "@contracts/account"
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,7 @@ import { MODULE_NAV } from "@/lib/nav"
 import { useApi } from "@/lib/use-api"
 import { useForm } from "@/lib/use-form"
 import { cn } from "@/lib/utils"
+import { ACCEPT, checkFile, uploadAvatar } from "@/lib/files"
 
 // My account (one page): who you are at the top, then your details, password and sign-in,
 // working preferences, notifications and devices as plain lists. Changes open in a dialog.
@@ -67,7 +68,7 @@ export default function AccountPage() {
 
   return (
     <div className="grid w-full content-start gap-6">
-      <Hero account={data} role={auth.me?.console?.role.name ?? auth.me?.role?.name ?? null} onEdit={() => setDialog("name")} />
+      <Hero account={data} role={auth.me?.console?.role.name ?? auth.me?.role?.name ?? null} onEdit={() => setDialog("name")} onPhoto={() => { void reload(); void auth.reload() }} />
 
       <div className="grid items-start gap-6 lg:grid-cols-[13.5rem_minmax(0,1fr)]">
         <nav aria-label="My account" className="flex gap-1 overflow-x-auto lg:sticky lg:top-20 lg:grid lg:overflow-visible">
@@ -122,7 +123,51 @@ export default function AccountPage() {
   )
 }
 
-function Hero({ account, role, onEdit }: { account: AccountOverview; role: string | null; onEdit: () => void }) {
+/** Profile photo: click to upload or change; shown in every business the person belongs to */
+function ProfilePhoto({ name, url, onChanged }: { name: string; url: string | null; onChanged: () => void }) {
+  const input = React.useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = React.useState(false)
+  async function pick(file?: File) {
+    if (!file) return
+    const bad = checkFile(file, "image")
+    if (bad) return toast.error(bad)
+    setBusy(true)
+    try {
+      await uploadAvatar(file)
+      toast.success("Photo updated")
+      onChanged()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function remove() {
+    setBusy(true)
+    try {
+      await api.delete("/account/avatar")
+      toast.success("Photo removed")
+      onChanged()
+    } catch (e) {
+      toast.error(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <span className="group relative">
+      <input ref={input} type="file" accept={ACCEPT.image} className="sr-only" tabIndex={-1} aria-hidden onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = "" }} />
+      <button type="button" disabled={busy} onClick={() => input.current?.click()} className="relative grid size-20 place-items-center overflow-hidden rounded-2xl bg-primary text-2xl font-bold text-primary-foreground shadow-md ring-4 ring-card" aria-label={url ? "Change photo" : "Add photo"} title={url ? "Change photo" : "Add photo"}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {url ? <img src={url} alt="" className="size-full object-cover" /> : initials(name)}
+        <span className="absolute inset-0 grid place-items-center bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">{busy ? <Loader2 className="size-5 animate-spin" /> : <Camera className="size-5" />}</span>
+      </button>
+      {url && !busy && <button type="button" onClick={() => void remove()} className="absolute -right-2 -bottom-2 grid size-7 place-items-center rounded-full border bg-card text-muted-foreground shadow-sm hover:text-destructive" aria-label="Remove photo" title="Remove photo"><X className="size-3.5" /></button>}
+    </span>
+  )
+}
+
+function Hero({ account, role, onEdit, onPhoto }: { account: AccountOverview; role: string | null; onEdit: () => void; onPhoto: () => void }) {
   const p = account.profile
   const s = account.security
   const count = account.businesses.length
@@ -136,7 +181,7 @@ function Hero({ account, role, onEdit }: { account: AccountOverview; role: strin
       <div className="h-24 bg-gradient-to-r from-primary via-primary/80 to-primary/45 sm:h-28" aria-hidden />
       <div className="px-5 pb-5 sm:px-7">
         <div className="-mt-10 flex flex-wrap items-end justify-between gap-3">
-          <span className="grid size-20 place-items-center rounded-2xl bg-primary text-2xl font-bold text-primary-foreground shadow-md ring-4 ring-card">{initials(p.name)}</span>
+          <ProfilePhoto name={p.name} url={p.avatarUrl ?? null} onChanged={onPhoto} />
           <Button variant="outline" size="sm" onClick={onEdit}><Pencil className="size-3.5" /> Edit name</Button>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">

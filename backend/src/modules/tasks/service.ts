@@ -10,6 +10,7 @@ import { todayIST } from '../../kernel/gst';
 import { getRolePermissions } from '../access/service';
 import { notify } from '../notifications/service';
 import { audit } from '../audit/service';
+import { zFileRef } from '../../kernel/zodRules';
 
 // Tasks & Projects: tasks with checklists, subtasks, labels, repeats and comments; projects with a
 // team, dates and budget; time logged against either; and approvals asked of a named person.
@@ -543,7 +544,7 @@ export const ApprovalInput = z.object({
   kind: z.enum(['expense', 'purchase', 'discount', 'leave', 'payment', 'other']).default('other'),
   amountPaise: Paise.optional().nullable(),
   details: z.string().trim().max(4000).optional().nullable(),
-  attachmentUrl: z.string().url().max(500).optional().nullable().or(z.literal('').transform(() => null)),
+  attachmentUrl: zFileRef.optional().nullable().or(z.literal('').transform(() => null)),
   approverId: z.string().uuid({ message: 'Choose who approves it' }),
   needBy: DateStr.optional().nullable(),
   taskId: z.string().uuid().optional().nullable(),

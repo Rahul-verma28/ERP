@@ -24,6 +24,8 @@ import { formatDate } from "@/lib/format"
 import { ACTION_STATUS, type ActionKind, type HrAction, type ListKey } from "@/lib/hr"
 import { useChanged } from "@/lib/use-dirty"
 import { activeOr } from "@/lib/active"
+import { openFile } from "@/lib/files"
+import { FileField } from "@/components/file-field"
 
 // Career and conduct records, one page per kind. Approving a promotion or transfer changes the
 // employee; an accepted resignation or approved termination sets their last day.
@@ -71,7 +73,6 @@ function ActionDialog({ kind, record, onClose, onSaved }: { kind: ActionKind; re
     if (k.subject && f.subject.trim().length < 3) x.subject = "Enter the subject"
     if (k.reasonRequired && f.description.trim().length < 3) x.description = "Give the reason"
     if (k.against && f.againstId && f.againstId === f.employeeId) x.againstId = "Someone other than the person complaining"
-    if (f.documentUrl && !/^https?:\/\//.test(f.documentUrl)) x.documentUrl = "Enter a full link, starting with https://"
     setErrors(x)
     if (Object.keys(x).length) return setError("Fix the marked fields first.")
     setBusy(true)
@@ -107,7 +108,7 @@ function ActionDialog({ kind, record, onClose, onSaved }: { kind: ActionKind; re
           {k.effLabel && <Field label={k.effLabel} required error={errors.effectiveOn}><Input type="date" value={f.effectiveOn} min={f.onDate} onChange={(e) => set("effectiveOn", e.target.value)} /></Field>}
           {k.subject && <Field label="Subject" required error={errors.subject} className="sm:col-span-2"><Input value={f.subject} maxLength={160} onChange={(e) => set("subject", e.target.value)} placeholder={kind === "warning" ? "e.g. Late on 4 days in October" : "e.g. Rude behaviour at the counter"} /></Field>}
           <Field label={k.reasonRequired ? "Reason" : "Details"} required={k.reasonRequired} error={errors.description} className="sm:col-span-2"><Textarea rows={3} maxLength={2000} value={f.description} onChange={(e) => set("description", e.target.value)} placeholder={kind === "award" ? "What they did, e.g. Highest sales in Diwali week" : "What happened, briefly"} /></Field>
-          <Field label="Letter or document link" error={errors.documentUrl} className="sm:col-span-2" hint="Optional: a link to the signed letter"><Input value={f.documentUrl} maxLength={500} onChange={(e) => set("documentUrl", e.target.value)} placeholder="https://…" /></Field>
+          <Field label="Letter or document" error={errors.documentUrl} className="sm:col-span-2" hint="Optional: the signed letter"><FileField value={f.documentUrl} onChange={(v) => set("documentUrl", v ?? "")} prompt="Upload the letter" /></Field>
           <div className="sm:col-span-2"><FormError message={error} /></div>
           <DialogFooter className="sm:col-span-2"><Button type="button" variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" disabled={busy || (!!record && unchanged)}>{busy ? "Saving…" : record ? "Save" : `Record ${k.one}`}</Button></DialogFooter>
         </form>
@@ -238,7 +239,7 @@ export default function CareerPage() {
             <ActionMenu label={`More actions for ${r.employee}`} items={[
               ...(can("hr.career.approve") && !done(r) ? next.map((s) => ({ label: `Mark ${ACTION_STATUS[s].label.toLowerCase()}`, icon: Check, onClick: () => setMoving({ record: r, status: s }) })) : []),
               kind === "award" && { label: "Print certificate", icon: FileBadge, onClick: () => window.open(`/print/award/${r.id}`, "_blank") },
-              r.documentUrl && { label: "Open document", icon: ExternalLink, onClick: () => window.open(r.documentUrl!, "_blank") },
+              r.documentUrl && { label: "Open document", icon: ExternalLink, onClick: () => void openFile(r.documentUrl) },
               { label: "Open employee", icon: UserRound, href: `/app/m/hr/employees/${r.employeeId}?tab=career` },
               "-",
               can("hr.career.delete") && !done(r) && { label: "Delete", icon: Trash2, destructive: true, onClick: () => setDeleting(r) },

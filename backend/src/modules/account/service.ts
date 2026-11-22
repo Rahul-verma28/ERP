@@ -6,6 +6,7 @@ import { AppError } from '../../kernel/errors';
 import { hashPassword, randomToken, sha256, verifyPassword } from '../../kernel/crypto';
 import { describePasswordPolicy, passwordPolicyError, personalWithDefaults, type PersonalPreferences } from '../../contracts/account';
 import { audit } from '../audit/service';
+import { signedFilePath } from '../../kernel/storage';
 import { sendMessage } from '../notifications/service';
 import { consumeOtp, sendOtp } from '../identity/otp';
 import { signPurposeToken, verifyPurposeToken } from '../identity/tokens';
@@ -36,6 +37,9 @@ async function requirePassword(userId: string, password: string, field = 'passwo
 
 // ── Overview ──
 
+/** A signed link to a profile photo ("file:<id>") */
+export const avatarLink = (ref: string | null) => (ref?.startsWith('file:') ? signedFilePath(ref.slice(5)) : null);
+
 export async function accountOverview(userId: string, sessionId: string) {
   const user = await db().user.findUniqueOrThrow({ where: { id: userId }, include: { mfa: true } });
   const [req, policy, memberships] = await Promise.all([
@@ -52,6 +56,7 @@ export async function accountOverview(userId: string, sessionId: string) {
     profile: {
       id: user.id, name: user.name, email: user.email, mobile: user.mobile,
       emailVerified: !!user.emailVerifiedAt, mobileVerified: !!user.mobileVerifiedAt,
+      avatarUrl: avatarLink(user.avatarUrl),
     },
     preferences: personalWithDefaults(user.preferences),
     security: {
@@ -74,6 +79,18 @@ export async function accountOverview(userId: string, sessionId: string) {
     currentFamilyId: current?.familyId ?? null,
     lastTenantId: user.lastTenantId,
   };
+}
+
+/** Set or clear the profile photo; returns the storage key of the photo it replaced (to delete) */
+export async function setAvatar(userId: string, ref: string | null) {
+  const user = await db().user.findUniqueOrThrow({ where: { id: userId }, select: { avatarUrl: true } });
+  await db().user.update({ where: { id: userId }, data: { avatarUrl: ref } });
+  const oldId = user.avatarUrl?.startsWith('file:') ? user.avatarUrl.slice(5) : null;
+  if (!oldId || oldId === ref?.slice(5)) return null;
+  const old = await db().storedFile.findFirst({ where: { id: oldId, tenantId: null } });
+  if (!old) return null;
+  await db().storedFile.delete({ where: { id: old.id } });
+  return old.storageKey;
 }
 
 export async function updateProfile(userId: string, name: string) {

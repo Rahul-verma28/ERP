@@ -28,3 +28,15 @@ export const zStateCode = z.string().refine((v) => rules.stateName(v) !== null, 
 export const zIsoDate = fromRule(z.string(), rules.isoDate);
 export const zPastDate = fromRule(z.string(), rules.notFutureDate);
 export const zReason = fromRule(z.string().trim(), rules.changeReason);
+
+/**
+ * A photo or document on a record: an uploaded file ("file:<id>", see modules/files) or, for
+ * older records, a full https link. The file must belong to the same business; that is checked
+ * where it's read, through row-level security on the files table.
+ */
+export const FILE_REF = /^file:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const zFileRef = z
+  .string()
+  .trim()
+  .max(500)
+  .refine((v) => FILE_REF.test(v) || /^https?:\/\/\S+$/i.test(v), 'Upload a file');
