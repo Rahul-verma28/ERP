@@ -23,7 +23,7 @@ import { qty, type StockLocation, type Tracking } from "@/lib/inventory"
 import { KIND_LABEL, KIND_PATH, type PurchaseDoc, type PurchaseKind } from "@/lib/purchase"
 import { useApi } from "@/lib/use-api"
 import { todayInIndia } from "@contracts/validation"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 import { FileField } from "@/components/file-field"
 
 // One screen for a purchase invoice, order or goods receipt: details and items on the left, the
@@ -134,7 +134,7 @@ function PurchaseForm({ kind, editId, fromId, supplierId }: { kind: FormKind; ed
     })
   }, [source.data, editId, kind])
 
-  if (!can(editId && kind === "purchase_order" ? "inventory.purchase_order.edit" : PERM[kind])) return <PageHeader title={KIND_LABEL[kind]} description="You don't have access to this. Ask your admin." />
+  if (!can(editId && kind === "purchase_order" ? "inventory.purchase_order.edit" : PERM[kind])) return <NoAccessPage title={KIND_LABEL[kind]} permission={editId && kind === "purchase_order" ? "inventory.purchase_order.edit" : PERM[kind]} />
   if (!locations.data || ((fromId || editId) && !source.data)) return <PageLoading />
 
   const fromDoc = fromId ? source.data : null

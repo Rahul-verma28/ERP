@@ -24,7 +24,7 @@ import { dueLabel, LEAD_STATUS, tone, useCrmSetup, type Lead } from "@/lib/crm"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useDebounced } from "@/lib/use-list"
 import { cn } from "@/lib/utils"
-import { PageError, PageLoading } from "@/components/page-states"
+import { PageError, PageLoading, NoAccessPage } from "@/components/page-states"
 
 // Leads: people who may buy, moving through the stages of a pipeline. A list with every action on
 // each row, or a board to drag them across stages. Won leads become deals or customers.
@@ -162,7 +162,7 @@ export default function LeadsPage() {
   const stages = pipeline?.leadStages ?? []
   const switchView = (v: "list" | "board") => { setView(v); try { localStorage.setItem(VIEW_KEY, v) } catch { /* private window */ } }
 
-  if (!can("crm.lead.view")) return <PageHeader title={leads} description="You don't have access to leads. Ask your admin." />
+  if (!can("crm.lead.view")) return <NoAccessPage title={leads} permission="crm.lead.view" />
   if (setupApi.error) return <PageError error={setupApi.error} onRetry={() => void setupApi.reload()} />
   if (!setup || !pipeline) return <PageLoading />
 

@@ -5,7 +5,7 @@ import { validate } from '../../middleware/request';
 import { getRolePermissions } from '../access/service';
 import { withPlatform } from '../../kernel/db';
 import { AppError } from '../../kernel/errors';
-import { signedFilePath, storage, verifyFileSignature } from '../../kernel/storage';
+import { BRANDING_FIELDS, signedFilePath, storage, verifyFileSignature } from '../../kernel/storage';
 import { db } from '../../kernel/db';
 import { assertUnused, fileLibrary, storageUsage } from './usage';
 import * as files from './service';
@@ -46,6 +46,19 @@ publicFiles.get('/files/raw/:id', validate(IdParam, 'params'), async (req, res) 
   res.setHeader('Cache-Control', 'private, max-age=3600');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   // Shown inside the app (another port in development)
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.end(bytes);
+});
+
+// A logo or signature: public by nature (printed on every bill), so a stable link that never runs
+// out, also frozen on issued invoices. Any other file is not served here.
+publicFiles.get('/files/public/:id', validate(IdParam, 'params'), async (req, res) => {
+  const { file, bytes } = await withPlatform(() => files.readForLink(String(req.params.id)));
+  if (!(BRANDING_FIELDS as readonly string[]).includes(file.field)) throw new AppError('NOT_FOUND', 'File not found.');
+  res.setHeader('Content-Type', file.mime);
+  res.setHeader('Content-Length', String(bytes.length));
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.end(bytes);
 });

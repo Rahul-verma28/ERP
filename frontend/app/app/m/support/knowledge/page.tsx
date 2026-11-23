@@ -4,7 +4,6 @@ import * as React from "react"
 import { toast } from "sonner"
 import { BookOpen, Eye, MessageSquareText, Pencil, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type ViewPreset } from "@/components/data-list"
 import { Pill } from "@/components/page-parts"
@@ -15,6 +14,7 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate } from "@/lib/format"
 import { categoryOf, useSupportSettings, type Article } from "@/lib/support"
+import { NoAccessPage } from "@/components/page-states"
 
 // Knowledge base: help articles (published ones show on the request form) and saved replies the
 // team drops into answers in one click.
@@ -26,7 +26,7 @@ export default function KnowledgePage() {
   const [editing, setEditing] = React.useState<{ article: Article | null; kind: "article" | "reply" } | null>(null)
   const [viewing, setViewing] = React.useState<Article | null>(null)
   const [removing, setRemoving] = React.useState<Article | null>(null)
-  if (!can("support.kb.view")) return <PageHeader title="Knowledge base" description="You don't have access to the knowledge base. Ask your admin." />
+  if (!can("support.kb.view")) return <NoAccessPage title="Knowledge base" permission="support.kb.view" />
   const reload = () => setVersion((v) => v + 1)
   const canEdit = can("support.kb.edit")
   const presets: ViewPreset[] = [

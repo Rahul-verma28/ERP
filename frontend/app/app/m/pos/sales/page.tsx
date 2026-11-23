@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import { CalendarDays, Eye, IndianRupee, Printer, Receipt, ShoppingBag, Store, Undo2, Wallet } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, periodFilter, type Column } from "@/components/data-list"
 import { Pill } from "@/components/page-parts"
@@ -14,6 +13,7 @@ import { formatDate, formatPaise, initials } from "@/lib/format"
 import { TENDER_LABEL } from "@/lib/pos"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Counter bills: every bill made at a POS counter, with how it was paid, the shift and cashier.
 // Each is an ordinary invoice, so View opens it in Sales Invoices with its payments and returns.
@@ -29,7 +29,7 @@ const time = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString("en
 export default function CounterBillsPage() {
   const { can, me } = useAuth()
   const counters = useApi<{ counters: { id: string; name: string }[] }>(can("billing.pos.view") ? "/pos/sales?limit=1" : null)
-  if (!can("billing.pos.view")) return <PageHeader title="Counter Bills" description="You don't have access to the POS counter. Ask your admin." />
+  if (!can("billing.pos.view")) return <NoAccessPage title="Counter Bills" permission="billing.pos.view" />
   const icon = buttonVariants({ variant: "ghost", size: "icon-sm" })
   const status = (r: Row) => (r.status === "cancelled" ? { label: "Cancelled", color: "slate" } : r.duePaise > 0 ? { label: "On account", color: "amber" } : r.returnedPaise > 0 ? { label: "Part returned", color: "violet" } : { label: "Paid", color: "emerald" })
   const columns: Column<Row>[] = [

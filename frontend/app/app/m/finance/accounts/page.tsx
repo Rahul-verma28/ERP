@@ -5,7 +5,6 @@ import { toast } from "sonner"
 import { Archive, ArchiveRestore, ArrowRightLeft, BookOpen, Pencil, Plus, Star, Wallet, ArrowDownLeft, ArrowUpRight, Banknote, Landmark } from "lucide-react"
 import { SummaryCards } from "@/components/summary-cards"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, countBy, localList, type Column } from "@/components/data-list"
 import { ActionMenu, Pill } from "@/components/page-parts"
@@ -17,6 +16,7 @@ import { formatPaise } from "@/lib/format"
 import { KIND_ICON, KIND_LABEL, KIND_TONE, masked, useFinAccounts, type FinAccount } from "@/lib/finance"
 import { tone } from "@/lib/tones"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Cash and bank accounts with their balances. Every payment, expense and transfer moves one.
 
@@ -26,7 +26,7 @@ export default function AccountsPage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<FinAccount | "new" | null>(null)
   const [moving, setMoving] = React.useState<string | null>(null)
-  if (!can("finance.expense.view")) return <PageHeader title="Cash & Bank" description="You don't have access to finance. Ask your admin." />
+  if (!can("finance.expense.view")) return <NoAccessPage title="Cash & Bank" permission="finance.expense.view" />
   const reload = () => { setVersion((v) => v + 1); void shared.reload() }
   const edit = can("finance.expense.edit")
 

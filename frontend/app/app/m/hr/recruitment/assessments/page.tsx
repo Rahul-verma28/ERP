@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { Field, FormError } from "@/components/form"
@@ -23,6 +22,7 @@ import { useSharedApi } from "@/lib/use-api"
 import { formatDate } from "@/lib/format"
 import type { HrRecord } from "@/lib/hr"
 import { useChanged } from "@/lib/use-dirty"
+import { NoAccessPage } from "@/components/page-states"
 
 // Candidate assessments: tests and tasks a candidate does, with the score and who checked it.
 
@@ -89,7 +89,7 @@ export default function AssessmentsPage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<Row | "new" | null>(null)
   const [deleting, setDeleting] = React.useState<Row | null>(null)
-  if (!can("hr.recruitment.view")) return <PageHeader title="Candidate assessments" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.recruitment.view")) return <NoAccessPage title="Candidate assessments" permission="hr.recruitment.view" />
   const reload = () => setVersion((v) => v + 1)
   const edit = can("hr.recruitment.edit")
   async function status(r: Row, s: string) { try { await api.post(`/hr/records/assessment/${r.id}/status`, { status: s }); toast.success(`Marked ${STATUS[s].label.toLowerCase()}`); reload() } catch (e) { toast.error(errorMessage(e)) } }

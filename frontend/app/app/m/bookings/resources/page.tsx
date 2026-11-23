@@ -4,7 +4,6 @@ import * as React from "react"
 import { toast } from "sonner"
 import { Archive, ArchiveRestore, CalendarCheck, Clock, DoorOpen, Pencil, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, countBy, localList, type Column } from "@/components/data-list"
 import { ActionMenu, Pill } from "@/components/page-parts"
@@ -15,6 +14,7 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { RESOURCE_KIND, type Resource } from "@/lib/bookings"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Rooms & Resources: rooms, chairs and machines an appointment uses. None is booked twice at once;
 // a service can ask for a free one of a kind.
@@ -24,7 +24,7 @@ export default function ResourcesPage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<Resource | "new" | null>(null)
   const [removing, setRemoving] = React.useState<Resource | null>(null)
-  if (!can("bookings.appointment.view")) return <PageHeader title="Rooms & Resources" description="You don't have access to bookings. Ask your admin." />
+  if (!can("bookings.appointment.view")) return <NoAccessPage title="Rooms & Resources" permission="bookings.appointment.view" />
   const reload = () => setVersion((v) => v + 1)
   const canEdit = can("bookings.resource.edit")
   async function toggle(r: Resource) {

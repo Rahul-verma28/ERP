@@ -7,13 +7,13 @@ import Link from "next/link"
 import { SummaryCards } from "@/components/summary-cards"
 import { ActionMenu, Pill } from "@/components/page-parts"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { PriceListDialog, type PriceList } from "@/components/catalog/price-list-dialog"
 import { DataList, remoteList } from "@/components/data-list"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
+import { NoAccessPage } from "@/components/page-states"
 
 // Rates for a group of customers: a discount on everything, and exact prices for some items.
 
@@ -24,7 +24,7 @@ export default function PriceListsPage() {
   const [editing, setEditing] = React.useState<PriceList | "new" | null>(null)
   const [removing, setRemoving] = React.useState<PriceList | null>(null)
 
-  if (!can("catalog.price_list.view")) return <PageHeader title="Price lists" description="You don't have access to price lists. Ask your admin." />
+  if (!can("catalog.price_list.view")) return <NoAccessPage title="Price lists" permission="catalog.price_list.view" />
 
   async function toggle(l: PriceList) {
     try {

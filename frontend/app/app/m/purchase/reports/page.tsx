@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import { FileBarChart } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, periodFilter, type ListLoader } from "@/components/data-list"
 import { api } from "@/lib/api"
@@ -14,6 +13,7 @@ import { qty } from "@/lib/inventory"
 import { cn } from "@/lib/utils"
 import { useReportTab } from "@/components/reports/kit"
 import { todayInIndia } from "@contracts/validation"
+import { NoAccessPage } from "@/components/page-states"
 
 // Purchase reports, each on the shared table: what you owe by age, the purchase register, the input
 // tax credit register, and order lines still to come (only for businesses that use purchase orders).
@@ -155,7 +155,7 @@ function PurchaseReportsPageInner() {
   const { can, me } = useAuth()
   const tabs = [["payables", "Payables"], ["register", "Purchase Register"], ["itc", "ITC Register"], ...(me?.tenant?.purchaseOrders ? [["pending", "Pending Orders"]] : [])] as [string, string][]
   const [tab, setTab] = useReportTab(tabs)
-  if (!can("inventory.supplier_bill.view")) return <PageHeader title="Purchase reports" description="You don't have access to this. Ask your admin." />
+  if (!can("inventory.supplier_bill.view")) return <NoAccessPage title="Purchase reports" permission="inventory.supplier_bill.view" />
   return (
     <div className="grid gap-4">
       <div className="flex w-fit flex-wrap gap-1 rounded-xl border p-1 text-sm" role="tablist" aria-label="Reports">

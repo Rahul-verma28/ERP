@@ -5,10 +5,10 @@ import { CalendarClock } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/common"
 import { DataList, type Column } from "@/components/data-list"
-import { PageHeader } from "@/components/app-shell"
 import { useAuth } from "@/lib/auth"
 import { formatDate } from "@/lib/format"
 import { qty } from "@/lib/inventory"
+import { NoAccessPage } from "@/components/page-states"
 
 // Batches with stock that have expired or expire soon (Settings: near-expiry days), earliest first.
 
@@ -16,7 +16,7 @@ interface Row { id: string; batchId: string; batch: string; expiryDate: string; 
 
 export function NearExpiryReport() {
   const { can } = useAuth()
-  if (!can("inventory.stock.view")) return <PageHeader title="Near expiry" description="You don't have access to stock. Ask your admin." />
+  if (!can("inventory.stock.view")) return <NoAccessPage title="Near expiry" permission="inventory.stock.view" />
   const columns: Column<Row>[] = [
     { key: "item", header: "Item", hideable: false, cell: (r) => <Link href={`/app/m/catalog/${r.itemId}?tab=stock`} className="font-semibold hover:underline">{r.item}</Link>, csv: (r) => r.item, sort: (r) => r.item },
     { key: "batch", header: "Batch", cell: (r) => <span className="font-mono text-xs">{r.batch}</span>, csv: (r) => r.batch },

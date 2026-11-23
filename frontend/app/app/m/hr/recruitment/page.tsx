@@ -5,7 +5,6 @@ import Link from "next/link"
 import { toast } from "sonner"
 import { Briefcase, Pause, Pencil, Play, Plus, Trash2, UserPlus, Users, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { ActionMenu, Pill } from "@/components/page-parts"
@@ -15,6 +14,7 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { EMPLOYMENT_LABEL } from "@/lib/hr"
+import { NoAccessPage } from "@/components/page-states"
 
 // Recruitment: job openings, each with its candidates.
 
@@ -27,7 +27,7 @@ export default function JobsPage() {
   const [editing, setEditing] = React.useState<Job | "new" | null>(null)
   const [adding, setAdding] = React.useState<Job | null>(null)
   const [deleting, setDeleting] = React.useState<Job | null>(null)
-  if (!can("hr.recruitment.view")) return <PageHeader title="Recruitment" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.recruitment.view")) return <NoAccessPage title="Recruitment" permission="hr.recruitment.view" />
   const reload = () => { setVersion((v) => v + 1); void shared.reload() }
   async function status(j: Job, s: Job["status"]) {
     try { await api.put(`/hr/jobs/${j.id}`, { ...j, status: s }); toast.success(`${j.title}: ${JOB_STATUS[s].label.toLowerCase()}`); reload() } catch (e) { toast.error(errorMessage(e)) }

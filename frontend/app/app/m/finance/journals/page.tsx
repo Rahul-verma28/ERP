@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Copy, Eye, FilePlus2, Pencil, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, periodFilter, type Column } from "@/components/data-list"
 import { ActionMenu } from "@/components/page-parts"
@@ -15,6 +14,7 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useFinAccounts, useLedgers, type Journal } from "@/lib/finance"
+import { NoAccessPage } from "@/components/page-states"
 
 // Journal entries: what no bill, payment or expense records — loans, capital, GST paid, depreciation.
 
@@ -26,7 +26,7 @@ export default function JournalsPage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<{ journal?: Journal; copy?: Journal } | null>(null)
   const [deleting, setDeleting] = React.useState<Journal | null>(null)
-  if (!can("finance.expense.view")) return <PageHeader title="Journal entries" description="You don't have access to finance. Ask your admin." />
+  if (!can("finance.expense.view")) return <NoAccessPage title="Journal entries" permission="finance.expense.view" />
   const reload = () => { setVersion((v) => v + 1); void ledgers.reload(); void accounts.reload() }
 
   const columns: Column<Journal>[] = [

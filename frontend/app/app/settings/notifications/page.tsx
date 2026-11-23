@@ -46,10 +46,10 @@ export default function NotificationsPage() {
     ["limits", "Quiet hours & limits"],
   ] as const
   return (
-    <SettingsPage title="Notifications" crumb className="max-w-none">
-      <div className="flex gap-1 ui-surface w-fit max-w-full rounded-2xl p-1" role="tablist">
+    <SettingsPage title="Notifications" description="What customers and your team are told, and how. Each message can be edited." className="max-w-none">
+      <div className="flex w-fit max-w-full gap-1 overflow-x-auto ui-surface rounded-2xl p-1" role="tablist">
         {tabs.map(([key, label]) => (
-          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={cn("shrink-0 rounded-[11px] px-3.5 py-2 text-sm font-medium capitalize text-muted-foreground transition-colors hover:text-foreground", tab === key && "bg-primary text-primary-foreground hover:text-primary-foreground")}>
+          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={cn("shrink-0 rounded-[11px] px-3.5 py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground", tab === key && "bg-primary text-primary-foreground hover:text-primary-foreground")}>
             {label}
           </button>
         ))}

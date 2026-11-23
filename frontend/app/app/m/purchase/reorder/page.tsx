@@ -14,7 +14,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 
 // Items at or under their low-stock level, less what is already on order. Pick quantities and a
 // supplier; one purchase order is made per supplier at the last purchase price.
@@ -30,7 +30,7 @@ export default function ReorderPage() {
   const [busy, setBusy] = React.useState(false)
   const suggested = (r: Row): Pick => ({ on: r.suggest > 0 && !!r.supplierId, quantity: String(r.suggest || ""), supplier: r.supplierId ? { id: r.supplierId, name: r.supplier ?? "" } : null })
   const pickOf = (r: Row) => picks[r.itemId] ?? suggested(r)
-  if (!can("inventory.purchase_order.view")) return <PageHeader title="Low stock" description="You don't have access to this. Ask your admin." />
+  if (!can("inventory.purchase_order.view")) return <NoAccessPage title="Low stock" permission="inventory.purchase_order.view" />
   if (!list.data) return <PageLoading />
   const rows = list.data.data
   const set = (id: string, patch: Partial<Pick>) => setPicks((p) => ({ ...p, [id]: { ...(p[id] ?? suggested(rows.find((r) => r.itemId === id)!)), ...patch } }))

@@ -20,6 +20,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDateTime } from "@/lib/format"
 import { CHANNEL, PRIORITY, STATUS, categoryOf, duration, useAgents, useSupportSettings, waLink, type TicketRow, type TicketStatus } from "@/lib/support"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Tickets: every complaint and request, the ones running late on their SLA first. Take one, reply,
 // put it on hold or resolve it from the row; open it for the conversation and the warranty.
@@ -45,7 +46,7 @@ function TicketsPage() {
   const board = useApi<{ data: TicketRow[] }>(view === "board" && can("support.ticket.view") ? `/support/tickets?view=all&limit=500&v=${version}` : null)
   const reload = () => setVersion((v) => v + 1)
   const switchView = (v: View) => { setView(v); try { localStorage.setItem(VIEW_KEY, v) } catch { /* private window */ } }
-  if (!can("support.ticket.view")) return <PageHeader title="Tickets" description="You don't have access to customer service. Ask your admin." />
+  if (!can("support.ticket.view")) return <NoAccessPage title="Tickets" permission="support.ticket.view" />
   const canEdit = can("support.ticket.edit")
   const me = agents?.me
 

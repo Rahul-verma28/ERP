@@ -11,13 +11,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { EmptyState } from "@/components/common"
 import { DataList, type Column } from "@/components/data-list"
-import { PageHeader } from "@/components/app-shell"
 import { ContactDialog, termsLabel, type Contact } from "@/components/contact-dialog"
 import { ImportDialog } from "@/components/contact-import"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { stateName } from "@contracts/validation"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Everyone you sell to, with what each of them owes you.
 
@@ -33,7 +33,7 @@ export default function CustomersPage() {
   const icon = buttonVariants({ variant: "ghost", size: "icon-sm" })
   const plural = term("entity.contact.plural", "Customers")
   const noun = term("entity.contact.singular", "customer").toLowerCase()
-  if (!can("crm.contact.view")) return <PageHeader title={plural} description="You don't have access to customers. Ask your admin." />
+  if (!can("crm.contact.view")) return <NoAccessPage title={plural} permission="crm.contact.view" />
   const dues = can("billing.dues.view")
   const canCreate = can("crm.contact.create")
 

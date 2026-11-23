@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column } from "@/components/data-list"
 import { Field, FormError } from "@/components/form"
@@ -19,6 +18,7 @@ import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useHrLookups, type Shift } from "@/lib/hr"
 import { useChanged } from "@/lib/use-dirty"
+import { NoAccessPage } from "@/components/page-states"
 
 // Shifts: working hours, break and grace time. Late marks and overtime are worked out from them.
 
@@ -86,7 +86,7 @@ export default function ShiftsPage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<Shift | "new" | null>(null)
   const [deleting, setDeleting] = React.useState<Shift | null>(null)
-  if (!can("hr.attendance.view")) return <PageHeader title="Shifts" description="You don't have access to attendance. Ask your admin." />
+  if (!can("hr.attendance.view")) return <NoAccessPage title="Shifts" permission="hr.attendance.view" />
   const reload = () => { setVersion((v) => v + 1); void look.reload() }
   const columns: Column<Shift>[] = [
     { key: "name", header: "Shift", hideable: false, sort: (s) => s.name, csv: (s) => s.name, cell: (s) => <span className="flex items-center gap-2.5"><span className="grid size-9 place-items-center rounded-xl bg-primary/10 text-primary">{s.isNight ? <Moon className="size-4" /> : <Sun className="size-4" />}</span><span><span className="block font-medium">{s.name}{s.isDefault && <Pill color="blue" className="ml-2">Default</Pill>}</span><span className="text-xs text-muted-foreground">{s.isNight ? "Night shift" : "Day shift"}</span></span></span> },

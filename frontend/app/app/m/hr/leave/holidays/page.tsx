@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column } from "@/components/data-list"
 import { Field, FormError } from "@/components/form"
@@ -19,6 +18,7 @@ import { useAuth } from "@/lib/auth"
 import { formatDate } from "@/lib/format"
 import { DAY_NAMES } from "@/lib/hr"
 import { useChanged } from "@/lib/use-dirty"
+import { NoAccessPage } from "@/components/page-states"
 
 // Holidays for the year: leave doesn't count them, attendance shows them, payroll pays them.
 
@@ -83,7 +83,7 @@ export default function HolidaysPage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<Holiday | "new" | null>(null)
   const [deleting, setDeleting] = React.useState<Holiday | null>(null)
-  if (!can("hr.leave.view")) return <PageHeader title="Holidays" description="You don't have access to leave. Ask your admin." />
+  if (!can("hr.leave.view")) return <NoAccessPage title="Holidays" permission="hr.leave.view" />
   const edit = can("hr.setup.edit")
   const today = todayInIndia()
   const columns: Column<Holiday>[] = [

@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { PageHeader } from "@/components/app-shell"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 import { BudgetReport, CashFlow, DayBook, GstSummary, ProfitLoss } from "@/components/finance/reports"
 import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
@@ -23,7 +23,7 @@ function Reports() {
   const router = useRouter()
   const search = useSearchParams()
   const tab = (TABS.find(([k]) => k === search.get("tab"))?.[0] ?? "pl") as Tab
-  if (!can("finance.expense.view")) return <PageHeader title="Finance reports" description="You don't have access to finance. Ask your admin." />
+  if (!can("finance.expense.view")) return <NoAccessPage title="Finance reports" permission="finance.expense.view" />
   const fy = me?.tenant?.fyStartMonth ?? 4
   return (
     <div className="grid gap-4">

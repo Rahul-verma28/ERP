@@ -10,6 +10,8 @@ import { join } from 'node:path';
 import { Pool as PgPool } from 'pg';
 
 const dir = join(__dirname, 'migrations');
+/** The whole schema in one migration; it replaced the 57 step-by-step migrations of Oct–Dec 2026 */
+export const BASELINE = '20261202000000_baseline';
 
 function openPool(url: string): PgPool {
   return new PgPool({ connectionString: url, connectionTimeoutMillis: 20_000 });
@@ -36,11 +38,23 @@ export async function runMigrations(url: string, log: (s: string) => void = cons
     if (failed) throw new Error(`Migration ${failed.migration_name} previously failed. Fix it and mark it rolled back before continuing.`);
     const applied = new Set(rows.filter((r) => r.finished_at).map((r) => r.migration_name));
 
-    const pending = readdirSync(dir, { withFileTypes: true })
+    let pending = readdirSync(dir, { withFileTypes: true })
       .filter((d) => d.isDirectory() && existsSync(join(dir, d.name, 'migration.sql')))
       .map((d) => d.name)
       .sort()
       .filter((name) => !applied.has(name));
+
+    // A database built from the old step-by-step migrations (all older than the baseline) already
+    // has everything the baseline makes: record the baseline as applied instead of running it.
+    if (pending[0] === BASELINE && applied.size > 0 && [...applied].every((name) => name < BASELINE)) {
+      const sql = readFileSync(join(dir, BASELINE, 'migration.sql'), 'utf8');
+      await pool.query(
+        `INSERT INTO "_prisma_migrations" (id, checksum, migration_name, finished_at, applied_steps_count, logs) VALUES ($1, $2, $3, now(), 0, $4)`,
+        [randomUUID(), createHash('sha256').update(sql).digest('hex'), BASELINE, 'Built from the earlier step-by-step migrations; baseline marked as applied'],
+      );
+      log(`✔ ${BASELINE} marked as applied (database built from the earlier migrations)`);
+      pending = pending.slice(1);
+    }
 
     if (!pending.length) {
       log(`No pending migrations (${applied.size} applied).`);

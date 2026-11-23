@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { AlarmClock, CheckCircle2, FileBarChart, Inbox, Star, Timer } from "lucide-react"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, periodFilter } from "@/components/data-list"
 import { SummaryCards } from "@/components/summary-cards"
@@ -11,6 +10,7 @@ import { ist, range, wholeReport } from "@/components/reports/kit"
 import { useAuth } from "@/lib/auth"
 import { duration } from "@/lib/support"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Customer Service report: tickets in a period by category, person, channel, customer or day, with
 // how fast the first reply and the fix came, how many met the SLA, and the customers' rating.
@@ -23,7 +23,7 @@ const pct = (v: number | null) => (v === null ? <span className="text-muted-fore
 function Report() {
   const { can, me } = useAuth()
   const [by, setBy] = React.useState<(typeof BY)[number][0]>("category")
-  if (!can("support.ticket.view")) return <PageHeader title="Customer service report" description="You don't have access to customer service. Ask your admin." />
+  if (!can("support.ticket.view")) return <NoAccessPage title="Customer service report" permission="support.ticket.view" />
   return (
     <DataList<Row>
       key={by}

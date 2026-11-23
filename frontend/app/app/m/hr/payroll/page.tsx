@@ -9,12 +9,11 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { countBy, DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { SummaryCards } from "@/components/summary-cards"
 import { Field, FormError } from "@/components/form"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 import { ActionMenu, Pill } from "@/components/page-parts"
 import { HrTabs, TABS } from "@/components/hr/pickers"
 import { AccountSelect, accountForMethod } from "@/components/finance/forms"
@@ -88,7 +87,7 @@ function Payroll() {
   const [version, setVersion] = React.useState(0)
   const [running, setRunning] = React.useState(!!search.get("run"))
   const [deleting, setDeleting] = React.useState<PayrollRun | null>(null)
-  if (!can("hr.payroll.view")) return <PageHeader title="Payroll" description="You don't have access to payroll. Ask your admin." />
+  if (!can("hr.payroll.view")) return <NoAccessPage title="Payroll" permission="hr.payroll.view" />
   const columns: Column<PayrollRun>[] = [
     { key: "month", header: "Title", hideable: false, sort: (r) => r.month, csv: (r) => `${monthLabel(r.month)} payroll`, cell: (r) => <span><span className="block font-semibold">{monthLabel(r.month)} payroll</span><span className="block max-w-56 truncate text-xs text-muted-foreground">{[r.number, r.notes].filter(Boolean).join(" · ")}</span></span> },
     { key: "freq", header: "Frequency", csv: () => "Monthly", cell: () => <Pill color="violet">Monthly</Pill> },

@@ -6,7 +6,6 @@ import { toast } from "sonner"
 import { Banknote, CalendarDays, Eye, Landmark, Plus, Undo2, Wallet } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, countBy, localList, periodFilter, type Column } from "@/components/data-list"
 import { SummaryCards } from "@/components/summary-cards"
@@ -20,7 +19,7 @@ import { formatDate, formatPaise, initials } from "@/lib/format"
 import { todayInIndia } from "@contracts/validation"
 import { PAYMENT_METHODS } from "@/lib/money"
 import { cn } from "@/lib/utils"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 
 // Payments made: money paid to suppliers. One payment can clear several of a supplier's invoices.
 
@@ -35,7 +34,7 @@ export default function PaymentsMadePage() {
   const [reversing, setReversing] = React.useState<SupplierPayment | null>(null)
   const [version, setVersion] = React.useState(0)
   const icon = buttonVariants({ variant: "ghost", size: "icon-sm" })
-  if (!can("inventory.supplier_bill.view")) return <PageHeader title="Payments Made" description="You don't have access to this. Ask your admin." />
+  if (!can("inventory.supplier_bill.view")) return <NoAccessPage title="Payments Made" permission="inventory.supplier_bill.view" />
   if (params.get("supplier") && preset.loading) return <PageLoading />
 
   const columns: Column<SupplierPayment>[] = [

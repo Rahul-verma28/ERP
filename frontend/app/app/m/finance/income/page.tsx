@@ -5,7 +5,6 @@ import { toast } from "sonner"
 import { Pencil, Plus, Trash2, TrendingUp, CalendarDays, PieChart, Wallet } from "lucide-react"
 import { SummaryCards } from "@/components/summary-cards"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, remoteList, periodFilter, type Column } from "@/components/data-list"
 import { ActionMenu } from "@/components/page-parts"
@@ -16,6 +15,7 @@ import { useAuth } from "@/lib/auth"
 import { useSharedApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useFinAccounts, type Income } from "@/lib/finance"
+import { NoAccessPage } from "@/components/page-states"
 
 // Other income: money in that is not a sale, like interest, rent received or scrap sold.
 
@@ -28,7 +28,7 @@ export default function IncomePage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<Income | "new" | null>(null)
   const [deleting, setDeleting] = React.useState<Income | null>(null)
-  if (!can("finance.expense.view")) return <PageHeader title="Other income" description="You don't have access to finance. Ask your admin." />
+  if (!can("finance.expense.view")) return <NoAccessPage title="Other income" permission="finance.expense.view" />
   const reload = () => { setVersion((v) => v + 1); void accounts.reload() }
 
   const columns: Column<Income>[] = [

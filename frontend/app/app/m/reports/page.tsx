@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { useAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Report Centre: every report in the app on one page, grouped by area, searchable, with the ones
 // a person uses most starred to the top. Only reports the person's role can open are shown; each
@@ -119,7 +120,7 @@ export default function ReportCentrePage() {
   const starred = all.filter((x) => stars.has(x.r.key))
   const total = GROUPS.reduce((s, g) => s + g.reports.filter((r) => can(r.permission)).length, 0)
 
-  if (!total) return <PageHeader title="Reports" description="You don't have access to any reports. Ask your admin." />
+  if (!total) return <NoAccessPage title="Reports" permission="reports.report.view" what="any reports" />
   return (
     <div className="grid gap-6">
       <PageHeader title="Reports" description={`All ${total} reports in one place. Star the ones you use most; they stay on top.`} />

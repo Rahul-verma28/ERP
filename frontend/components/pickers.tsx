@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { NativeSelect } from "@/components/form"
 import { api, errorMessage } from "@/lib/api"
 import { useApi } from "@/lib/use-api"
+import { useAuth } from "@/lib/auth"
 import { useDebounced } from "@/lib/use-list"
 import { formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -238,7 +239,7 @@ export function SupplierPicker({ value, onChange, id, allowCreate = true }: { va
  * card it sits in), scrolls, and shows price, GST, HSN and stock so the right item is picked first time.
  * A barcode scanner types the code and presses Enter: an exact barcode or SKU match is added at once.
  */
-export function ItemPicker({ onPick, id, allowCreate = false, defaultGstRateBp = 1800, placeholder = "Search item, SKU or HSN, or scan", locationId, price = "sale" }: {
+export function ItemPicker({ onPick, id, allowCreate = false, defaultGstRateBp, placeholder = "Search item, SKU or HSN, or scan", locationId, price = "sale" }: {
   onPick: (i: ItemOption) => void
   id?: string
   allowCreate?: boolean
@@ -249,6 +250,7 @@ export function ItemPicker({ onPick, id, allowCreate = false, defaultGstRateBp =
   /** Which price to show: selling (sales) or buying (purchase, stock) */
   price?: "sale" | "cost"
 }) {
+  const { me } = useAuth()
   const [query, setQuery] = React.useState("")
   const [open, setOpen] = React.useState(false)
   const [active, setActive] = React.useState(0)
@@ -304,7 +306,7 @@ export function ItemPicker({ onPick, id, allowCreate = false, defaultGstRateBp =
   async function addNew() {
     setAdding(true)
     try {
-      choose(await api.post<ItemOption>("/items", { name: query.trim(), type: "product", unit: "pcs", pricePaise: 0, gstRateBp: defaultGstRateBp }))
+      choose(await api.post<ItemOption>("/items", { name: query.trim(), type: "product", unit: me?.tenant?.defaults?.items.defaultUnit || "pcs", pricePaise: 0, gstRateBp: defaultGstRateBp ?? me?.tenant?.defaults?.gstRateBp ?? 1800 }))
     } catch (e) {
       toast.error(errorMessage(e))
     } finally {

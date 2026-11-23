@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Lock, Pencil } from "lucide-react"
+import { Lock, Pencil, type LucideIcon } from "lucide-react"
 import { changeReason } from "@contracts/validation"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -100,7 +100,7 @@ export function ReadOnlyGrid({ items, className }: { items: { label: string; val
       {items.map((i) => (
         <div key={i.label} className={cn("min-w-0", i.wide && "sm:col-span-2")}>
           <dt className="text-xs font-medium text-muted-foreground">{i.label}</dt>
-          <dd className="mt-0.5 break-words text-sm">{i.value === null || i.value === undefined || i.value === "" ? <span className="text-muted-foreground">Not added</span> : i.value}</dd>
+          <dd className="mt-0.5 break-words text-sm font-medium">{i.value === null || i.value === undefined || i.value === "" ? <span className="font-normal text-muted-foreground">Not added</span> : i.value}</dd>
         </div>
       ))}
     </dl>
@@ -111,6 +111,8 @@ const isTyping = (t: EventTarget | null) => t instanceof HTMLElement && (t.isCon
 
 export function EditableSection<T extends Record<string, unknown>>({
   title,
+  icon: Icon,
+  id,
   description,
   form,
   canEdit,
@@ -122,6 +124,10 @@ export function EditableSection<T extends Record<string, unknown>>({
   onEditingChange,
 }: {
   title: string
+  /** A small icon tile beside the title (settings pages) */
+  icon?: LucideIcon
+  /** Anchor for links like /app/settings#address */
+  id?: string
   description?: string
   form: FormApi<T>
   canEdit: boolean
@@ -183,12 +189,19 @@ export function EditableSection<T extends Record<string, unknown>>({
   const changes = form.changed.length
 
   return (
-    <Card ref={cardRef} className={cn(editing && "ring-2 ring-primary/40")}>
+    <Card ref={cardRef} id={id} className={cn("scroll-mt-20", editing && "ring-2 ring-primary/40")}>
       <form {...form.formProps} onSubmit={save} className="flex flex-col gap-(--card-spacing)">
         <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-          <div className="min-w-0">
-            <CardTitle>{title}</CardTitle>
-            {description && <CardDescription className="mt-1">{description}</CardDescription>}
+          <div className="flex min-w-0 items-start gap-3">
+            {Icon && (
+              <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+                <Icon className="size-4" aria-hidden />
+              </span>
+            )}
+            <div className="min-w-0">
+              <CardTitle>{title}</CardTitle>
+              {description && <CardDescription className="mt-1">{description}</CardDescription>}
+            </div>
           </div>
           {editing ? (
             <Badge variant="secondary">Editing</Badge>

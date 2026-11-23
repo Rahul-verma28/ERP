@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import { CalendarCheck, Clock, Globe, IndianRupee, Pencil, Plus, Scissors } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, countBy, localList, type Column } from "@/components/data-list"
 import { Avatar, Pill } from "@/components/page-parts"
@@ -16,6 +15,7 @@ import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
 import { RESOURCE_KIND, type Service } from "@/lib/bookings"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Services that can be booked: how long each takes, the gap after, who can do it, the room it needs,
 // whether customers can book it online, and how busy it is. Services themselves are items.
@@ -24,7 +24,7 @@ export default function ServicesPage() {
   const { can } = useAuth()
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<Service | null>(null)
-  if (!can("bookings.appointment.view")) return <PageHeader title="Services" description="You don't have access to bookings. Ask your admin." />
+  if (!can("bookings.appointment.view")) return <NoAccessPage title="Services" permission="bookings.appointment.view" />
   const canEdit = can("bookings.resource.edit")
 
   const columns: Column<Service>[] = [

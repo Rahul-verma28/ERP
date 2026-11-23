@@ -11,6 +11,7 @@ import { getRolePermissions } from '../access/service';
 import { notify } from '../notifications/service';
 import { audit } from '../audit/service';
 import { zFileRef } from '../../kernel/zodRules';
+import { withDefaults } from '../../contracts/workspace';
 
 // Tasks & Projects: tasks with checklists, subtasks, labels, repeats and comments; projects with a
 // team, dates and budget; time logged against either; and approvals asked of a named person.
@@ -216,9 +217,11 @@ export async function createTask(ctx: TenantCtx, b: TaskInput) {
     projectId = projectId ?? parent.projectId;
   }
   const top = await db().task.aggregate({ where: { tenantId: ctx.tenantId, status: b.status ?? 'todo' }, _max: { position: true } });
+  // No priority given: Settings › Tasks decides
+  const priority = b.priority ?? withDefaults((await db().tenant.findUnique({ where: { id: ctx.tenantId }, select: { preferences: true } }))?.preferences).tasks.defaultPriority;
   const task = await db().task.create({
     data: {
-      tenantId: ctx.tenantId, title: b.title, description: b.description ?? null, status: b.status ?? 'todo', priority: b.priority ?? 'medium',
+      tenantId: ctx.tenantId, title: b.title, description: b.description ?? null, status: b.status ?? 'todo', priority,
       startOn: b.startOn ? new Date(`${b.startOn}T00:00:00.000Z`) : null, dueAt: b.dueAt ? new Date(b.dueAt) : null, estimateMin: b.estimateMin ?? null,
       assigneeId: b.assigneeId === undefined ? ctx.userId : b.assigneeId, contactId: b.contactId ?? null, projectId, parentId: b.parentId ?? null,
       labels: b.labels ?? [], checklist: cleanChecklist(b.checklist) ?? [], repeat: b.repeat ?? 'none', position: (top._max.position ?? 0) + 10,

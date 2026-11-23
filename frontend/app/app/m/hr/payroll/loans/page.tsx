@@ -4,7 +4,6 @@ import * as React from "react"
 import { toast } from "sonner"
 import { CheckCircle2, HandCoins, Plus, RotateCcw, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { ActionMenu, Avatar, Pill } from "@/components/page-parts"
@@ -14,6 +13,7 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { monthLabel } from "@/lib/hr"
+import { NoAccessPage } from "@/components/page-states"
 
 // Loans and salary advances, taken back in monthly instalments through payroll.
 
@@ -27,7 +27,7 @@ export default function LoansPage() {
   const [version, setVersion] = React.useState(0)
   const [adding, setAdding] = React.useState(false)
   const [deleting, setDeleting] = React.useState<Loan | null>(null)
-  if (!can("hr.payroll.view")) return <PageHeader title="Loans & advances" description="You don't have access to payroll. Ask your admin." />
+  if (!can("hr.payroll.view")) return <NoAccessPage title="Loans & advances" permission="hr.payroll.view" />
   const reload = () => setVersion((v) => v + 1)
   async function status(l: Loan, s: "active" | "closed") {
     try { await api.post(`/hr/loans/${l.id}/status`, { status: s }); toast.success(s === "closed" ? "Closed: no more instalments" : "Instalments start again"); reload() } catch (e) { toast.error(errorMessage(e)) }

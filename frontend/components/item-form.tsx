@@ -134,7 +134,10 @@ export function ItemForm({ editId, copyId }: { editId?: string | null; copyId?: 
 
   const canStock = can("inventory.stock.view")
   const startAt = places?.find((w) => w.isDefault && w.isActive)?.id ?? ""
-  const form: Form = { ...(item ? fromItem(item) : copy ? { ...copy, locationId: startAt } : { ...BLANK, trackStock: canStock, locationId: startAt }), ...edits }
+  // A new item starts from Settings › Items and the default GST rate in Taxes
+  const d = me?.tenant?.defaults
+  const fresh: Form = { ...BLANK, unit: d?.items.defaultUnit || BLANK.unit, gstRateBp: d?.gstRateBp ?? BLANK.gstRateBp, trackStock: canStock && (d?.items.trackStock ?? true), reorderLevel: d?.items.lowStockLevel != null ? String(d.items.lowStockLevel) : "", locationId: startAt }
+  const form: Form = { ...(item ? fromItem(item) : copy ? { ...copy, locationId: startAt } : fresh), ...edits }
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setEdits((e) => ({ ...e, [k]: v }))
   // Editing: Save works only once a value differs from the saved item
   const unchanged = !!item && (Object.keys(edits) as (keyof Form)[]).every((k) => JSON.stringify(edits[k]) === JSON.stringify(fromItem(item)[k]))
@@ -239,7 +242,7 @@ export function ItemForm({ editId, copyId }: { editId?: string | null; copyId?: 
           {current === "basic" && (
             <div className="grid gap-4 md:grid-cols-2">
               <Field label="Item type">
-                <NativeSelect value={form.type} disabled={!editable || !!item?.stockQty} onChange={(e) => { const t = e.target.value as Item["type"]; setEdits((x) => ({ ...x, type: t, unit: t === "service" ? "service" : form.unit === "service" ? "pcs" : form.unit })) }} aria-label="Item type">
+                <NativeSelect value={form.type} disabled={!editable || !!item?.stockQty} onChange={(e) => { const t = e.target.value as Item["type"]; setEdits((x) => ({ ...x, type: t, unit: t === "service" ? "service" : form.unit === "service" ? (me?.tenant?.defaults?.items.defaultUnit || "pcs") : form.unit })) }} aria-label="Item type">
                   <option value="product">Product</option>
                   <option value="service">Service</option>
                 </NativeSelect>

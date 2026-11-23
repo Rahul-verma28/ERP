@@ -3,7 +3,6 @@
 import * as React from "react"
 import { CalendarCheck, Clock, FileBarChart, IndianRupee, Plane, UserX, Users, Wallet } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, periodFilter } from "@/components/data-list"
 import { SummaryCards } from "@/components/summary-cards"
@@ -12,6 +11,7 @@ import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useSharedApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // HR reports a business and its CA ask for each month: who came in, the payroll register with
 // PF, ESI and PT split out (for the challans), and leave taken by type.
@@ -151,7 +151,7 @@ function Reports() {
   const { can } = useAuth()
   const tabs = TABS.filter(([k]) => can(k === "attendance" ? "hr.attendance.view" : k === "payroll" ? "hr.payroll.view" : "hr.leave.view"))
   const [tab, setTab] = useReportTab(tabs.length ? tabs : TABS)
-  if (!tabs.length) return <PageHeader title="HR reports" description="You don't have access to HR reports. Ask your admin." />
+  if (!tabs.length) return <NoAccessPage title="HR reports" permission="hr.employee.view" />
   return (
     <div className="grid gap-4">
       <ReportTabs tabs={tabs} value={tab} onChange={setTab} />

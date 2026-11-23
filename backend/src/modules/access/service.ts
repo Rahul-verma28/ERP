@@ -111,3 +111,23 @@ consumer('access.cache.ent', 'subscription.changed', async (evt) => {
 consumer('access.cache.role', 'role.updated', async (evt) => {
   cache.del(`role:${String(evt.payload.roleId)}`);
 });
+
+/** Why the plan holds back a permission the role has */
+export type LockReason = 'not_in_plan' | 'paid_feature' | 'view_only';
+
+/**
+ * Permissions the role gives but the plan holds back, with why. Pages use it to say "not in your
+ * plan, upgrade" instead of "ask your admin" (which was wrong for an owner on the Free plan).
+ */
+export async function lockedPermissions(tenantId: string, roleId: string) {
+  const [perms, ent] = await Promise.all([getRolePermissions(roleId), getEntitlements(tenantId)]);
+  const out: Record<string, LockReason> = {};
+  for (const p of PERMISSIONS) {
+    if (!perms.get(p.key) || p.moduleKey === 'platform' || p.moduleKey === 'tenant') continue;
+    const m = ent.modules[p.moduleKey];
+    if (m.status === 'inactive') out[p.key] = 'not_in_plan';
+    else if (p.tier === 'full' && m.tier !== 'full') out[p.key] = 'paid_feature';
+    else if (m.status === 'read_only' && !['view', 'export'].includes(p.action)) out[p.key] = 'view_only';
+  }
+  return out;
+}

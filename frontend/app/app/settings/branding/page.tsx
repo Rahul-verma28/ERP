@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import { toast } from "sonner"
+import Link from "next/link"
+import { ImageIcon } from "lucide-react"
 import { BrandingStep } from "@/components/setup/branding-step"
 import { SettingsStepPage } from "@/components/settings-step-page"
 import { LogoUpload } from "@/components/logo-upload"
@@ -39,9 +41,19 @@ function LogoCard({ tenant, refresh, readOnly }: { tenant: SetupTenant; refresh:
   }
   return (
     <section id="logo" className="grid gap-3 ui-surface p-5">
-      <div>
-        <h2 className="text-[15px] font-bold">Logo</h2>
-        <p className="text-xs text-muted-foreground">Printed on invoices and shown in the menu. PNG, JPG or WebP; it&apos;s resized for you.</p>
+      <div className="flex items-start gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary">
+          <ImageIcon className="size-4" aria-hidden />
+        </span>
+        <div>
+          <h2 className="text-[15px] font-bold">Logo</h2>
+          <p className="text-xs text-muted-foreground">
+            Printed on invoices and shown in the menu. PNG, JPG or WebP; it&apos;s resized for you.{" "}
+            <Link href="/app/settings/documents" className="font-semibold text-primary hover:underline">
+              See it on an invoice
+            </Link>
+          </p>
+        </div>
       </div>
       <LogoUpload value={logo} onChange={setLogo} disabled={readOnly || saving} />
       <InlineSave dirty={logo !== savedUrl} saving={saving} onDiscard={() => setLogo(savedUrl)} onSave={() => void save(logo)} saveLabel={logo ? "Save logo" : "Remove logo"} />

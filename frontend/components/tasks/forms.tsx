@@ -72,11 +72,11 @@ export function ProjectSelect({ value, onChange, ...rest }: { value: string; onC
 }
 
 /** Labels as chips: type and press Enter, or pick one used before */
-export function LabelInput({ value, onChange, suggestions = [] }: { value: string[]; onChange: (v: string[]) => void; suggestions?: string[] }) {
+export function LabelInput({ value, onChange, suggestions = [], max = 8 }: { value: string[]; onChange: (v: string[]) => void; suggestions?: string[]; max?: number }) {
   const [text, setText] = React.useState("")
   const add = (raw: string) => {
     const l = raw.trim().slice(0, 30)
-    if (!l || value.some((x) => x.toLowerCase() === l.toLowerCase()) || value.length >= 8) return
+    if (!l || value.some((x) => x.toLowerCase() === l.toLowerCase()) || value.length >= max) return
     onChange([...value, l])
     setText("")
   }
@@ -130,7 +130,7 @@ export function TaskDialog({ task, parentId, defaults, labels = [], onClose, onS
   const { me } = useAuth()
   const edit = !!task
   const [f, setF] = React.useState({
-    title: task?.title ?? "", description: task?.description ?? "", status: task?.status ?? defaults?.status ?? "todo", priority: task?.priority ?? "medium",
+    title: task?.title ?? "", description: task?.description ?? "", status: task?.status ?? defaults?.status ?? "todo", priority: task?.priority ?? me?.tenant?.defaults?.tasks.defaultPriority ?? "medium",
     startOn: task?.startOn?.slice(0, 10) ?? "", due: toLocal(task?.dueAt ?? defaults?.dueAt), estimateH: task?.estimateMin ? String(task.estimateMin / 60) : "",
     assigneeId: task ? task.assigneeId ?? "" : me?.user.id ?? "", projectId: task?.projectId ?? defaults?.projectId ?? "", repeat: task?.repeat ?? "none",
     labels: task?.labels ?? [], checklist: task?.checklist ?? [],
@@ -181,7 +181,7 @@ export function TaskDialog({ task, parentId, defaults, labels = [], onClose, onS
             <Field label="Details" className="sm:col-span-2" count={[f.description.length, 5000]}><Textarea rows={3} maxLength={5000} value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Anything the person needs to know" /></Field>
             <Field label="Status"><NativeSelect value={f.status} onChange={(e) => set("status", e.target.value as Task["status"])}>{(["todo", "in_progress", "done"] as const).map((s) => <option key={s} value={s}>{STATUS[s].label}</option>)}</NativeSelect></Field>
             <Field label="Priority"><NativeSelect value={f.priority} onChange={(e) => set("priority", e.target.value as Task["priority"])}>{(["low", "medium", "high", "urgent"] as const).map((p) => <option key={p} value={p}>{PRIORITY[p].label}</option>)}</NativeSelect></Field>
-            <Field label="Labels" className="sm:col-span-2" hint="Up to 8, e.g. Urgent call, Follow-up, Site visit"><LabelInput value={f.labels} onChange={(v) => set("labels", v)} suggestions={labels} /></Field>
+            <Field label="Labels" className="sm:col-span-2" hint="Up to 8, e.g. Urgent call, Follow-up, Site visit"><LabelInput value={f.labels} onChange={(v) => set("labels", v)} suggestions={[...new Set([...(me?.tenant?.defaults?.tasks.labels ?? []), ...labels])]} /></Field>
           </FormSection>
           <FormSection title="Schedule">
             <Field label="Start date" error={errors.startOn}><Input type="date" value={f.startOn} onChange={(e) => set("startOn", e.target.value)} /></Field>

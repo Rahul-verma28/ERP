@@ -5,7 +5,6 @@ import Link from "next/link"
 import { toast } from "sonner"
 import { CalendarDays, CalendarOff, Clock, Pencil, Percent, Plane, Plus, Trash2, Users } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, countBy, localList, type Column } from "@/components/data-list"
 import { ActionMenu, Avatar, Pill } from "@/components/page-parts"
@@ -16,6 +15,7 @@ import { useAuth } from "@/lib/auth"
 import { formatDateTime } from "@/lib/format"
 import { WEEKDAYS, type StaffRow } from "@/lib/bookings"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Staff & Hours: each person's working week, time off, and how booked they are this week.
 // Appointments and the online booking page only offer times inside these hours.
@@ -26,7 +26,7 @@ export default function StaffPage() {
   const [hours, setHours] = React.useState<StaffRow | null>(null)
   const [off, setOff] = React.useState<{ personId?: string } | null>(null)
   const [removing, setRemoving] = React.useState<{ id: string; who: string } | null>(null)
-  if (!can("bookings.appointment.view")) return <PageHeader title="Staff & Hours" description="You don't have access to bookings. Ask your admin." />
+  if (!can("bookings.appointment.view")) return <NoAccessPage title="Staff & Hours" permission="bookings.appointment.view" />
   const reload = () => setVersion((v) => v + 1)
   const canEdit = can("bookings.resource.edit")
 

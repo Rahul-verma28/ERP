@@ -14,7 +14,7 @@ import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { STAGE_COLORS, tone, useCrmSetup, type CrmOption, type Pipeline, type Stage } from "@/lib/crm"
 import { cn } from "@/lib/utils"
-import { PageError, PageLoading } from "@/components/page-states"
+import { PageError, PageLoading, NoAccessPage } from "@/components/page-states"
 import { useChanged } from "@/lib/use-dirty"
 
 // CRM setup on one page: pipelines and their lead and deal stages, sources, labels, lost reasons.
@@ -210,7 +210,7 @@ export default function CrmSetupPage() {
   const [tab, setTab] = React.useState<"pipelines" | "lists">("pipelines")
   const [editing, setEditing] = React.useState<Pipeline | "new" | null>(null)
   const [removing, setRemoving] = React.useState<Pipeline | null>(null)
-  if (!can("crm.pipeline.edit")) return <PageHeader title="CRM setup" description="You don't have access to this. Ask your admin." />
+  if (!can("crm.pipeline.edit")) return <NoAccessPage title="CRM setup" permission="crm.pipeline.edit" />
   const data = setup.data
   if (setup.error) return <PageError error={setup.error} onRetry={() => void setup.reload()} />
   if (!data) return <PageLoading />

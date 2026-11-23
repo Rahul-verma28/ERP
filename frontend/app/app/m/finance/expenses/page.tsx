@@ -7,7 +7,6 @@ import Link from "next/link"
 import { AlarmClock, Banknote, CalendarDays, Copy, Eye, Landmark, PieChart, Pencil, Plus, Receipt, Repeat, Trash2, Wallet } from "lucide-react"
 import { SummaryCards } from "@/components/summary-cards"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, periodFilter, type Column } from "@/components/data-list"
 import { ActionMenu, Pill } from "@/components/page-parts"
@@ -20,6 +19,7 @@ import { formatDate, formatPaise } from "@/lib/format"
 import { useFinAccounts, type Expense, type Recurring } from "@/lib/finance"
 import { openFile } from "@/lib/files"
 import { DocLink } from "@/components/record-view"
+import { NoAccessPage } from "@/components/page-states"
 
 const vsLast = (now: number, before: number) => (before ? `${now >= before ? "▲" : "▼"} ${Math.abs(Math.round(((now - before) / before) * 100))}% vs last month (${formatPaise(before)})` : "Nothing last month")
 
@@ -34,7 +34,7 @@ export default function ExpensesPage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<{ expense?: Expense; copy?: Expense } | null>(null)
   const [deleting, setDeleting] = React.useState<Expense | null>(null)
-  if (!can("finance.expense.view")) return <PageHeader title="Expenses" description="You don't have access to expenses. Ask your admin." />
+  if (!can("finance.expense.view")) return <NoAccessPage title="Expenses" permission="finance.expense.view" />
   const reload = () => { setVersion((v) => v + 1); void accounts.reload(); void recurring.reload() }
 
   const columns: Column<Expense>[] = [

@@ -6,10 +6,9 @@ import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { Briefcase, Clock, Eye, FileSignature, GraduationCap, IndianRupee, LogOut, Pencil, Plus, RotateCcw, Trash2, Users } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, type Column, type ViewPreset } from "@/components/data-list"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 import { ActionMenu, Avatar, Pill } from "@/components/page-parts"
 import { ExitDialog } from "@/components/hr/employee-dialogs"
 import { SummaryCards, share } from "@/components/summary-cards"
@@ -41,7 +40,7 @@ function Employees() {
   const [version, setVersion] = React.useState(0)
   const [exiting, setExiting] = React.useState<Employee | null>(null)
   const [deleting, setDeleting] = React.useState<Employee | null>(null)
-  if (!can("hr.employee.view")) return <PageHeader title="Employees" description="You don't have access to HR. Ask your admin." />
+  if (!can("hr.employee.view")) return <NoAccessPage title="Employees" permission="hr.employee.view" />
   const reload = () => setVersion((v) => v + 1)
   const pay = can("hr.payroll.view")
 

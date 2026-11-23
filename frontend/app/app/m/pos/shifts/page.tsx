@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import { AlertTriangle, Banknote, Clock, Eye, Smartphone, Store, TrendingUp } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, periodFilter, type Column } from "@/components/data-list"
 import { Pill } from "@/components/page-parts"
@@ -14,6 +13,7 @@ import { useAuth } from "@/lib/auth"
 import { formatDateTime, formatPaise } from "@/lib/format"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Shifts: each person's time at a counter, what they sold, the cash expected against the cash
 // counted at close, and any short or extra.
@@ -27,7 +27,7 @@ interface Row {
 export default function ShiftsPage() {
   const { can, me } = useAuth()
   const meta = useApi<{ counters: { id: string; name: string }[] }>(can("billing.pos.view") ? "/pos/shifts?limit=1" : null)
-  if (!can("billing.pos.view")) return <PageHeader title="Shifts" description="You don't have access to the POS counter. Ask your admin." />
+  if (!can("billing.pos.view")) return <NoAccessPage title="Shifts" permission="billing.pos.view" />
   const icon = buttonVariants({ variant: "ghost", size: "icon-sm" })
   const columns: Column<Row>[] = [
     { key: "number", header: "Shift", hideable: false, sort: (r) => r.number, csv: (r) => r.number, cell: (r) => <span className="inline-flex w-fit rounded-lg border px-2 py-0.5 font-mono text-xs font-medium text-primary">{r.number}</span> },

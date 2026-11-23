@@ -64,6 +64,11 @@ export interface Seller {
   showHsnSummary?: boolean
   showSignatory?: boolean
   paper?: "a4" | "80mm" | "58mm"
+  /** Frozen at issue from Settings › Documents: the look of the bill and the signature image */
+  template?: "classic" | "modern" | "compact"
+  signatureUrl?: string | null
+  /** Settings › Branding colour, used by the modern template */
+  brandColor?: string | null
   /** Frozen at issue: on composition, or selling only exempt goods (Rule 49) */
   billOfSupply?: boolean
   /** Frozen at issue: the business had no GSTIN, so a plain invoice without GST */

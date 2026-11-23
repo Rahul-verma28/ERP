@@ -324,9 +324,13 @@ async function prepare(ctx: TenantCtx, kind: PurchaseKind, input: PurchaseInput,
     };
   });
 
+  // No date given: the supplier's payment days, else Settings › Purchase (bills) or its expected days (orders)
+  const pur = withDefaults(tenant.preferences).purchase;
+  const billDays = supplier.paymentDays ?? pur.billDueDays;
   const dueDate = input.dueDate
     ? dateOnly(input.dueDate)
-    : kind === 'purchase_bill' && supplier.paymentDays != null ? new Date((input.supplierDate ? dateOnly(input.supplierDate) : issueDate).getTime() + supplier.paymentDays * DAY) : null;
+    : kind === 'purchase_bill' && billDays != null ? new Date((input.supplierDate ? dateOnly(input.supplierDate) : issueDate).getTime() + billDays * DAY)
+    : kind === 'purchase_order' && pur.poExpectedDays != null ? new Date(issueDate.getTime() + pur.poExpectedDays * DAY) : null;
   return {
     tenant, supplier, source, stock, claimsItc, items: byId,
     doc: {

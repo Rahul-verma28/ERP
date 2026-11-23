@@ -12,7 +12,7 @@ import { Switch } from "@/components/ui/switch"
 import { PageHeader } from "@/components/app-shell"
 import { Field, FormError } from "@/components/form"
 import { Pill, Section } from "@/components/page-parts"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 import { FormSection } from "@/components/tasks/forms"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -46,7 +46,7 @@ export default function PortalSetupPage() {
   const s = f ?? res.data ?? null
   const saved = base ?? res.data ?? null
   const dirty = !!f && JSON.stringify(f) !== JSON.stringify(saved)
-  if (!can("billing.invoice.view")) return <PageHeader title="Customer portal" description="You don't have access to this. Ask your admin." />
+  if (!can("billing.invoice.view")) return <NoAccessPage title="Customer portal" permission="billing.invoice.view" />
   if (!s) return <PageLoading />
   const canEdit = can("tenant.settings.edit")
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => { setF({ ...s, [k]: v }); setErrors((e) => ({ ...e, [k]: "" })); setError(null) }

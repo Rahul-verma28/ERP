@@ -9,13 +9,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { countBy, DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { RecordView } from "@/components/record-view"
 import { MonthCalendar } from "@/components/hr/month-calendar"
 import { Field, FormError, NativeSelect } from "@/components/form"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 import { ActionMenu, Pill } from "@/components/page-parts"
 import { ListSelect } from "@/components/hr/pickers"
 import { todayInIndia } from "@contracts/validation"
@@ -146,7 +145,7 @@ function Workplace() {
   const [deleting, setDeleting] = React.useState<Post | null>(null)
   const k = KINDS[kind]
   if (!k) notFound()
-  if (!can("hr.workplace.view")) return <PageHeader title={k.title} description="You don't have access to this. Ask your admin." />
+  if (!can("hr.workplace.view")) return <NoAccessPage title={k.title} permission="hr.workplace.view" />
   const reload = () => setVersion((v) => v + 1)
   const edit = can("hr.workplace.edit")
   const today = todayInIndia()

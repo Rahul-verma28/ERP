@@ -47,6 +47,9 @@ export interface ConsoleAccess {
   partner: { id: string; name: string; status: "active" | "paused"; discountPercent: number } | null
 }
 
+/** Why the plan holds back a permission */
+export type LockReason = "not_in_plan" | "paid_feature" | "view_only"
+
 export interface Me {
   workspace: Workspace
   /** null unless the user is on the AHEAD team */
@@ -78,6 +81,17 @@ export interface Me {
     createdAt: string
     branding: WorkspacePreferences["branding"]
     purchaseOrders: boolean
+    /** What new records start with (Settings › Module settings); older servers may not send it */
+    defaults?: {
+      sales: WorkspacePreferences["sales"]
+      purchase: WorkspacePreferences["purchase"]
+      items: WorkspacePreferences["items"]
+      tasks: WorkspacePreferences["tasks"]
+      gstRateBp: number
+      pricesIncludeTax: boolean
+      roundOff: boolean
+      composition: boolean
+    }
     /** Modules the owner chose at signup, in order */
     preferredModules: ModuleKey[]
   }
@@ -86,6 +100,8 @@ export interface Me {
   limits?: PlanLimits
   modules?: Record<ModuleKey, ModuleEntitlement>
   permissions?: Record<string, Scope>
+  /** What the role may do but the plan holds back, and why */
+  locked?: Record<string, LockReason>
   fieldAccess?: Record<string, "hidden" | "read" | "write">
   terms?: Record<string, string>
 }

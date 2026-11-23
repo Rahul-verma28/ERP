@@ -27,6 +27,7 @@ import type { ModuleKey } from "@/lib/types"
 import { formatDateTime, initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useApi } from "@/lib/use-api"
+import { BreadcrumbProvider, Breadcrumbs } from "@/components/breadcrumbs"
 
 export function NavLink({ href, active, children, onClick }: { href: string; active: boolean; children: React.ReactNode; onClick?: () => void }) {
   return (
@@ -131,7 +132,7 @@ function NavGroup({ id, label, icon: Icon, subs, open, onToggle, activeHref, onN
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
-  const { me, canView, can, term } = useAuth()
+  const { me, canView, can, term, lockOf } = useAuth()
   const [query, setQuery] = React.useState("")
   const q = query.trim().toLowerCase()
   const isAdmin = can("tenant.billing.view") || can("tenant.member.view")
@@ -175,7 +176,18 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         </NavLink>
       ) : null
     if (e === "salesgroup") return group("salesgroup", SALES_NAV.label, SALES_NAV.icon, sales)
-    if (e === "pos") return group("pos", POS_NAV.label, POS_NAV.icon, posSubs)
+    if (e === "pos") {
+      // Held back by the plan: admins still see it, locked, so they know it exists and can upgrade
+      if (!posSubs.length && isAdmin && lockOf("billing.pos.view") && hit(POS_NAV.label))
+        return (
+          <NavLink key={e} href="/app/m/pos" active={pathname.startsWith("/app/m/pos")} onClick={onNavigate}>
+            <POS_NAV.icon className="size-4" />
+            <span className="flex-1 truncate">{POS_NAV.label}</span>
+            <Lock className="size-3.5 text-muted-foreground" aria-label="Not in your plan" />
+          </NavLink>
+        )
+      return group("pos", POS_NAV.label, POS_NAV.icon, posSubs)
+    }
     if (e === "purchase") return group("purchase", PURCHASE_NAV.label, PURCHASE_NAV.icon, purchase)
     if (e === "users") return group("users", USER_NAV.label, USER_NAV.icon, users)
     if (e in hrGroups) { const g = hrGroups[e as keyof typeof hrGroups]; return group(e, g.label, g.icon, hrSubs(e as keyof typeof hrGroups)) }
@@ -487,6 +499,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = React.useState(false)
   const fullBleed = FULL_BLEED.test(usePathname())
   return (
+    <BreadcrumbProvider>
     <div className="flex min-h-svh flex-col">
       <Banners />
       <div className="flex flex-1">
@@ -526,12 +539,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <UserMenu />
           </header>
           <main className={cn("w-full flex-1", fullBleed ? "flex min-w-0 flex-col" : "px-4 py-5 sm:px-6")}>
+            {!fullBleed && <Breadcrumbs />}
             <ReadOnlyNotice />
             {children}
           </main>
         </div>
       </div>
     </div>
+    </BreadcrumbProvider>
   )
 }
 

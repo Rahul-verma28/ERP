@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { countBy, DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { Field, FormError, NativeSelect } from "@/components/form"
@@ -26,6 +25,7 @@ import { useChanged } from "@/lib/use-dirty"
 import { activeOr } from "@/lib/active"
 import { openFile } from "@/lib/files"
 import { FileField } from "@/components/file-field"
+import { NoAccessPage } from "@/components/page-states"
 
 // Career and conduct records, one page per kind. Approving a promotion or transfer changes the
 // employee; an accepted resignation or approved termination sets their last day.
@@ -165,7 +165,7 @@ export default function CareerPage() {
   const [deleting, setDeleting] = React.useState<HrAction | null>(null)
   const k = KINDS[kind]
   if (!k) notFound()
-  if (!can("hr.career.view")) return <PageHeader title={k.title} description="You don't have access to this. Ask your admin." />
+  if (!can("hr.career.view")) return <NoAccessPage title={k.title} permission="hr.career.view" />
   const reload = () => setVersion((v) => v + 1)
   const done = (r: HrAction) => (k.done ?? []).includes(r.status)
   const presets: ViewPreset[] = k.statuses.length > 1 ? [{ key: "all", label: "All", params: {}, countKey: "all" }, ...k.statuses.map((s) => ({ key: s, label: ACTION_STATUS[s].label, params: { status: s }, countKey: s }))] : []

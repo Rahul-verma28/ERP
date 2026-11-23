@@ -4,12 +4,13 @@ import { PageHeader } from "@/components/app-shell"
 import { HrTabs, TABS } from "@/components/hr/pickers"
 import { ListEditor } from "@/components/hr/list-editor"
 import { useAuth } from "@/lib/auth"
+import { NoAccessPage } from "@/components/page-states"
 
 // Performance setup: indicator categories and goal types.
 
 export default function PerformanceSetupPage() {
   const { can } = useAuth()
-  if (!can("hr.setup.view")) return <PageHeader title="Performance setup" description="You don't have access to setup. Ask your admin." />
+  if (!can("hr.setup.view")) return <NoAccessPage title="Performance setup" permission="hr.setup.view" />
   return (
     <>
       <HrTabs tabs={TABS.performance} active="setup" />

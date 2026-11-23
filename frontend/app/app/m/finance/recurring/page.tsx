@@ -5,7 +5,6 @@ import { toast } from "sonner"
 import { Check, Pause, Pencil, Play, Plus, Repeat, SkipForward, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState, MoneyInput } from "@/components/common"
 import { DataList, localList, type Column } from "@/components/data-list"
 import { Field, FormError } from "@/components/form"
@@ -16,6 +15,7 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { EVERY_LABEL, useFinAccounts, type Recurring } from "@/lib/finance"
+import { NoAccessPage } from "@/components/page-states"
 
 // Repeating expenses: rent, salary, internet. Due ones are recorded with one click (the amount can change).
 
@@ -33,7 +33,7 @@ export default function RecurringPage() {
   const [editing, setEditing] = React.useState<Recurring | "new" | null>(null)
   const [recording, setRecording] = React.useState<Recurring | null>(null)
   const [deleting, setDeleting] = React.useState<Recurring | null>(null)
-  if (!can("finance.expense.view")) return <PageHeader title="Repeating expenses" description="You don't have access to finance. Ask your admin." />
+  if (!can("finance.expense.view")) return <NoAccessPage title="Repeating expenses" permission="finance.expense.view" />
   const reload = () => { setVersion((v) => v + 1); void accounts.reload() }
 
   async function act(r: Recurring, path: string, body: unknown, done: string) {

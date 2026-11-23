@@ -8,7 +8,6 @@ import { AlarmClock, BookOpen, CalendarDays, Eye, FilePlus2, FileText, IndianRup
 import { Button, buttonVariants } from "@/components/ui/button"
 import { EmptyState } from "@/components/common"
 import { DataList, type Column, type ViewPreset } from "@/components/data-list"
-import { PageHeader } from "@/components/app-shell"
 import { SupplierDialog } from "@/components/supplier-dialog"
 import { SummaryCards } from "@/components/summary-cards"
 import { RecordView } from "@/components/record-view"
@@ -17,6 +16,7 @@ import { formatDate, formatPaise, initials } from "@/lib/format"
 import { stateName } from "@contracts/validation"
 import type { Supplier } from "@/lib/purchase"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Everyone you buy from: what you bought, paid and still owe each of them, in one request.
 
@@ -38,7 +38,7 @@ export default function SuppliersPage() {
   const [viewing, setViewing] = React.useState<Supplier | null>(null)
   const [version, setVersion] = React.useState(0)
   const icon = buttonVariants({ variant: "ghost", size: "icon-sm" })
-  if (!can("inventory.supplier.view")) return <PageHeader title="Suppliers" description="You don't have access to suppliers. Ask your admin." />
+  if (!can("inventory.supplier.view")) return <NoAccessPage title="Suppliers" permission="inventory.supplier.view" />
   const canBill = can("inventory.supplier_bill.create")
   const owe = (p: number) => (p < 0 ? <span className="text-emerald-700 dark:text-emerald-300">{formatPaise(-p)}<span className="block text-[11px]">they owe you</span></span> : p ? formatPaise(p) : <span className="text-muted-foreground">—</span>)
 

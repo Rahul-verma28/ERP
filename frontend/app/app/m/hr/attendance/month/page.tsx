@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, Download, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
-import { PageError, PageLoading } from "@/components/page-states"
+import { PageError, PageLoading, NoAccessPage } from "@/components/page-states"
 import { HrTabs, TABS } from "@/components/hr/pickers"
 import { todayInIndia } from "@contracts/validation"
 import { useAuth } from "@/lib/auth"
@@ -35,7 +35,7 @@ export default function MonthRegisterPage() {
   const [month, setMonth] = React.useState(todayInIndia().slice(0, 7))
   const [q, setQ] = React.useState("")
   const { data, error, reload } = useApi<Month>(can("hr.attendance.view") ? `/hr/attendance/month?month=${month}` : null)
-  if (!can("hr.attendance.view")) return <PageHeader title="Monthly register" description="You don't have access to attendance. Ask your admin." />
+  if (!can("hr.attendance.view")) return <NoAccessPage title="Monthly register" permission="hr.attendance.view" />
   const rows = (data?.data ?? []).filter((r) => !q || `${r.name} ${r.code}`.toLowerCase().includes(q.toLowerCase()))
   const exportCsv = () => data && downloadCsv(`attendance-${month}.csv`, [["ID", "Employee", ...data.days.map((d) => d.slice(8)), "Present", "Half days", "Absent", "Leave", "Holidays", "Weekly offs", "Late"], ...rows.map((r) => [r.code, r.name, ...r.cells.map((c) => ATT[c]?.short ?? ""), r.totals.present, r.totals.half_day, r.totals.absent, r.totals.leave, r.totals.holiday, r.totals.week_off, r.totals.late])])
 

@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState, MoneyInput } from "@/components/common"
 import { DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { Field, FormError } from "@/components/form"
@@ -23,6 +22,7 @@ import { useSharedApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useHrLookups, type HrRecord } from "@/lib/hr"
 import { useChanged } from "@/lib/use-dirty"
+import { NoAccessPage } from "@/components/page-states"
 
 // Offers: position, salary and joining date for a candidate; the letter comes from the template in
 // Recruitment → System Setup. An accepted offer becomes an employee in one click.
@@ -135,7 +135,7 @@ export default function OffersPage() {
   const [letter, setLetter] = React.useState<Row | null>(null)
   const [deleting, setDeleting] = React.useState<Row | null>(null)
   const [converting, setConverting] = React.useState<Row | null>(null)
-  if (!can("hr.recruitment.view")) return <PageHeader title="Offers" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.recruitment.view")) return <NoAccessPage title="Offers" permission="hr.recruitment.view" />
   const reload = () => setVersion((v) => v + 1)
   const edit = can("hr.recruitment.edit")
   async function status(r: Row, s: string) { try { await api.post(`/hr/records/offer/${r.id}/status`, { status: s }); toast.success(`Offer ${STATUS[s].label.toLowerCase()}`); reload() } catch (e) { toast.error(errorMessage(e)) } }

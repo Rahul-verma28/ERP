@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { Field, FormError, NativeSelect } from "@/components/form"
@@ -16,6 +15,7 @@ import { saveHrConfig } from "@/components/hr/list-editor"
 import { useAuth } from "@/lib/auth"
 import { UNIT, useHrLookups, type Indicator } from "@/lib/hr"
 import { useChanged } from "@/lib/use-dirty"
+import { NoAccessPage } from "@/components/page-states"
 
 // Performance indicators: what a review rates (each out of 5), grouped by category, with a target.
 
@@ -61,7 +61,7 @@ export default function IndicatorsPage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<Indicator | "new" | null>(null)
   const [deleting, setDeleting] = React.useState<Indicator | null>(null)
-  if (!can("hr.performance.view")) return <PageHeader title="Performance indicators" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.performance.view")) return <NoAccessPage title="Performance indicators" permission="hr.performance.view" />
   const edit = can("hr.setup.edit")
   const all = look.data?.config.indicators ?? []
   const reload = async () => { await look.reload(); setVersion((v) => v + 1) }

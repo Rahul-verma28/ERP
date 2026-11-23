@@ -18,6 +18,7 @@ import { useApi, useSharedApi } from "@/lib/use-api"
 import { formatPaise } from "@/lib/format"
 import { STATUS, dayOf, type Appointment, type StaffRow } from "@/lib/bookings"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // The calendar: a day with a column per person, a week of hours, or a month. Click empty space to
 // book; click an appointment to confirm, check in, finish, remind or invoice it.
@@ -44,7 +45,7 @@ function CalendarPage() {
   const to = mode === "day" ? addDays(date, 1) : mode === "week" ? addDays(mondayOf(date), 7) : addDays(`${date.slice(0, 7)}-01`, 32)
   const res = useApi<{ data: Appointment[]; counts: Record<string, number>; sums: Record<string, number> }>(can("bookings.appointment.view") ? `/appointments?from=${istIso(from, 0)}&to=${istIso(to, 0)}&limit=1000${staffId ? `&staffId=${staffId}` : ""}&v=${version}` : null)
   const summary = useApi<{ counts: Record<string, number>; sums: Record<string, number> }>(can("bookings.appointment.view") ? `/appointments?view=today&limit=1&v=${version}` : null)
-  if (!can("bookings.appointment.view")) return <PageHeader title="Calendar" description="You don't have access to the calendar. Ask your admin." />
+  if (!can("bookings.appointment.view")) return <NoAccessPage title="Calendar" permission="bookings.appointment.view" />
   const reload = () => setVersion((v) => v + 1)
   const items = res.data?.data ?? []
   const people = (staff.data?.data ?? []).filter((p) => !staffId || p.id === staffId)

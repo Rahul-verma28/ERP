@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column } from "@/components/data-list"
-import { PageError, PageLoading } from "@/components/page-states"
+import { PageError, PageLoading, NoAccessPage } from "@/components/page-states"
 import { ActionMenu, Avatar, Pill } from "@/components/page-parts"
 import { HrTabs, TABS } from "@/components/hr/pickers"
 import { CandidateDialog, HireDialog, InterviewDialog, STAGE, useJobs, type Candidate, type Stage } from "@/components/hr/recruit"
@@ -40,7 +40,7 @@ function Candidates() {
   const [hiring, setHiring] = React.useState<Candidate | null>(null)
   const [interviewing, setInterviewing] = React.useState<Candidate | null>(null)
   const [deleting, setDeleting] = React.useState<Candidate | null>(null)
-  if (!can("hr.recruitment.view")) return <PageHeader title="Candidates" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.recruitment.view")) return <NoAccessPage title="Candidates" permission="hr.recruitment.view" />
   const refresh = () => { void reload(); setVersion((v) => v + 1); void jobs.reload() }
   const edit = can("hr.recruitment.edit")
 

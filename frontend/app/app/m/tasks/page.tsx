@@ -22,6 +22,7 @@ import { useApi, useSharedApi } from "@/lib/use-api"
 import { formatDate, formatDateTime } from "@/lib/format"
 import { PRIORITY, STATUS, fmtMin, usePeople, type Project, type Task, type TaskStatus } from "@/lib/tasks"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Tasks: one list, a board by status and a calendar by due date. Everything from the row: start,
 // finish, edit, log time, ask for approval, copy, cancel. One request brings the rows, the tab
@@ -52,7 +53,7 @@ function TasksPage() {
   const board = useApi<{ data: Task[]; sums: { labels: string[] } }>(view !== "list" && can("tasks.task.view") ? `/tasks?status=all&limit=500&v=${version}` : null)
   const reload = () => setVersion((v) => v + 1)
   const switchView = (v: View) => { setView(v); try { localStorage.setItem(VIEW_KEY, v) } catch { /* private window */ } }
-  if (!can("tasks.task.view")) return <PageHeader title="Tasks" description="You don't have access to tasks. Ask your admin." />
+  if (!can("tasks.task.view")) return <NoAccessPage title="Tasks" permission="tasks.task.view" />
   const canEdit = can("tasks.task.edit")
   const labels = board.data?.sums.labels ?? []
 

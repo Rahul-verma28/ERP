@@ -56,11 +56,15 @@ export function verifyFileSignature(id: string, exp: number, sig: string) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** Files that are public by nature: they print on every bill and show on public pages */
+export const BRANDING_FIELDS = ['logo', 'signature'] as const;
+
 /**
- * A saved logo or photo as something a page can show: an uploaded file ("file:<id>") becomes a
- * signed link (logos are public anyway: they print on every bill), anything else passes through.
+ * A business logo or signature as a link any page can show, also frozen on issued invoices: an
+ * uploaded file ("file:<id>") gets a stable link that never runs out (served only for logo and
+ * signature files, see files/routes.ts); older data images and links pass through.
  */
-export function publicLink(ref: string | null | undefined, ttlSeconds = 7 * 86_400): string | null {
+export function publicLink(ref: string | null | undefined): string | null {
   if (!ref) return null;
-  return /^file:[0-9a-f-]{36}$/i.test(ref) ? signedFilePath(ref.slice(5), ttlSeconds) : ref;
+  return /^file:[0-9a-f-]{36}$/i.test(ref) ? `/api/v1/files/public/${ref.slice(5).toLowerCase()}` : ref;
 }

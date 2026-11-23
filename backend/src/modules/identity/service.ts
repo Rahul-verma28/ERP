@@ -8,7 +8,7 @@ import { personalWithDefaults } from '../../contracts/account';
 import { AppError } from '../../kernel/errors';
 import { hashPassword, verifyPassword } from '../../kernel/crypto';
 import { getEntitlements } from '../subscription/entitlements';
-import { effectivePermissions, getFieldAccess, getMember } from '../access/service';
+import { effectivePermissions, getFieldAccess, getMember, lockedPermissions } from '../access/service';
 import { getTerms } from '../config/service';
 import { audit } from '../audit/service';
 import { consoleAccess } from '../console/service';
@@ -141,10 +141,11 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
   const member = await getMember(tenantId, userId);
   if (!member || member.status !== 'active') return { ...base, tenant: null };
 
-  const [ent, permissions, fieldAccess] = await Promise.all([
+  const [ent, permissions, fieldAccess, locked] = await Promise.all([
     getEntitlements(tenantId),
     effectivePermissions(tenantId, member.roleId),
     getFieldAccess(member.roleId),
+    lockedPermissions(tenantId, member.roleId),
   ]);
 
   return withTenant({ kind: 'system', tenantId, userId }, async () => {
@@ -162,6 +163,11 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
         // Workspace look for every member; modules the owner chose at signup come first in the menu
         branding: withDefaults(tenant.preferences).branding,
         purchaseOrders: withDefaults(tenant.preferences).inventory.purchaseOrders,
+        // What new records start with (Settings › Module settings), for every member's forms
+        defaults: (() => {
+          const p = withDefaults(tenant.preferences, tenant.profile);
+          return { sales: p.sales, purchase: p.purchase, items: p.items, tasks: p.tasks, gstRateBp: p.taxes.defaultGstRateBp, pricesIncludeTax: p.taxes.pricesIncludeTax, roundOff: !!p.taxes.roundOff, composition: p.taxes.composition };
+        })(),
         preferredModules: ((tenant.profile ?? {}) as WorkspaceProfile).modules ?? [],
       },
       role: { ...role, name: role.key === 'service_provider' ? terms['role.service_provider'] : role.name },
@@ -169,6 +175,8 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
       limits: ent.limits,
       modules: ent.modules,
       permissions,
+      /** What the role may do but the plan holds back, and why */
+      locked,
       fieldAccess,
       terms,
     };

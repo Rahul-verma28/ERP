@@ -6,7 +6,7 @@ import { toast } from "sonner"
 import { Building2, CalendarCheck, CalendarDays, Cake, Clock, IndianRupee, Layers, LogIn, LogOut, Megaphone, PartyPopper, Plus, TrendingDown, TrendingUp, UserCheck, UserPlus, Users, UserX } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
-import { PageError, PageLoading } from "@/components/page-states"
+import { PageError, PageLoading, NoAccessPage } from "@/components/page-states"
 import { Avatar, Pill, Section } from "@/components/page-parts"
 import { SummaryCards } from "@/components/summary-cards"
 import { MonthCalendar } from "@/components/hr/month-calendar"
@@ -87,7 +87,7 @@ export default function HrDashboardPage() {
   const [calMonth, setCalMonth] = React.useState(() => todayInIndia().slice(0, 7))
   const [picked, setPicked] = React.useState<Dash["calendar"][number] | null>(null)
   const { data, error, reload } = useApi<Dash>(can("hr.employee.view") ? "/hr/dashboard" : null)
-  if (!can("hr.employee.view")) return <PageHeader title="HR" description="You don't have access to HR. Ask your admin." />
+  if (!can("hr.employee.view")) return <NoAccessPage title="HR" permission="hr.employee.view" />
   if (error) return <PageError error={error} onRetry={() => void reload()} />
   if (!data) return <PageLoading />
   const a = data.attendance

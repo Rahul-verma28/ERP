@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { Spinner } from "@/components/common"
 import { Field } from "@/components/form"
-import { ModuleLocked } from "@/components/page-states"
+import { ModuleLocked, NoAccessPage } from "@/components/page-states"
 import { todayInIndia } from "@contracts/validation"
 import { errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -262,7 +262,7 @@ function ReportsPageInner() {
       </>
     )
   }
-  if (!can("reports.report.view")) return <PageHeader title="Reports" description="You don't have access to reports. Ask your admin." />
+  if (!can("reports.report.view")) return <NoAccessPage title="Reports" permission="reports.report.view" />
 
   return (
     <>

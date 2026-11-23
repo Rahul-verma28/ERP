@@ -7,6 +7,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ApiError } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/lib/auth"
 
 // Phase 0 page states: no results, loading, error, no access, module locked, read-only.
 // "First use" stays EmptyState in components/common.tsx.
@@ -159,6 +160,46 @@ export function PageLoading({ label = "Loading" }: { label?: string }) {
     <div className="grid place-items-center gap-3 py-24" aria-busy="true" aria-label={label}>
       <span className="size-7 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       {slow && <p className="text-center text-sm text-muted-foreground">Still loading… <button type="button" className="font-medium text-primary underline" onClick={() => window.location.reload()}>Refresh</button></p>}
+    </div>
+  )
+}
+
+const LOCK_TEXT = {
+  not_in_plan: { title: "isn't in your plan", body: "Your data is safe. Upgrade to use it." },
+  paid_feature: { title: "is in the paid plans", body: "You're on a plan without it. Upgrade to use it." },
+  view_only: { title: "is view only on your plan", body: "You can see and export what is there. Upgrade to add or change." },
+} as const
+
+/**
+ * A page the person can't open, with the real reason: the plan holds it back (with Upgrade for
+ * those who can change the plan), or their role doesn't include it (ask the admin).
+ */
+export function NoAccessPage({ title, permission, what }: { title: string; permission: string; what?: string }) {
+  const { lockOf, can } = useAuth()
+  const lock = lockOf(permission)
+  const canUpgrade = can("tenant.billing.view")
+  if (lock) {
+    const t = LOCK_TEXT[lock]
+    return (
+      <div className="grid gap-4">
+        <h1 className="text-[26px] leading-tight font-bold tracking-tight">{title}</h1>
+        <div className="ui-surface">
+          <StateFrame icon={<Lock className="size-5" />} tone="brand" title={`${title} ${t.title}`} action={canUpgrade ? <Link href="/app/billing" className={buttonVariants()}>See plans</Link> : undefined}>
+            {t.body}
+            {!canUpgrade && <p className="mt-1">Ask your business owner to upgrade the plan.</p>}
+          </StateFrame>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="grid gap-4">
+      <h1 className="text-[26px] leading-tight font-bold tracking-tight">{title}</h1>
+      <div className="ui-surface">
+        <StateFrame icon={<ShieldAlert className="size-5" />} title="You don't have access">
+          Your role can&apos;t open {what ?? title.toLowerCase()}. Ask your admin to change your role.
+        </StateFrame>
+      </div>
     </div>
   )
 }

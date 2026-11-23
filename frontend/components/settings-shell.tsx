@@ -3,11 +3,12 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { ChevronLeft, ChevronRight, Search } from "lucide-react"
+import { ChevronRight, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
+import { Breadcrumbs } from "@/components/breadcrumbs"
 
 // Settings home (wireframe X1): grouped side menu, search across every setting, deep links
 // (/app/settings/payments#upi-id) that scroll to and highlight the setting, and a dot on
@@ -56,6 +57,10 @@ export const SETTINGS_GROUPS: { label: string; items: SettingsItem[] }[] = [
     // Each module keeps its own setup page; they are listed here so every setting is found in one place
     label: "Module settings",
     items: [
+      { key: "sales-setup", label: "Sales", href: "/app/settings/sales", permission: "tenant.settings.view" },
+      { key: "purchase-setup", label: "Purchase", href: "/app/settings/purchase", permission: "tenant.settings.view" },
+      { key: "items-setup", label: "Items", href: "/app/settings/items", permission: "tenant.settings.view" },
+      { key: "tasks-setup", label: "Tasks", href: "/app/settings/tasks", permission: "tenant.settings.view" },
       { key: "crm-setup", label: "CRM", href: "/app/m/crm/setup", permission: "crm.pipeline.edit" },
       { key: "finance-setup", label: "Accounting & Finance", href: "/app/m/finance/settings", permission: "finance.expense.view" },
       { key: "hr-setup", label: "HR & Payroll", href: "/app/m/hr/setup", permission: "hr.setup.view" },
@@ -305,11 +310,7 @@ export function SettingsFrame({ children }: { children: React.ReactNode }) {
         </div>
       )}
       <div className="min-w-0 flex-1 px-4 py-6 sm:px-8">
-        {!home && !wide && (
-          <Link href="/app/settings" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:hidden">
-            <ChevronLeft className="size-4" /> All settings
-          </Link>
-        )}
+        {!home && <Breadcrumbs />}
         {children}
       </div>
     </div>
@@ -317,19 +318,11 @@ export function SettingsFrame({ children }: { children: React.ReactNode }) {
 }
 
 /** Page title block used by every settings page. */
-export function SettingsPage({ title, description, crumb, actions, children, className }: { title: string; description?: React.ReactNode; crumb?: boolean; actions?: React.ReactNode; children: React.ReactNode; className?: string }) {
+export function SettingsPage({ title, description, actions, children, className }: { title: string; description?: React.ReactNode; /** No longer used: every page has the breadcrumb above it */ crumb?: boolean; actions?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
     <div className={cn("flex w-full flex-col gap-4", className)}>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          {crumb && (
-            <p className="text-xs text-muted-foreground">
-              <Link href="/app/settings" className="hover:text-foreground hover:underline">
-                Settings
-              </Link>{" "}
-              › {title}
-            </p>
-          )}
           <h1 className="text-[22px] font-bold tracking-tight">{title}</h1>
           {description && <p className="mt-0.5 text-[13px] text-muted-foreground">{description}</p>}
         </div>

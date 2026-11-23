@@ -5,7 +5,7 @@ import Link from "next/link"
 import { ArrowRightLeft, Plus, Receipt, TrendingUp } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { PageHeader } from "@/components/app-shell"
-import { PageError, PageLoading } from "@/components/page-states"
+import { PageError, PageLoading, NoAccessPage } from "@/components/page-states"
 import { Pill, Section, StatGrid } from "@/components/page-parts"
 import { AccountDialog, ExpenseDialog, IncomeDialog, TransferDialog } from "@/components/finance/forms"
 import { useAuth } from "@/lib/auth"
@@ -33,7 +33,7 @@ export default function FinanceOverviewPage() {
   const { data, error, reload } = useApi<Overview>("/finance/overview")
   const accounts = useFinAccounts()
   const [open, setOpen] = React.useState<"expense" | "income" | "transfer" | "account" | null>(null)
-  if (!can("finance.expense.view")) return <PageHeader title="Finance" description="You don't have access to finance. Ask your admin." />
+  if (!can("finance.expense.view")) return <NoAccessPage title="Finance" permission="finance.expense.view" />
   if (error) return <PageError error={error} onRetry={() => void reload()} />
   if (!data) return <PageLoading />
   const done = () => { setOpen(null); void reload(); void accounts.reload() }

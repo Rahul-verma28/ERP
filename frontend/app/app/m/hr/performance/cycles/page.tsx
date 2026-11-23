@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column } from "@/components/data-list"
 import { Field, FormError, NativeSelect } from "@/components/form"
@@ -17,6 +16,7 @@ import { saveHrConfig } from "@/components/hr/list-editor"
 import { useAuth } from "@/lib/auth"
 import { FREQUENCY, useHrLookups, type Cycle } from "@/lib/hr"
 import { useChanged } from "@/lib/use-dirty"
+import { NoAccessPage } from "@/components/page-states"
 
 // Review cycles: how often people are reviewed. Picked when setting up a review.
 
@@ -59,7 +59,7 @@ export default function CyclesPage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<Cycle | "new" | null>(null)
   const [deleting, setDeleting] = React.useState<Cycle | null>(null)
-  if (!can("hr.performance.view")) return <PageHeader title="Review cycles" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.performance.view")) return <NoAccessPage title="Review cycles" permission="hr.performance.view" />
   const edit = can("hr.setup.edit")
   const all = look.data?.config.cycles ?? []
   const reload = async () => { await look.reload(); setVersion((v) => v + 1) }

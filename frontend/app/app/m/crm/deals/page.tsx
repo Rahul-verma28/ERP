@@ -19,7 +19,7 @@ import { dueLabel, useCrmSetup, type Deal } from "@/lib/crm"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useDebounced } from "@/lib/use-list"
 import { cn } from "@/lib/utils"
-import { PageError, PageLoading } from "@/components/page-states"
+import { PageError, PageLoading, NoAccessPage } from "@/components/page-states"
 
 // Deals: sales being worked on, stage by stage, until won or lost. A list or a board per pipeline.
 
@@ -109,7 +109,7 @@ export default function DealsPage() {
   const pipeline = setup?.pipelines.find((p) => p.id === pipelineId) ?? setup?.pipelines.find((p) => p.isDefault) ?? setup?.pipelines[0]
   const switchView = (v: "list" | "board") => { setView(v); try { localStorage.setItem(VIEW_KEY, v) } catch { /* private window */ } }
 
-  if (!can("crm.deal.view")) return <PageHeader title="Deals" description="You don't have access to deals. Ask your admin." />
+  if (!can("crm.deal.view")) return <NoAccessPage title="Deals" permission="crm.deal.view" />
   if (setupApi.error) return <PageError error={setupApi.error} onRetry={() => void setupApi.reload()} />
   if (!setup || !pipeline) return <PageLoading />
 

@@ -6,7 +6,6 @@ import { toast } from "sonner"
 import { ArrowDownToLine, ArrowRight, ArrowRightLeft, ArrowUpFromLine, CalendarDays, Plus, Receipt, Trash2 } from "lucide-react"
 import { SummaryCards } from "@/components/summary-cards"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, remoteList, periodFilter, type Column } from "@/components/data-list"
 import { ActionMenu } from "@/components/page-parts"
@@ -16,6 +15,7 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { useFinAccounts, type Transfer } from "@/lib/finance"
+import { NoAccessPage } from "@/components/page-states"
 
 // Money moved between your own accounts: cash deposited in bank, bank to UPI, card bill paid.
 
@@ -25,7 +25,7 @@ export default function TransfersPage() {
   const [version, setVersion] = React.useState(0)
   const [adding, setAdding] = React.useState(false)
   const [deleting, setDeleting] = React.useState<Transfer | null>(null)
-  if (!can("finance.expense.view")) return <PageHeader title="Transfers" description="You don't have access to finance. Ask your admin." />
+  if (!can("finance.expense.view")) return <NoAccessPage title="Transfers" permission="finance.expense.view" />
   const reload = () => { setVersion((v) => v + 1); void accounts.reload() }
 
   const columns: Column<Transfer>[] = [

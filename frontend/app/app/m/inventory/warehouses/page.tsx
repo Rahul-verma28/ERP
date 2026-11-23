@@ -6,7 +6,6 @@ import { Activity, Archive, ArchiveRestore, Boxes, Eye, IndianRupee, MapPin, Pen
 import { ActionMenu } from "@/components/page-parts"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, countBy, localList } from "@/components/data-list"
 import { SummaryCards } from "@/components/summary-cards"
@@ -16,13 +15,14 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import type { StockLocation } from "@/lib/inventory"
+import { NoAccessPage } from "@/components/page-states"
 
 export default function WarehousesPage() {
   const { can } = useAuth()
   const [version, setVersion] = React.useState(0)
   const reload = () => setVersion((v) => v + 1)
   const [editing, setEditing] = React.useState<StockLocation | "new" | null>(null)
-  if (!can("inventory.stock.view")) return <PageHeader title="Warehouses" description="You don't have access to stock. Ask your admin." />
+  if (!can("inventory.stock.view")) return <NoAccessPage title="Warehouses" permission="inventory.stock.view" />
   const act = async (g: StockLocation, patch: Record<string, unknown>, done: string) => {
     try {
       await api.patch(`/stock-locations/${g.id}`, patch)

@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import { FileBarChart } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, periodFilter, type ListLoader } from "@/components/data-list"
 import { api } from "@/lib/api"
@@ -14,6 +13,7 @@ import { cn } from "@/lib/utils"
 import { useReportTab } from "@/components/reports/kit"
 import { ProfitByItem } from "@/components/reports/profit-stock"
 import { todayInIndia } from "@contracts/validation"
+import { NoAccessPage } from "@/components/page-states"
 
 // Sales reports, the same five a shop owner and their CA ask for, each on the shared table:
 // who owes and how late, the sales register, sales by customer and by item, and money collected.
@@ -162,7 +162,7 @@ const TABS = [["receivables", "Receivables"], ["register", "Sales Register"], ["
 function SalesReportsPageInner() {
   const { can } = useAuth()
   const [tab, setTab] = useReportTab(TABS)
-  if (!can("reports.report.view")) return <PageHeader title="Sales reports" description="You don't have access to reports. Ask your admin." />
+  if (!can("reports.report.view")) return <NoAccessPage title="Sales reports" permission="reports.report.view" />
   return (
     <div className="grid gap-4">
       <div className="flex w-fit max-w-full flex-wrap gap-1 rounded-xl border p-1 text-sm" role="tablist" aria-label="Reports">

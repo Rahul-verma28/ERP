@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
 import { PageHeader } from "@/components/app-shell"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 import { FinanceTabs } from "@/components/finance/sub-tabs"
 import { BalanceSheet, TrialBalance } from "@/components/finance/reports"
 import { useAuth } from "@/lib/auth"
@@ -18,7 +18,7 @@ export default function AccountantPage() {
 function Accountant() {
   const { can, me } = useAuth()
   const tab = useSearchParams().get("tab") === "tb" ? "tb" : "bs"
-  if (!can("finance.expense.view")) return <PageHeader title="Accountant" description="You don't have access to finance. Ask your admin." />
+  if (!can("finance.expense.view")) return <NoAccessPage title="Accountant" permission="finance.expense.view" />
   return (
     <div className="grid gap-0">
       <FinanceTabs group="accountant" active={tab} />

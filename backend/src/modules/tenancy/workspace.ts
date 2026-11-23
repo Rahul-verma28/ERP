@@ -22,6 +22,7 @@ import {
 } from '../../contracts/workspace';
 import { audit } from '../audit/service';
 import { getTenant } from './service';
+import { FILE_REF } from '../../kernel/zodRules';
 import { optionalText, zGstin, zStateCode } from '../../kernel/zodRules';
 
 // Phase 1: workspace profile (signup answers), preferences (documents, payments, taxes,
@@ -140,6 +141,7 @@ export const PREFERENCE_SCHEMAS = {
     quotationTerms: z.string().trim().max(2000, 'Keep terms under 2,000 characters'),
     showHsnSummary: z.boolean(),
     showSignatory: z.boolean(),
+    signatureUrl: z.string().regex(FILE_REF, "Upload the signature again").nullable(),
   }),
   payments: z
     .object({
@@ -188,6 +190,30 @@ export const PREFERENCE_SCHEMAS = {
   }),
   finance: z.object({
     receiptRequiredAbovePaise: z.number().int().min(0, 'Enter 0 or more').max(10_000_000_000).nullable(),
+  }),
+  sales: z.object({
+    quotationValidDays: z.number().int().min(1, 'Enter 1 to 365').max(365, 'Enter 1 to 365'),
+    deliveryDays: z.number().int().min(0, 'Enter 0 to 365').max(365, 'Enter 0 to 365'),
+    invoiceDueDays: z.number().int().min(0, 'Enter 0 to 365').max(365, 'Enter 0 to 365').nullable(),
+    creditLimit: z.enum(['block', 'allow']),
+  }),
+  purchase: z.object({
+    billDueDays: z.number().int().min(0, 'Enter 0 to 365').max(365, 'Enter 0 to 365').nullable(),
+    poExpectedDays: z.number().int().min(0, 'Enter 0 to 365').max(365, 'Enter 0 to 365').nullable(),
+  }),
+  items: z.object({
+    defaultUnit: z.string().trim().min(1, 'Choose a unit').max(20, 'Up to 20 characters'),
+    trackStock: z.boolean(),
+    lowStockLevel: z.number().min(0, 'Enter 0 or more').max(1_000_000_000).nullable(),
+  }),
+  tasks: z.object({
+    defaultPriority: z.enum(['low', 'medium', 'high', 'urgent']),
+    labels: z
+      .array(z.string().trim().min(1, 'A label needs a name').max(30, 'Up to 30 characters'))
+      .max(30, 'Up to 30 labels')
+      // The same label twice (any case) is kept once, as first typed
+      .transform((l) => l.filter((x, i) => l.findIndex((y) => y.toLowerCase() === x.toLowerCase()) === i)),
+    dueReminder: z.enum(['off', 'due_day', 'day_before']),
   }),
   branding: z.object({
     brandColor: z.string().superRefine((v, c) => {

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { db, withPlatform } from '../../kernel/db';
+import { DateStr } from '../../kernel/query';
 import { notFound } from '../../kernel/errors';
 import { validate } from '../../middleware/request';
 import { publicRoute, requirePermission, tenantAuth, tx } from '../../middleware/auth';
@@ -11,7 +12,8 @@ import { DEFAULT_TERMS, TEMPLATES, templateByKey } from '../../contracts/templat
 import { getEntitlements } from '../subscription/entitlements';
 import { getCatalog } from '../subscription/catalog';
 import { visibleRoles } from '../access/service';
-import { audit, listAudit } from '../audit/service';
+import { audit, auditPeople, listAudit, type AuditQuery } from '../audit/service';
+import { AUDIT_AREAS } from '../audit/describe';
 import { listNotifications, markRead } from '../notifications/service';
 import { FieldInput, FieldPatch, createField, getTerms, listFields, putTerms, updateField } from '../config/service';
 import * as tenancy from './service';
@@ -146,7 +148,7 @@ router.patch('/tenant/profile', requirePermission('tenant.settings.edit'), valid
 router.put(
   '/tenant/preferences/:section',
   requirePermission('tenant.settings.edit'),
-  validate(z.object({ section: z.enum(['documents', 'payments', 'taxes', 'inventory', 'branding']) }), 'params'),
+  validate(z.object({ section: z.enum(['documents', 'payments', 'taxes', 'inventory', 'branding', 'sales', 'purchase', 'items', 'tasks']) }), 'params'),
   tx(async (req, res) => {
     res.json(await workspace.updatePreferences(req.ctx!.tenantId, req.params.section as workspace.PreferenceSection, req.body));
   }),
@@ -364,11 +366,14 @@ router.patch('/config/fields/:id', requirePermission('tenant.config.edit'), vali
 router.get(
   '/audit-log',
   requirePermission('tenant.audit.view'),
-  validate(z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), cursor: z.string().uuid().optional(), action: z.string().max(60).optional() }), 'query'),
+  validate(z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), cursor: z.string().uuid().optional(), action: z.string().max(60).optional(), area: z.string().max(20).optional(), actorId: z.string().uuid().optional(), from: DateStr.optional(), to: DateStr.optional(), q: z.string().max(100).optional() }), 'query'),
   tx(async (req, res) => {
-    res.json(await listAudit(req.query as unknown as { limit: number; cursor?: string; action?: string }));
+    res.json(await listAudit(req.query as unknown as AuditQuery));
   }),
 );
+router.get('/audit-log/filters', requirePermission('tenant.audit.view'), tx(async (_req, res) => {
+  res.json({ people: await auditPeople(), areas: Object.entries(AUDIT_AREAS).map(([key, a]) => ({ key, label: a.label })) });
+}));
 
 // ── Subscription (read side; checkout arrives with billing-platform) ──
 router.get('/billing/subscription', requirePermission('tenant.billing.view'), tx(async (req, res) => {

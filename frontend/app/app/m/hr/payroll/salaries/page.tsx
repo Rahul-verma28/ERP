@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import { Eye, Pencil, Users } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { Avatar, Pill } from "@/components/page-parts"
@@ -14,6 +13,7 @@ import { api } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
 import type { Employee } from "@/lib/hr"
+import { NoAccessPage } from "@/components/page-states"
 
 // Salary structure: every current employee's monthly pay; set or change it in one place.
 
@@ -24,7 +24,7 @@ export default function SalariesPage() {
   const { can } = useAuth()
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<Employee | null>(null)
-  if (!can("hr.payroll.view")) return <PageHeader title="Salary structure" description="You don't have access to payroll. Ask your admin." />
+  if (!can("hr.payroll.view")) return <NoAccessPage title="Salary structure" permission="hr.payroll.view" />
   const open = async (r: Row) => setEditing(await api.get<Employee>(`/hr/employees/${r.id}`))
   const columns: Column<Row>[] = [
     { key: "name", header: "Employee", hideable: false, sort: (r) => r.name, csv: (r) => r.name, cell: (r) => <span className="flex items-center gap-2.5"><Avatar name={r.name} className="size-8" /><span><span className="block font-medium">{r.name}</span><span className="text-xs text-muted-foreground">{r.email ?? r.phone ?? "—"}</span></span></span> },

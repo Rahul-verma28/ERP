@@ -5,7 +5,6 @@ import Link from "next/link"
 import { toast } from "sonner"
 import { CheckCircle2, Clock, ExternalLink, Eye, FileCheck2, FileText, RotateCcw, Users } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { countBy, DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { ActionMenu, Pill } from "@/components/page-parts"
@@ -17,6 +16,7 @@ import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate } from "@/lib/format"
 import { openFile } from "@/lib/files"
+import { NoAccessPage } from "@/components/page-states"
 
 // Acknowledgments: for every document that must be read, one row per employee — who has
 // confirmed, when, who shared it, and how long the rest have been pending.
@@ -31,7 +31,7 @@ export default function AcknowledgmentsPage() {
   const [version, setVersion] = React.useState(0)
   const [docs, setDocs] = React.useState<{ value: string; label: string }[]>([])
   const [viewing, setViewing] = React.useState<Row | null>(null)
-  if (!can("hr.workplace.view")) return <PageHeader title="Acknowledgments" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.workplace.view")) return <NoAccessPage title="Acknowledgments" permission="hr.workplace.view" />
   const myId = me.data?.employee?.id
   const hr = can("hr.workplace.edit")
   const reload = () => setVersion((v) => v + 1)

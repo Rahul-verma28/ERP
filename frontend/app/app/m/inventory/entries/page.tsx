@@ -6,16 +6,16 @@ import { SummaryCards } from "@/components/summary-cards"
 import { buttonVariants } from "@/components/ui/button"
 import { EmptyState } from "@/components/common"
 import { DataList, type Column } from "@/components/data-list"
-import { PageHeader } from "@/components/app-shell"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { ENTRY_LABEL, REASONS, type StockEntry } from "@/lib/inventory"
+import { NoAccessPage } from "@/components/page-states"
 
 // Every entry made by hand: opening stock, stock in, adjustments and counts. Transfers have their own page.
 
 export default function StockEntriesPage() {
   const { can } = useAuth()
-  if (!can("inventory.stock.view")) return <PageHeader title="Stock entries" description="You don't have access to stock. Ask your admin." />
+  if (!can("inventory.stock.view")) return <NoAccessPage title="Stock entries" permission="inventory.stock.view" />
   const showValue = can("inventory.valuation.view") || can("inventory.receipt.create")
   const columns: Column<StockEntry>[] = [
     { key: "date", header: "Date", hideable: false, cell: (r) => formatDate(r.entryDate), csv: (r) => r.entryDate.slice(0, 10), sort: (r) => r.createdAt },

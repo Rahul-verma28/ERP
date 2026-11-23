@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, MoneyInput } from "@/components/common"
-import { ErrorState, PageLoading } from "@/components/page-states"
+import { ErrorState, PageLoading, NoAccessPage } from "@/components/page-states"
 import { Pill, Section } from "@/components/page-parts"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -167,7 +167,7 @@ function ReceiptRule() {
 
 export default function FinanceSettingsPage() {
   const { can } = useAuth()
-  if (!can("finance.expense.view")) return <PageHeader title="Finance setup" description="You don't have access to finance. Ask your admin." />
+  if (!can("finance.expense.view")) return <NoAccessPage title="Finance setup" permission="finance.expense.view" />
   return (
     <div className="grid gap-5">
       <PageHeader title="Finance setup" description="Categories for expenses and other income. Cash and bank accounts are on Cash & Bank; number series are in Settings → Documents." />

@@ -4,7 +4,6 @@ import * as React from "react"
 import { toast } from "sonner"
 import { Clock, Pencil, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { ActionMenu, Avatar, Pill } from "@/components/page-parts"
@@ -13,6 +12,7 @@ import { OvertimeDialog, type OT } from "@/components/hr/payroll-dialogs"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
+import { NoAccessPage } from "@/components/page-states"
 
 // Overtime: extra hours, paid in that month's payroll. The rate starts at twice the ordinary
 // hourly rate (Factories Act s.59), worked out from monthly pay ÷ 26 days ÷ 8 hours.
@@ -27,7 +27,7 @@ export default function OvertimePage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<OT | "new" | null>(null)
   const [deleting, setDeleting] = React.useState<OT | null>(null)
-  if (!can("hr.payroll.view")) return <PageHeader title="Overtime" description="You don't have access to payroll. Ask your admin." />
+  if (!can("hr.payroll.view")) return <NoAccessPage title="Overtime" permission="hr.payroll.view" />
   const reload = () => setVersion((v) => v + 1)
   const columns: Column<OT>[] = [
     { key: "employee", header: "Employee", hideable: false, sort: (o) => o.employee, csv: (o) => o.employee, cell: (o) => <span className="flex items-center gap-2.5"><Avatar name={o.employee} className="size-8" /><span><span className="block font-medium">{o.employee}</span><span className="font-mono text-xs text-muted-foreground">{o.employeeCode}</span></span></span> },

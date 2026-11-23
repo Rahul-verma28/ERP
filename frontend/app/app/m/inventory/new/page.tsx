@@ -21,7 +21,7 @@ import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { ENTRY_LABEL, REASONS, qty, type BatchRow, type StockEntry, type StockLocation, type StockRow, type Tracking } from "@/lib/inventory"
 import { todayInIndia } from "@contracts/validation"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 import { FileField } from "@/components/file-field"
 
 // One form for opening stock, stock in, adjustments and transfers. Lines are items with a quantity
@@ -93,7 +93,7 @@ function EntryForm() {
   const inStock = (itemId: string) => stock.data?.data.find((r) => r.id === itemId)?.quantity
 
   const perm = { opening: "inventory.receipt.create", stock_in: "inventory.receipt.create", adjustment: "inventory.stock_adjustment.create", transfer: "inventory.transfer.create" }[kind]
-  if (!can(perm)) return <PageHeader title={ENTRY_LABEL[kind]} description="You don't have access to this. Ask your admin." />
+  if (!can(perm)) return <NoAccessPage title={ENTRY_LABEL[kind]} permission={perm} />
   if (!locations.data) return <PageLoading />
 
   const pick = (picked: ItemOption) => {

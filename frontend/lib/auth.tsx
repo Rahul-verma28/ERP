@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { api, ApiError, refreshAccessToken, serverUnavailable, setAccessToken } from "@/lib/api"
-import type { Me, ModuleKey } from "@/lib/types"
+import type { LockReason, Me, ModuleKey } from "@/lib/types"
 
 interface AuthState {
   /** "unavailable" = the API or database is down; the session may still be valid */
@@ -21,6 +21,8 @@ interface AuthState {
   canConsole: (permission: string) => boolean
   /** UI convenience only — the API enforces every permission */
   can: (permission: string) => boolean
+  /** Why the plan holds back a permission the role has (null = not held back by the plan) */
+  lockOf: (permission: string) => LockReason | null
   canView: (module: ModuleKey | "tenant") => boolean
   term: (key: string, fallback?: string) => string
 }
@@ -113,6 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       switchToConsole,
       canConsole: (p) => !!me?.console?.permissions?.[p],
       can: (p) => !!me?.permissions?.[p],
+      lockOf: (p) => me?.locked?.[p] ?? null,
       canView: (m) => Object.keys(me?.permissions ?? {}).some((k) => k.startsWith(`${m}.`) && k.endsWith(".view")),
       term: (key, fallback) => me?.terms?.[key] ?? fallback ?? key,
     }),

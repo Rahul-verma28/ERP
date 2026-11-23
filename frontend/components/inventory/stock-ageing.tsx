@@ -4,10 +4,10 @@ import { Hourglass } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { EmptyState } from "@/components/common"
 import { DataList, HeaderLink, type Column } from "@/components/data-list"
-import { PageHeader } from "@/components/app-shell"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { qty } from "@/lib/inventory"
+import { NoAccessPage } from "@/components/page-states"
 
 // How old the stock on hand is, by when each part came in, and when each item last sold.
 // Slow: no sale in 90 days. Dead: no sale in 180 days, or never.
@@ -20,7 +20,7 @@ const STATUS: Record<Row["status"], [string, string]> = { moving: ["Moving", ""]
 
 export function StockAgeingReport() {
   const { can } = useAuth()
-  if (!can("inventory.stock.view")) return <PageHeader title="Stock ageing" description="You don't have access to stock. Ask your admin." />
+  if (!can("inventory.stock.view")) return <NoAccessPage title="Stock ageing" permission="inventory.stock.view" />
   const showValue = can("inventory.valuation.view") || can("inventory.receipt.create")
   const columns: Column<Row>[] = [
     { key: "name", header: "Item", hideable: false, cell: (r) => <span className="font-semibold">{r.name}</span>, csv: (r) => r.name, sort: (r) => r.name },

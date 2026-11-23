@@ -4,29 +4,30 @@ import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { length } from "@contracts/validation"
+import { Hash, LayoutTemplate, Loader2, PenLine, Printer, ScrollText, Trash2, Upload } from "lucide-react"
 import { DOC_TEMPLATES, prefixError, previewNumber, type WorkspacePreferences } from "@contracts/workspace"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
-import { InlineSave } from "@/components/save-bar"
 import { Textarea } from "@/components/ui/textarea"
-import { EditableSection } from "@/components/editable-section"
+import { InlineSave } from "@/components/save-bar"
 import { Field, FormError } from "@/components/form"
+import { DocPreview } from "@/components/doc-preview"
 import { ErrorState, NoAccess } from "@/components/page-states"
 import { SettingsPage } from "@/components/settings-shell"
-import { InvoicePreview } from "@/components/setup/documents-step"
+import { SectionHead } from "@/components/settings-parts"
 import type { SetupTenant, Workspace } from "@/components/setup/wizard"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { checkFile, uploadFile, useFileLink } from "@/lib/files"
 import { useApi } from "@/lib/use-api"
-import { useForm } from "@/lib/use-form"
 import { useWorkspaceData } from "@/lib/use-workspace"
 import { cn } from "@/lib/utils"
 
-// Settings › Documents (wireframe X2): number series, template, print options, terms.
+// Settings › Documents: how bills look (template, paper, what's printed, signature, terms) with the
+// real document redrawn live beside the settings, then the number series. Issued documents keep
+// what they were issued with.
 
 interface Series {
   docType: "invoice" | "quotation" | "receipt" | "credit_note" | "sales_order" | "delivery_challan" | "debit_note" | "purchase_order" | "goods_receipt" | "purchase_bill" | "purchase_return" | "supplier_payment"
@@ -40,6 +41,22 @@ interface Series {
 
 const PREFIX_KEY = { invoice: "invoicePrefix", quotation: "quotationPrefix", receipt: "receiptPrefix", credit_note: "creditNotePrefix", sales_order: "salesOrderPrefix", delivery_challan: "deliveryChallanPrefix", debit_note: "debitNotePrefix", purchase_order: "purchaseOrderPrefix", goods_receipt: "goodsReceiptPrefix", purchase_bill: "purchaseBillPrefix", purchase_return: "purchaseReturnPrefix", supplier_payment: "supplierPaymentPrefix", expense: "expensePrefix", income: "incomePrefix", fin_transfer: "transferPrefix", journal: "journalPrefix" } as const
 
+const TEMPLATE_NOTE: Record<string, string> = {
+  classic: "Clean black and white. Prints well on any printer.",
+  modern: "Your brand colour on the title, table and total.",
+  compact: "Smaller type, so long bills fit on fewer pages.",
+}
+
+const TERMS_MAX = 2000
+
+type Docs = WorkspacePreferences["documents"]
+type Look = Pick<Docs, "template" | "paper" | "showHsnSummary" | "showSignatory" | "signatureUrl" | "terms" | "quotationTerms"> & { showUpiQr: boolean }
+
+const lookOf = (w: Workspace): Look => {
+  const d = w.preferences.documents
+  return { template: d.template, paper: d.paper, showHsnSummary: d.showHsnSummary, showSignatory: d.showSignatory, signatureUrl: d.signatureUrl ?? null, terms: d.terms, quotationTerms: d.quotationTerms, showUpiQr: w.preferences.payments.showUpiQr }
+}
+
 export default function DocumentsSettingsPage() {
   const { can } = useAuth()
   const { tenant, workspace, error, refresh } = useWorkspaceData()
@@ -51,25 +68,288 @@ export default function DocumentsSettingsPage() {
     await Promise.all([refresh(), series.reload()])
   }
   return (
-    <SettingsPage title="Documents" description="Numbering, templates and what's printed. Issued documents never change.">
+    <SettingsPage title="Documents" description="How your invoices and quotations look and how they're numbered. Issued documents never change.">
       {err && !ready ? (
         <ErrorState error={err} onRetry={reloadAll} />
       ) : !ready ? (
-        <>
-          <Skeleton className="h-52 rounded-xl" />
-          <Skeleton className="h-56 rounded-xl" />
-        </>
+        <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+          <Skeleton className="h-[560px] rounded-xl" />
+          <Skeleton className="h-[620px] rounded-2xl" />
+        </div>
       ) : (
         <>
+          {/* Keyed by what is stored: after a save the form starts again from it */}
+          <LookAndPreview key={JSON.stringify(lookOf(workspace))} tenant={tenant} workspace={workspace} refresh={refresh} />
           <SeriesCard fy={series.data!.fy} rows={series.data!.data} onSaved={reloadAll} />
-          <div className="grid gap-3.5 lg:grid-cols-2">
-            <TemplateCard tenant={tenant} workspace={workspace} refresh={refresh} />
-            <PrintCard workspace={workspace} refresh={refresh} />
-          </div>
-          <TermsCard key={JSON.stringify(workspace.preferences.documents)} workspace={workspace} refresh={refresh} />
         </>
       )}
     </SettingsPage>
+  )
+}
+
+// ── Look & print, with the live preview ──
+
+function LookAndPreview({ tenant, workspace, refresh }: { tenant: SetupTenant; workspace: Workspace; refresh: () => Promise<void> }) {
+  const { can, me } = useAuth()
+  const router = useRouter()
+  const saved = lookOf(workspace)
+  const [draft, setDraft] = React.useState(saved)
+  const [saving, setSaving] = React.useState(false)
+  const [errors, setErrors] = React.useState<Partial<Record<"terms" | "quotationTerms", string>>>({})
+  const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
+  const editable = can("tenant.settings.edit") && !saving
+  const pay = workspace.preferences.payments
+  const brand = me?.tenant?.branding.brandColor ?? workspace.preferences.branding.brandColor ?? "#2450D8"
+  const set = (patch: Partial<Look>) => setDraft((x) => ({ ...x, ...patch }))
+
+  const setQr = (on: boolean) => {
+    if (on && !pay.upiId) {
+      toast.error("Add your UPI ID in Payments first.", { action: { label: "Open Payments", onClick: () => router.push("/app/settings/payments#upi-id") } })
+      return
+    }
+    set({ showUpiQr: on })
+  }
+
+  const check = (d: Look) => {
+    const e: typeof errors = {}
+    if (d.terms.trim().length > TERMS_MAX) e.terms = `Keep terms within ${TERMS_MAX} characters`
+    if (d.quotationTerms.trim().length > TERMS_MAX) e.quotationTerms = `Keep terms within ${TERMS_MAX} characters`
+    setErrors(e)
+    return !e.terms && !e.quotationTerms
+  }
+
+  const save = async () => {
+    if (!check(draft)) return
+    setSaving(true)
+    try {
+      const { showUpiQr, ...docs } = { ...draft, terms: draft.terms.trim(), quotationTerms: draft.quotationTerms.trim() }
+      // Only what changed is sent
+      const patch = Object.fromEntries(Object.entries(docs).filter(([k, v]) => v !== saved[k as keyof Look])) as Partial<Docs>
+      if (Object.keys(patch).length) await api.put("/tenant/preferences/documents", patch)
+      if (showUpiQr !== saved.showUpiQr) await api.put("/tenant/preferences/payments", { showUpiQr })
+      await refresh()
+      toast.success("Document settings saved")
+    } catch (e) {
+      if (e instanceof ApiError && (e.fields.terms || e.fields.quotationTerms)) setErrors({ terms: e.fields.terms, quotationTerms: e.fields.quotationTerms })
+      else toast.error(errorMessage(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const docsForPreview: Docs = { ...workspace.preferences.documents, ...draft }
+  const payForPreview = { ...pay, showUpiQr: draft.showUpiQr }
+  const row = "flex items-center justify-between gap-3 py-2.5"
+
+  return (
+    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,420px)]">
+      <div className="grid gap-4">
+        <section id="template" className="ui-surface px-[18px] py-4">
+          <SectionHead icon={LayoutTemplate} title="Template" description="The look of every invoice, quotation, order and note." />
+          <div className="grid gap-2.5 sm:grid-cols-3" role="radiogroup" aria-label="Invoice template">
+            {DOC_TEMPLATES.map((t) => {
+              const on = draft.template === t.key
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  disabled={!editable}
+                  onClick={() => set({ template: t.key })}
+                  className={cn("flex flex-col gap-2 rounded-xl border p-2.5 text-left transition-all hover:border-primary/50 disabled:cursor-default disabled:hover:border-border", on && "border-primary ring-2 ring-primary/25 hover:border-primary")}
+                >
+                  <Thumb kind={t.key} brand={brand} />
+                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] font-semibold">
+                    {t.label}
+                    {saved.template === t.key && <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] leading-none font-medium whitespace-nowrap text-muted-foreground">In use</span>}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{TEMPLATE_NOTE[t.key]}</span>
+                </button>
+              )
+            })}
+          </div>
+          {draft.template === "modern" && (
+            <p className="mt-2.5 text-xs text-muted-foreground">
+              Uses your brand colour{" "}
+              <span className="inline-block size-2.5 rounded-full align-middle" style={{ background: brand }} aria-hidden />{" "}
+              <Link href="/app/settings/branding" className="font-semibold text-primary hover:underline">
+                Change in Branding
+              </Link>
+            </p>
+          )}
+        </section>
+
+        <section id="print" className="ui-surface px-[18px] py-4 text-[13px]">
+          <SectionHead icon={Printer} title="Paper & what's printed" description="A4 for normal printers; 80 mm or 58 mm for a till (thermal) printer." />
+          <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Paper size">
+            {(
+              [
+                ["a4", "A4", "Office printer"],
+                ["80mm", "80 mm", "Wide receipt roll"],
+                ["58mm", "58 mm", "Small receipt roll"],
+              ] as const
+            ).map(([k, l, hint]) => (
+              <button key={k} type="button" role="radio" aria-checked={draft.paper === k} disabled={!editable} onClick={() => set({ paper: k })} className={cn("rounded-xl border px-3 py-2 text-left transition-all disabled:cursor-default", draft.paper === k ? "border-primary bg-primary/5 ring-2 ring-primary/25" : "hover:border-primary/50")}>
+                <span className="block text-sm font-semibold">{l}</span>
+                <span className="block text-xs text-muted-foreground">{hint}</span>
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 divide-y">
+            <div className={row}>
+              <span>
+                <span className="block font-medium">HSN summary table</span>
+                <span className="block text-xs text-muted-foreground">Tax by HSN/SAC code under the items (A4 only)</span>
+              </span>
+              <Switch aria-label="HSN summary table" checked={draft.showHsnSummary} disabled={!editable} onCheckedChange={(c) => set({ showHsnSummary: c })} />
+            </div>
+            <div className={row}>
+              <span>
+                <span className="block font-medium">UPI QR code on unpaid invoices</span>
+                <span className="block text-xs text-muted-foreground">
+                  {pay.upiId ? (
+                    <>
+                      Pays to <span className="font-mono">{pay.upiId}</span> for the amount due
+                    </>
+                  ) : (
+                    <Link href="/app/settings/payments#upi-id" className="font-semibold text-primary hover:underline">
+                      Add a UPI ID in Payments first
+                    </Link>
+                  )}
+                </span>
+              </span>
+              <Switch aria-label="UPI QR code" checked={draft.showUpiQr} disabled={!editable} onCheckedChange={setQr} />
+            </div>
+            <div className={row}>
+              <span>
+                <span className="block font-medium">Authorised signatory</span>
+                <span className="block text-xs text-muted-foreground">&ldquo;For your business&rdquo; with a place to sign</span>
+              </span>
+              <Switch aria-label="Authorised signatory" checked={draft.showSignatory} disabled={!editable} onCheckedChange={(c) => set({ showSignatory: c })} />
+            </div>
+          </div>
+        </section>
+
+        <section id="signature" className="ui-surface px-[18px] py-4 text-[13px]">
+          <SectionHead icon={PenLine} title="Signature" description="Printed above “Authorised signatory”. Leave it empty to sign by hand." />
+          <SignatureField value={draft.signatureUrl} onChange={(v) => set({ signatureUrl: v })} disabled={!editable} />
+          {draft.signatureUrl && !draft.showSignatory && <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">Turn on “Authorised signatory” above to print the signature.</p>}
+        </section>
+
+        <section id="terms" className="ui-surface px-[18px] py-4">
+          <SectionHead icon={ScrollText} title="Terms" description="Printed at the bottom. You can still change them on any one document." />
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="On invoices" error={errors.terms} count={[draft.terms.length, TERMS_MAX]}>
+              <Textarea value={draft.terms} onChange={(e) => set({ terms: e.target.value })} onBlur={() => check(draft)} rows={4} disabled={!editable} placeholder="e.g. Goods once sold will not be taken back. Interest @18% after the due date." aria-invalid={!!errors.terms} />
+            </Field>
+            <Field label="On quotations" error={errors.quotationTerms} count={[draft.quotationTerms.length, TERMS_MAX]}>
+              <Textarea value={draft.quotationTerms} onChange={(e) => set({ quotationTerms: e.target.value })} onBlur={() => check(draft)} rows={4} disabled={!editable} placeholder="e.g. Prices valid for 15 days. 50% advance with the order." aria-invalid={!!errors.quotationTerms} />
+            </Field>
+          </div>
+        </section>
+
+        <div className={cn(dirty && "sticky bottom-3 z-10 rounded-xl border bg-background/95 px-4 pb-3 shadow-lg backdrop-blur")}>
+          <InlineSave dirty={dirty} saving={saving} onDiscard={() => { setDraft(saved); setErrors({}) }} onSave={() => void save()} saveLabel="Save changes" />
+        </div>
+      </div>
+
+      <DocPreview tenant={tenant} workspace={workspace} docs={docsForPreview} pay={payForPreview} brand={brand} className="xl:sticky xl:top-4" />
+    </div>
+  )
+}
+
+function SignatureField({ value, onChange, disabled }: { value: string | null; onChange: (v: string | null) => void; disabled?: boolean }) {
+  const input = React.useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const { link } = useFileLink(value)
+  const pick = async (file?: File) => {
+    if (!file) return
+    setError(null)
+    const bad = checkFile(file, "image")
+    if (bad) return setError(bad)
+    if (file.size > 1024 * 1024) return setError(`This file is ${(file.size / 1024 / 1024).toFixed(1)} MB — use one up to 1 MB.`)
+    setBusy(true)
+    try {
+      onChange((await uploadFile(file, { kind: "image", field: "signature" })).ref)
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-4 rounded-xl border border-dashed p-3">
+      <span className="grid h-16 w-44 shrink-0 place-items-center overflow-hidden rounded-lg border bg-white text-xs text-neutral-400">
+        {value && link ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={link.url} alt="Signature" className="max-h-14 max-w-40 object-contain" />
+        ) : busy ? (
+          <Loader2 className="size-4 animate-spin" />
+        ) : (
+          "No signature"
+        )}
+      </span>
+      <div className="grid gap-1.5">
+        <p className="text-xs text-muted-foreground">PNG with a clear background looks best · JPG of a signature on white paper works too · up to 1 MB</p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="outline" disabled={disabled || busy} onClick={() => input.current?.click()}>
+            {busy ? <Loader2 className="animate-spin" /> : <Upload />} {busy ? "Uploading…" : value ? "Replace" : "Upload signature"}
+          </Button>
+          {value && (
+            <Button type="button" size="sm" variant="ghost" disabled={disabled || busy} onClick={() => onChange(null)}>
+              <Trash2 /> Remove
+            </Button>
+          )}
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </div>
+      <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" aria-label="Signature image" onChange={(e) => { void pick(e.target.files?.[0]); e.target.value = "" }} />
+    </div>
+  )
+}
+
+function Thumb({ kind, brand }: { kind: string; brand: string }) {
+  const ln = "h-1.5 rounded-[3px] bg-neutral-200"
+  if (kind === "modern") {
+    return (
+      <div className="h-[92px] overflow-hidden rounded-md border-t-4 bg-white p-2 ring-1 ring-black/5" style={{ borderTopColor: brand }}>
+        <div className="mb-1.5 flex justify-between">
+          <div className="h-2 w-1/3 rounded-[3px]" style={{ background: brand }} />
+          <div className="h-2 w-1/4 rounded-[3px]" style={{ background: brand }} />
+        </div>
+        <div className="mb-1 h-2 rounded-[3px]" style={{ background: brand, opacity: 0.85 }} />
+        <div className="flex flex-col gap-[4px]">
+          <div className={ln} />
+          <div className={cn(ln, "w-[70%]")} />
+          <div className="ml-auto h-2 w-1/3 rounded-[3px]" style={{ background: brand }} />
+        </div>
+      </div>
+    )
+  }
+  if (kind === "compact") {
+    return (
+      <div className="flex h-[92px] flex-col gap-[3px] rounded-md bg-white p-2 ring-1 ring-black/5">
+        <div className="mb-0.5 h-1.5 w-[40%] rounded-[3px] bg-neutral-400" />
+        {Array.from({ length: 7 }, (_, i) => (
+          <div key={i} className={cn("h-1 rounded-[2px] bg-neutral-200", i === 6 && "w-[60%]")} />
+        ))}
+      </div>
+    )
+  }
+  return (
+    <div className="flex h-[92px] flex-col gap-[5px] rounded-md bg-white p-2 ring-1 ring-black/5">
+      <div className="flex justify-between">
+        <div className="h-2 w-1/3 rounded-[3px] bg-neutral-500" />
+        <div className="h-2 w-1/4 rounded-[3px] bg-neutral-500" />
+      </div>
+      <div className="h-px bg-neutral-300" />
+      <div className={ln} />
+      <div className={cn(ln, "w-4/5")} />
+      <div className={ln} />
+      <div className="ml-auto h-1.5 w-1/3 rounded-[3px] bg-neutral-500" />
+    </div>
   )
 }
 
@@ -79,11 +359,8 @@ function SeriesCard({ fy, rows, onSaved }: { fy: string; rows: Series[]; onSaved
   const { can } = useAuth()
   const [editing, setEditing] = React.useState<Series["docType"] | null>(null)
   return (
-    <section id="series" className="ui-surface px-[18px] py-3.5">
-      <div className="mb-1.5 flex items-center justify-between gap-3">
-        <h2 className="text-[15px] font-bold">Number series · FY {fy}</h2>
-        <span className="text-xs text-muted-foreground">Resets every financial year</span>
-      </div>
+    <section id="series" className="ui-surface px-[18px] py-4">
+      <SectionHead icon={Hash} title={`Number series · FY ${fy}`} description="How every document is numbered. Numbers restart each financial year and never repeat." />
       <div className="overflow-x-auto">
         <table className="w-full min-w-[640px] border-collapse text-[13px]">
           <thead>
@@ -118,12 +395,6 @@ function SeriesCard({ fy, rows, onSaved }: { fy: string; rows: Series[]; onSaved
                 </tr>
               )
             )}
-            <tr>
-              <td className="px-2.5 py-[9px] text-muted-foreground/80">Purchase order</td>
-              <td colSpan={4} className="px-2.5 py-[9px] text-xs text-muted-foreground/80">
-                Arrives with Purchasing
-              </td>
-            </tr>
           </tbody>
         </table>
       </div>
@@ -195,246 +466,3 @@ function SeriesEditRow({ fy, row, onCancel, onSaved }: { fy: string; row: Series
   )
 }
 
-// ── Template ──
-
-function usePreferenceSave(refresh: () => Promise<void>) {
-  const [saving, setSaving] = React.useState(false)
-  const save = async (patch: Partial<WorkspacePreferences["documents"]>, message: string) => {
-    setSaving(true)
-    try {
-      await api.put("/tenant/preferences/documents", patch)
-      await refresh()
-      toast.success(message)
-      return true
-    } catch (e) {
-      toast.error(errorMessage(e))
-      return false
-    } finally {
-      setSaving(false)
-    }
-  }
-  return { saving, save }
-}
-
-function Thumb({ kind, brand }: { kind: string; brand: string }) {
-  const ln = "h-1.5 rounded-[3px] bg-border"
-  if (kind === "modern") {
-    return (
-      <div className="h-[110px] overflow-hidden rounded-md bg-muted">
-        <div className="h-[26px]" style={{ background: brand }} />
-        <div className="flex flex-col gap-[5px] p-1.5">
-          <div className={ln} />
-          <div className={cn(ln, "w-[70%]")} />
-        </div>
-      </div>
-    )
-  }
-  if (kind === "compact") {
-    return (
-      <div className="flex h-[110px] flex-col gap-[3px] rounded-md bg-muted p-2">
-        <div className={cn(ln, "w-[40%]")} />
-        <div className="h-1 rounded-[3px] bg-border" />
-        <div className="h-1 rounded-[3px] bg-border" />
-        <div className="h-1 w-[60%] rounded-[3px] bg-border" />
-      </div>
-    )
-  }
-  return (
-    <div className="flex h-[110px] flex-col gap-[5px] rounded-md bg-muted p-2">
-      <div className="h-1.5 w-1/2 rounded-[3px]" style={{ background: brand }} />
-      <div className={ln} />
-      <div className={cn(ln, "w-4/5")} />
-      <div className={ln} />
-    </div>
-  )
-}
-
-function TemplateCard({ tenant, workspace, refresh }: { tenant: SetupTenant; workspace: Workspace; refresh: () => Promise<void> }) {
-  const { can, me } = useAuth()
-  const { saving, save } = usePreferenceSave(refresh)
-  const [preview, setPreview] = React.useState(false)
-  const d = workspace.preferences.documents
-  const brand = me?.tenant?.branding.brandColor ?? "#2450D8"
-  const editable = can("tenant.settings.edit")
-  const [template, setTemplate] = React.useState(d.template)
-  const dirty = template !== d.template
-  return (
-    <section id="template" className="flex flex-col gap-2.5 ui-surface px-[18px] py-3.5">
-      <h2 className="text-[15px] font-bold">Template</h2>
-      <div className="grid grid-cols-3 gap-2.5" role="radiogroup" aria-label="Invoice template">
-        {DOC_TEMPLATES.map((t) => {
-          const on = template === t.key
-          return (
-            <button
-              key={t.key}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              disabled={!editable || saving}
-              onClick={() => setTemplate(t.key)}
-              className={cn("flex flex-col gap-1.5 rounded-[10px] border p-2 text-left text-xs font-semibold transition-shadow disabled:cursor-default", on && "border-primary ring-2 ring-primary/25")}
-            >
-              <Thumb kind={t.key} brand={brand} />
-              {t.label}
-              {d.template === t.key ? " · in use" : on ? " · chosen" : ""}
-            </button>
-          )
-        })}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Preview uses your logo, brand colour and a sample invoice.{" "}
-        <button type="button" className="font-semibold text-primary hover:underline" onClick={() => setPreview(true)}>
-          Open full preview
-        </button>
-      </p>
-      <Dialog open={preview} onOpenChange={setPreview}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{DOC_TEMPLATES.find((t) => t.key === template)?.label} template</DialogTitle>
-            <DialogDescription>A sample invoice with your details. Real invoices use your items and customer.</DialogDescription>
-          </DialogHeader>
-          <InvoicePreview
-            prefs={{ ...workspace.preferences, documents: { ...d, template } }}
-            number={previewNumber(d.invoicePrefix, "26-27", 1)}
-            tenant={tenant}
-            upi={workspace.preferences.payments.upiId}
-            showQr={workspace.preferences.payments.showUpiQr}
-            bank={workspace.preferences.payments.bankAccount ? { holder: workspace.preferences.payments.bankHolder, account: workspace.preferences.payments.bankAccount, ifsc: workspace.preferences.payments.ifsc } : null}
-            brand={brand}
-          />
-        </DialogContent>
-      </Dialog>
-      <InlineSave dirty={dirty} saving={saving} onDiscard={() => setTemplate(d.template)} onSave={() => void save({ template }, `${DOC_TEMPLATES.find((t) => t.key === template)?.label} is now the default template`)} />
-    </section>
-  )
-}
-
-// ── Print ──
-
-function PrintCard({ workspace, refresh }: { workspace: Workspace; refresh: () => Promise<void> }) {
-  const { can } = useAuth()
-  const router = useRouter()
-  const [saving, setSaving] = React.useState(false)
-  const d = workspace.preferences.documents
-  const pay = workspace.preferences.payments
-  const saved = { paper: d.paper, showHsnSummary: d.showHsnSummary, showSignatory: d.showSignatory, showUpiQr: pay.showUpiQr }
-  const [draft, setDraft] = React.useState(saved)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(saved)
-  const editable = can("tenant.settings.edit") && !saving
-  const set = (patch: Partial<typeof draft>) => setDraft((x) => ({ ...x, ...patch }))
-
-  const setQr = (on: boolean) => {
-    if (on && !pay.upiId) {
-      toast.error("Add your UPI ID in Payments first.", { action: { label: "Open Payments", onClick: () => router.push("/app/settings/payments#upi-id") } })
-      return
-    }
-    set({ showUpiQr: on })
-  }
-  const saveAll = async () => {
-    setSaving(true)
-    try {
-      const { showUpiQr, ...docs } = draft
-      if (docs.paper !== saved.paper || docs.showHsnSummary !== saved.showHsnSummary || docs.showSignatory !== saved.showSignatory) await api.put("/tenant/preferences/documents", docs)
-      if (showUpiQr !== saved.showUpiQr) await api.put("/tenant/preferences/payments", { showUpiQr })
-      await refresh()
-      toast.success("Print settings saved")
-    } catch (e) {
-      toast.error(errorMessage(e))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const row = "flex items-center justify-between gap-3"
-  return (
-    <section id="print" className="flex flex-col gap-2.5 ui-surface px-[18px] py-3.5 text-[13px]">
-      <h2 className="text-[15px] font-bold">Print</h2>
-      <div className="flex gap-1.5" role="radiogroup" aria-label="Paper size">
-        {(
-          [
-            ["a4", "A4"],
-            ["80mm", "80 mm"],
-            ["58mm", "58 mm"],
-          ] as const
-        ).map(([k, l]) => (
-          <Button key={k} type="button" size="sm" variant={draft.paper === k ? "default" : "outline"} role="radio" aria-checked={draft.paper === k} disabled={!editable} onClick={() => set({ paper: k })}>
-            {l}
-          </Button>
-        ))}
-      </div>
-      <div className={row}>
-        HSN summary table
-        <Switch aria-label="HSN summary table" checked={draft.showHsnSummary} disabled={!editable} onCheckedChange={(c) => set({ showHsnSummary: c })} />
-      </div>
-      <div className={row}>
-        <span>
-          UPI QR code{" "}
-          {!pay.upiId && (
-            <Link href="/app/settings/payments#upi-id" className="text-xs font-semibold text-primary hover:underline">
-              Add UPI ID
-            </Link>
-          )}
-        </span>
-        <Switch aria-label="UPI QR code" checked={draft.showUpiQr} disabled={!editable} onCheckedChange={setQr} />
-      </div>
-      <div className={row}>
-        Authorised signatory line
-        <Switch aria-label="Authorised signatory line" checked={draft.showSignatory} disabled={!editable} onCheckedChange={(c) => set({ showSignatory: c })} />
-      </div>
-      <div className={cn(row, "text-muted-foreground/80")}>
-        Signature image · needs file storage
-        <Switch aria-label="Signature image (not available yet)" checked={false} disabled />
-      </div>
-      <InlineSave dirty={dirty} saving={saving} onDiscard={() => setDraft(saved)} onSave={() => void saveAll()} />
-    </section>
-  )
-}
-
-// ── Terms ──
-
-function TermsCard({ workspace, refresh }: { workspace: Workspace; refresh: () => Promise<void> }) {
-  const { can } = useAuth()
-  const d = workspace.preferences.documents
-  const form = useForm({
-    initial: { terms: d.terms, quotationTerms: d.quotationTerms },
-    labels: { terms: "Terms on invoices", quotationTerms: "Terms on quotations" },
-    clean: { terms: (v) => v.trim(), quotationTerms: (v) => v.trim() },
-    rules: { terms: length(0, 2000, "Terms"), quotationTerms: length(0, 2000, "Terms") },
-    fromServer: (path) => (path === "terms" || path === "quotationTerms" ? path : undefined),
-    onSubmit: async (v) => {
-      await api.put("/tenant/preferences/documents", { terms: v.terms, quotationTerms: v.quotationTerms })
-      await refresh()
-      toast.success("Terms saved")
-    },
-  })
-  const view = (label: string, text: string) => (
-    <div>
-      <div className="text-xs font-semibold text-muted-foreground">{label}</div>
-      <p className={cn("mt-0.5 text-[13px] whitespace-pre-wrap", !text && "text-muted-foreground")}>{text || "Not added"}</p>
-    </div>
-  )
-  return (
-    <div id="terms">
-      <EditableSection
-        title="Terms"
-        form={form}
-        canEdit={can("tenant.settings.edit")}
-        view={
-          <div className="grid gap-3.5 sm:grid-cols-2">
-            {view("On invoices", d.terms)}
-            {view("On quotations", d.quotationTerms)}
-          </div>
-        }
-      >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="On invoices" error={form.errors.terms} count={[form.values.terms.length, 2000]}>
-            <Textarea {...form.field("terms")} rows={4} placeholder="e.g. Services once delivered are not refundable." autoFocus />
-          </Field>
-          <Field label="On quotations" error={form.errors.quotationTerms} count={[form.values.quotationTerms.length, 2000]}>
-            <Textarea {...form.field("quotationTerms")} rows={4} placeholder="e.g. Valid for 15 days from the date above." />
-          </Field>
-        </div>
-      </EditableSection>
-    </div>
-  )
-}

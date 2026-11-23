@@ -3,11 +3,12 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { ArrowLeft, Check, ChevronRight, MoreHorizontal } from "lucide-react"
+import { Check, ChevronRight, MoreHorizontal } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { tone } from "@/lib/tones"
 import { cn } from "@/lib/utils"
+import { usePageCrumb } from "@/components/breadcrumbs"
 
 // The building blocks of every record page and list row in the ERP, taken from the CRM design:
 // back link, header with pills and actions, stat cards, a status stepper, tabs, sections,
@@ -22,8 +23,10 @@ export function Pill({ color = "slate", dot, strike, className, children, title 
   )
 }
 
-export function BackLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return <Link href={href} className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> {children}</Link>
+/** Kept so pages need no change: the breadcrumb above every page now leads back ("Sales › Customers › …") */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function BackLink(_props: { href: string; children: React.ReactNode }) {
+  return null
 }
 
 const initialsOf = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?"
@@ -41,6 +44,8 @@ export function DetailHeader({ title, pills, subtitle, extra, actions, icon: Ico
   /** Shows initials of this name when there is no picture or icon */
   initials?: string
 }) {
+  // The record's name ends the breadcrumb ("Customers › Deepak Chauhan")
+  usePageCrumb(typeof title === "string" ? title : null)
   return (
     <header className="flex flex-wrap items-start justify-between gap-4">
       <div className="flex min-w-0 items-center gap-3">

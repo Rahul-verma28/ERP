@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { Banknote, Package, Receipt, ShoppingBag, Undo2 } from "lucide-react"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, periodFilter } from "@/components/data-list"
 import { SummaryCards } from "@/components/summary-cards"
@@ -12,6 +11,7 @@ import { formatPaise } from "@/lib/format"
 import { TENDER_LABEL } from "@/lib/pos"
 import { useApi } from "@/lib/use-api"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // POS report: counter sales in a period by day, hour, item, category, cashier, counter or how
 // they were paid, with the bills, quantity, sales before and after GST and the average bill.
@@ -24,7 +24,7 @@ export default function PosReportPage() {
   const { can, me } = useAuth()
   const [by, setBy] = React.useState<(typeof BY)[number][0]>("day")
   const meta = useApi<{ counters: { id: string; name: string }[] }>(can("billing.pos.view") ? "/pos/sales?limit=1" : null)
-  if (!can("billing.pos.view")) return <PageHeader title="POS report" description="You don't have access to the POS counter. Ask your admin." />
+  if (!can("billing.pos.view")) return <NoAccessPage title="POS report" permission="billing.pos.view" />
   const itemly = by === "item" || by === "category"
   return (
     <DataList<Row>

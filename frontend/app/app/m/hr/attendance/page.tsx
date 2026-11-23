@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
-import { PageError, PageLoading } from "@/components/page-states"
+import { PageError, PageLoading, NoAccessPage } from "@/components/page-states"
 import { Avatar, Pill, StatGrid } from "@/components/page-parts"
 import { HrTabs, TABS } from "@/components/hr/pickers"
 import { todayInIndia } from "@contracts/validation"
@@ -41,7 +41,7 @@ export default function AttendancePage() {
   const [busy, setBusy] = React.useState(false)
   // A new day starts with no unsaved marks
   const go = (d: string) => { setDate(d); setEdits({}) }
-  if (!can("hr.attendance.view")) return <PageHeader title="Attendance" description="You don't have access to attendance. Ask your admin." />
+  if (!can("hr.attendance.view")) return <NoAccessPage title="Attendance" permission="hr.attendance.view" />
   const edit = can("hr.attendance.edit")
   const changed = Object.keys(edits).length
 

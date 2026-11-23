@@ -10,13 +10,13 @@ import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ConfirmDialog, EmptyState, StatusBadge } from "@/components/common"
 import { DataList, HeaderLink, periodFilter, type Column, type ViewPreset } from "@/components/data-list"
-import { PageHeader } from "@/components/app-shell"
 import { SummaryCards, type SummaryCard } from "@/components/summary-cards"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise, initials } from "@/lib/format"
 import { KIND_PLURAL, invoiceStatus, returnStatus, type PurchaseDoc, type PurchaseKind } from "@/lib/purchase"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // One list for invoices, returns, orders and goods receipts. One request brings the rows, the
 // counts on the tabs and the totals on the cards. What each row can do depends on its status.
@@ -93,7 +93,7 @@ function List({ kind }: { kind: PurchaseKind }) {
   const params = useSearchParams()
   const [version, setVersion] = React.useState(0)
   const [deleting, setDeleting] = React.useState<PurchaseDoc | null>(null)
-  if (!can(VIEW[kind])) return <PageHeader title={KIND_PLURAL[kind]} description="You don't have access to this. Ask your admin." />
+  if (!can(VIEW[kind])) return <NoAccessPage title={KIND_PLURAL[kind]} permission={VIEW[kind]} />
   const bill = kind === "purchase_bill"
   const isReturn = kind === "purchase_return"
   const order = kind === "purchase_order"

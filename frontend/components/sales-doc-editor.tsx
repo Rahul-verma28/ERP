@@ -49,7 +49,9 @@ export function SalesDocEditor({ kind, doc, initialContact, cash = false }: { ki
   const { me, can } = useAuth()
   const today = todayInIndia()
   const workspace = useApi<{ preferences: { taxes: { pricesIncludeTax: boolean; roundOff?: boolean; defaultGstRateBp: number; composition?: boolean } } }>(can("tenant.settings.view") ? "/tenant/workspace" : null)
-  const taxes = workspace.data?.preferences.taxes
+  // Everyone gets the business's defaults with /me; the full settings only load for those who may see them
+  const defaults = me?.tenant?.defaults
+  const taxes = workspace.data?.preferences.taxes ?? (defaults ? { pricesIncludeTax: defaults.pricesIncludeTax, roundOff: defaults.roundOff, defaultGstRateBp: defaults.gstRateBp, composition: defaults.composition } : undefined)
   const noTax = !me?.tenant?.gstin || !!taxes?.composition
   const stocked = kind !== "quotation"
   const locations = useApi<{ data: { id: string; name: string; isActive: boolean; isDefault: boolean }[] }>(stocked ? "/stock-locations" : null)
@@ -67,7 +69,9 @@ export function SalesDocEditor({ kind, doc, initialContact, cash = false }: { ki
     () => doc?.lines.map((l, i) => ({ ...l, key: `${l.id ?? i}`, quantity: String(Number(l.quantity)), freeQuantity: l.freeQuantity ? String(Number(l.freeQuantity)) : "", discountPct: pct(l.discountPaise, lineBase(l)) })) ?? [],
   )
   const [issueDate, setIssueDate] = React.useState(doc?.issueDate?.slice(0, 10) ?? today)
-  const termsDays = (c: ContactOption | null) => (kind === "invoice" ? (c?.paymentDays ?? 0) : kind === "quotation" ? 30 : 7)
+  // Settings › Sales: quotation validity, delivery days, and the due days for customers with none of their own
+  const sales = defaults?.sales
+  const termsDays = (c: ContactOption | null) => (kind === "invoice" ? (c?.paymentDays ?? sales?.invoiceDueDays ?? 0) : kind === "quotation" ? (sales?.quotationValidDays ?? 30) : (sales?.deliveryDays ?? 7))
   const [dueDate, setDueDate] = React.useState(doc?.dueDate?.slice(0, 10) ?? (cash ? "" : addDays(today, termsDays(initialContact ?? null))))
   const [dueTouched, setDueTouched] = React.useState(!!doc)
   const [locationId, setLocationId] = React.useState(doc?.locationId ?? "")
@@ -126,7 +130,7 @@ export function SalesDocEditor({ kind, doc, initialContact, cash = false }: { ki
   }
   const addItem = (it: ItemOption & ItemStock & { tracking?: string }) =>
     setLines((ls) => [...ls, { key: `${it.id}-${Date.now()}`, itemId: it.id, description: it.name, hsnSac: it.hsnSac, unit: it.unit, quantity: "1", unitPricePaise: priceFor(it), discountPaise: 0, discountPct: "", gstRateBp: it.gstRateBp, freeQuantity: "", stock: it.trackStock ? it : null }])
-  const addBlank = () => setLines((ls) => [...ls, { key: `blank-${Date.now()}`, itemId: null, description: "", hsnSac: null, unit: "pcs", quantity: "1", unitPricePaise: 0, discountPaise: 0, discountPct: "", gstRateBp: taxes?.defaultGstRateBp ?? 1800, freeQuantity: "" }])
+  const addBlank = () => setLines((ls) => [...ls, { key: `blank-${Date.now()}`, itemId: null, description: "", hsnSac: null, unit: defaults?.items.defaultUnit || "pcs", quantity: "1", unitPricePaise: 0, discountPaise: 0, discountPct: "", gstRateBp: taxes?.defaultGstRateBp ?? 1800, freeQuantity: "" }])
 
   function check(posting: boolean) {
     const errs: Record<string, string> = {}

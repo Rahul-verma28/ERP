@@ -19,6 +19,7 @@ import { ListEditor, saveHrConfig } from "@/components/hr/list-editor"
 import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useHrLookups, type HrRecord } from "@/lib/hr"
+import { NoAccessPage } from "@/components/page-states"
 
 // Recruitment setup: onboarding checklists (the tasks a new joiner goes through), their task
 // categories, and the offer letter template.
@@ -159,7 +160,7 @@ function OfferTemplateForm({ initial, edit, onSaved }: { initial: string; edit: 
 export default function RecruitmentSetupPage() {
   const { can } = useAuth()
   const [tab, setTab] = React.useState<"checklists" | "letter" | "categories">("checklists")
-  if (!can("hr.setup.view") && !can("hr.recruitment.view")) return <PageHeader title="Recruitment setup" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.setup.view") && !can("hr.recruitment.view")) return <NoAccessPage title="Recruitment setup" permission="hr.recruitment.view" />
   return (
     <div className="grid gap-5">
       <PageHeader title="Recruitment setup" description="Onboarding checklists, their task categories and the offer letter." />

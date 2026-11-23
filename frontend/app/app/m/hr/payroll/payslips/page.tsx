@@ -1,11 +1,10 @@
 "use client"
 
 import { useSearchParams } from "next/navigation"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 
 import * as React from "react"
 import { Eye, IndianRupee, Receipt } from "lucide-react"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { ActionMenu, Avatar, Pill } from "@/components/page-parts"
@@ -28,7 +27,7 @@ function Payslips() {
   const search = useSearchParams()
   const { can } = useAuth()
   const emps = useCurrentEmployees()
-  if (!can("hr.payslip.view")) return <PageHeader title="Payslips" description="You don't have access to payslips. Ask your admin." />
+  if (!can("hr.payslip.view")) return <NoAccessPage title="Payslips" permission="hr.payslip.view" />
   const months = [...new Set(Array.from({ length: 12 }, (_, i) => { const d = new Date(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() - i); return d.toISOString().slice(0, 7) }))]
   const columns: Column<Row>[] = [
     { key: "employee", header: "Employee", hideable: false, sort: (p) => p.employee, csv: (p) => p.employee, cell: (p) => <span className="flex items-center gap-2.5"><Avatar name={p.employee} className="size-8" /><span><span className="block font-medium">{p.employee}</span><span className="font-mono text-xs text-muted-foreground">{p.employeeCode}</span></span></span> },

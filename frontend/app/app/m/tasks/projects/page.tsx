@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { AlarmClock, Briefcase, CheckSquare, Clock, Eye, IndianRupee, Pencil, Plus, Timer, Trash2 } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, remoteList, type Column, type ViewPreset } from "@/components/data-list"
 import { ActionMenu, Avatar, Pill } from "@/components/page-parts"
@@ -18,6 +17,7 @@ import { useAuth } from "@/lib/auth"
 import { formatDate, formatPaise } from "@/lib/format"
 import { PROJECT_STATUS, fmtMin, type Project } from "@/lib/tasks"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Projects: pieces of work with their own tasks, team, dates and budget. One request brings the
 // projects with their progress and hours, the tab counts and the cards.
@@ -31,7 +31,7 @@ export default function ProjectsPage() {
   const [editing, setEditing] = React.useState<Project | "new" | null>(null)
   const [timing, setTiming] = React.useState<Project | null>(null)
   const [removing, setRemoving] = React.useState<Project | null>(null)
-  if (!can("tasks.task.view")) return <PageHeader title="Projects" description="You don't have access to tasks. Ask your admin." />
+  if (!can("tasks.task.view")) return <NoAccessPage title="Projects" permission="tasks.task.view" />
   const reload = () => setVersion((v) => v + 1)
   const canEdit = can("tasks.task.edit")
   async function setStatus(p: Project, status: Project["status"]) {

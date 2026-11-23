@@ -206,6 +206,13 @@ export async function getDocument(ctx: TenantCtx, id: string, kind: SalesDocKind
 
 export async function createDocument(ctx: TenantCtx, kind: 'invoice' | 'quotation' | 'sales_order' | 'delivery_challan', input: DocInput, opts: { issue?: boolean; sourceType?: string; sourceId?: string; skipCreditLimit?: boolean } = {}) {
   const { tenant, doc, lines } = await prepare(ctx, input);
+  // No date given: Settings › Sales decides how long a quotation holds, when an order is due, and
+  // when an invoice is due for a customer with no payment days of their own
+  if (input.dueDate === undefined && !doc.dueDate) {
+    const s = withDefaults(tenant.preferences).sales;
+    const days = kind === 'quotation' ? s.quotationValidDays : kind === 'invoice' ? s.invoiceDueDays : s.deliveryDays;
+    if (days != null) doc.dueDate = new Date(doc.issueDate.getTime() + days * 86_400_000);
+  }
   // Default terms from Settings › Documents when the document has none
   if (!doc.terms) {
     const d = withDefaults(tenant.preferences).documents;
@@ -268,8 +275,11 @@ async function customerOwes(contactId: string) {
 
 export async function checkCreditLimit(contactId: string | null, addingPaise: bigint) {
   if (!contactId) return;
-  const contact = await db().contact.findUnique({ where: { id: contactId }, select: { creditLimitPaise: true } });
+  const contact = await db().contact.findUnique({ where: { id: contactId }, select: { creditLimitPaise: true, tenantId: true } });
   if (contact?.creditLimitPaise == null) return;
+  // Settings › Sales: the business may allow bills over the limit (the limit then only shows on the customer)
+  const tenant = await db().tenant.findUnique({ where: { id: contact.tenantId }, select: { preferences: true } });
+  if (withDefaults(tenant?.preferences).sales.creditLimit === 'allow') return;
   const owes = await customerOwes(contactId);
   if (owes + addingPaise <= contact.creditLimitPaise) return;
   const rupees = (p: bigint) => `₹${(Number(p) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -316,6 +326,8 @@ export async function issueInvoice(ctx: TenantCtx, id: string, opts: { skipCredi
     upiId: pay.upiId || null, showUpiQr: pay.showUpiQr && !!pay.upiId,
     // Settings › Documents › Print, frozen with the invoice like everything else here
     showHsnSummary: prefs.documents.showHsnSummary, showSignatory: prefs.documents.showSignatory, paper: prefs.documents.paper,
+    // The look (Settings › Documents › Template) and the signature image, frozen too
+    template: prefs.documents.template, signatureUrl: publicLink(prefs.documents.signatureUrl),
     // Decided here and frozen: which document this is, whatever the business becomes later
     // Rule 49 CGST Rules: a registered business on composition, or selling only exempt or nil-rated
     // goods, issues a bill of supply. A business not registered under GST is outside GST and issues a

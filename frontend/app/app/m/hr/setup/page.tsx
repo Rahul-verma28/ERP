@@ -13,7 +13,7 @@ import { ConfirmDialog, EmptyState, MoneyInput } from "@/components/common"
 import { DataList, localList, type Column } from "@/components/data-list"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { NumberStepper } from "@/components/number-stepper"
-import { ErrorState, PageLoading } from "@/components/page-states"
+import { ErrorState, PageLoading, NoAccessPage } from "@/components/page-states"
 import { ActionMenu, Pill, Section } from "@/components/page-parts"
 import { DepartmentSelect } from "@/components/hr/pickers"
 import { ListEditor, saveHrConfig } from "@/components/hr/list-editor"
@@ -333,7 +333,7 @@ function Setup() {
   const all = MENU.flatMap((g) => g.items)
   const asked = search.get("tab") as Key | null
   const tab: Key = asked && all.some(([k]) => k === asked) ? asked : "branches"
-  if (!can("hr.setup.view")) return <PageHeader title="HR setup" description="You don't have access to HR setup. Ask your admin." />
+  if (!can("hr.setup.view")) return <NoAccessPage title="HR setup" permission="hr.setup.view" />
   const label = all.find(([k]) => k === tab)?.[1] ?? ""
   const go = (k: Key) => router.replace(`/app/m/hr/setup?tab=${k}`, { scroll: false })
   return (

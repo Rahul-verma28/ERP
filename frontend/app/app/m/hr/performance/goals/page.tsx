@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { countBy, DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { PersonCell } from "@/components/record-view"
@@ -22,6 +21,7 @@ import { useAuth } from "@/lib/auth"
 import { formatDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useChanged } from "@/lib/use-dirty"
+import { NoAccessPage } from "@/components/page-states"
 
 // Goals: a target per person with a deadline and progress. Past the deadline unfinished = overdue.
 
@@ -88,7 +88,7 @@ export default function GoalsPage() {
   const [version, setVersion] = React.useState(0)
   const [editing, setEditing] = React.useState<Goal | "new" | null>(null)
   const [deleting, setDeleting] = React.useState<Goal | null>(null)
-  if (!can("hr.performance.view")) return <PageHeader title="Goals" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.performance.view")) return <NoAccessPage title="Goals" permission="hr.performance.view" />
   const reload = () => setVersion((v) => v + 1)
   const edit = can("hr.performance.edit")
   async function progress(g: Goal, p: number) {

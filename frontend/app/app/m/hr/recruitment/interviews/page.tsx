@@ -4,7 +4,6 @@ import * as React from "react"
 import { toast } from "sonner"
 import { CalendarClock, ClipboardCheck, Pencil, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { ActionMenu, Avatar, Pill } from "@/components/page-parts"
@@ -14,6 +13,7 @@ import { todayInIndia } from "@contracts/validation"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate } from "@/lib/format"
+import { NoAccessPage } from "@/components/page-states"
 
 // Interviews: scheduled rounds, and how each one went.
 
@@ -25,7 +25,7 @@ export default function InterviewsPage() {
   const [editing, setEditing] = React.useState<Interview | "new" | null>(null)
   const [result, setResult] = React.useState<Interview | null>(null)
   const [deleting, setDeleting] = React.useState<Interview | null>(null)
-  if (!can("hr.recruitment.view")) return <PageHeader title="Interviews" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.recruitment.view")) return <NoAccessPage title="Interviews" permission="hr.recruitment.view" />
   const reload = () => setVersion((v) => v + 1)
   const today = todayInIndia()
   const edit = can("hr.recruitment.edit")

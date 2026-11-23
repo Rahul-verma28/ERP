@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { CalendarCheck, CalendarX, FileBarChart, IndianRupee, Receipt, UserX } from "lucide-react"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, periodFilter } from "@/components/data-list"
 import { SummaryCards } from "@/components/summary-cards"
@@ -11,6 +10,7 @@ import { Money, hours, ist, range, wholeReport } from "@/components/reports/kit"
 import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Bookings report: appointments by service, person, where they came from, day or customer, with
 // what they earned, how much of it is invoiced and how often people did not turn up.
@@ -23,7 +23,7 @@ const num = (v: number, tone?: string) => <span className={cn("tabular-nums", !v
 function Report() {
   const { can, me } = useAuth()
   const [by, setBy] = React.useState<(typeof BY)[number][0]>("service")
-  if (!can("bookings.appointment.view")) return <PageHeader title="Bookings report" description="You don't have access to bookings. Ask your admin." />
+  if (!can("bookings.appointment.view")) return <NoAccessPage title="Bookings report" permission="bookings.appointment.view" />
   return (
     <DataList<Row>
       key={by}

@@ -51,6 +51,10 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
   const unregistered = doc.kind === "invoice" && doc.status !== "draft" && !!seller && (seller.unregistered || !seller.gstin)
   const billOfSupply = (!!seller?.billOfSupply && doc.status !== "draft") || unregistered || (["delivery_challan", "quotation", "sales_order"].includes(doc.kind) && doc.cgstPaise + doc.sgstPaise + doc.igstPaise === 0)
   const title = doc.kind === "sales_order" ? "Sales Order" : doc.kind === "delivery_challan" ? "Delivery Challan" : doc.kind === "debit_note" ? "Debit Note" : doc.kind === "credit_note" ? "Credit Note" : doc.kind === "quotation" ? (doc.noteType === "proforma" ? "Proforma Invoice" : "Quotation") : unregistered ? "Invoice" : billOfSupply ? "Bill of Supply" : doc.status === "draft" ? "Draft invoice" : doc.buyer.gstin ? "Tax Invoice" : "Tax Invoice (B2C)"
+  const template = seller?.template ?? "classic"
+  const modern = template === "modern"
+  const compact = template === "compact"
+  const brand = seller?.brandColor && /^#[0-9a-f]{6}$/i.test(seller.brandColor) ? seller.brandColor : "#2450D8"
   const balance = doc.totalPaise - doc.paidPaise
   const credited = doc.creditedPaise ?? 0
   const hsnSummary = Object.values(
@@ -64,13 +68,13 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
   )
 
   return (
-    <article className={cn("bg-white p-6 text-sm text-neutral-900 sm:p-10", className)}>
-      <header className="flex flex-wrap items-start justify-between gap-6 border-b border-neutral-200 pb-6">
+    <article className={cn("bg-white text-neutral-900", compact ? "p-5 text-xs sm:p-7" : "p-6 text-sm sm:p-10", modern && "border-t-8", className)} style={modern ? { borderTopColor: brand } : undefined} data-template={template}>
+      <header className={cn("flex flex-wrap items-start justify-between border-b border-neutral-200", compact ? "gap-4 pb-4" : "gap-6 pb-6")}>
         <div className="flex items-start gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          {seller?.logoUrl && <img src={seller.logoUrl} alt="" className="size-14 rounded-lg object-contain" />}
+          {seller?.logoUrl && <img src={seller.logoUrl} alt="" className={cn("rounded-lg object-contain", compact ? "size-10" : "size-14")} />}
           <div>
-            <p className="text-lg font-semibold">{seller?.legalName || seller?.name}</p>
+            <p className={cn("font-semibold", compact ? "text-base" : "text-lg")} style={modern ? { color: brand } : undefined}>{seller?.legalName || seller?.name}</p>
             {seller?.address && <p className="max-w-xs text-neutral-600">{addr(seller.address)}</p>}
             {seller?.gstin && <p className="text-neutral-600">GSTIN: <span className="font-mono">{seller.gstin}</span></p>}
             {seller?.stateCode && <p className="text-neutral-600">State: {stateName(seller.stateCode)}</p>}
@@ -78,7 +82,7 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
           </div>
         </div>
         <div className="text-right">
-          <p className="text-xl font-semibold tracking-tight uppercase">{title}</p>
+          <p className={cn("font-semibold tracking-tight uppercase", compact ? "text-base" : "text-xl", modern && "inline-block rounded-md px-3 py-1 text-white")} style={modern ? { backgroundColor: brand } : undefined}>{title}</p>
           <p className="mt-1 font-mono">{doc.number ?? "—"}</p>
           <p className="text-neutral-600">Date: {formatDate(doc.issueDate)}</p>
           {doc.sourceNumber && <p className="text-neutral-600">Against invoice: <span className="font-mono">{doc.sourceNumber}</span>{doc.sourceDate && ` dated ${formatDate(doc.sourceDate)}`}</p>}
@@ -94,7 +98,7 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
         )}
       </header>
 
-      <section className="grid gap-4 border-b border-neutral-200 py-5 sm:grid-cols-2">
+      <section className={cn("grid gap-4 border-b border-neutral-200 sm:grid-cols-2", compact ? "py-3" : "py-5")}>
         <div>
           <p className="text-xs font-medium tracking-wide text-neutral-500 uppercase">Bill to</p>
           <p className="mt-1 font-medium">{doc.buyer.name}</p>
@@ -119,8 +123,8 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] border-collapse py-4 text-left">
           <thead>
-            <tr className="border-b border-neutral-300 text-xs text-neutral-500">
-              <th className="py-2 pr-2 font-medium">#</th>
+            <tr className={cn("border-b text-xs", modern ? "text-white" : "border-neutral-300 text-neutral-500")} style={modern ? { backgroundColor: brand, borderColor: brand } : undefined}>
+              <th className={cn("py-2 pr-2 font-medium", modern && "pl-2")}>#</th>
               <th className="py-2 pr-2 font-medium">Item</th>
               <th className="py-2 pr-2 font-medium">HSN/SAC</th>
               <th className="py-2 pr-2 text-right font-medium">Qty</th>
@@ -128,13 +132,13 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
               <th className="py-2 pr-2 text-right font-medium">Disc.</th>
               {!billOfSupply && <th className="py-2 pr-2 text-right font-medium">Taxable</th>}
               {!billOfSupply && <th className="py-2 pr-2 text-right font-medium">GST</th>}
-              <th className="py-2 text-right font-medium">Amount</th>
+              <th className={cn("py-2 text-right font-medium", modern && "pr-2")}>Amount</th>
             </tr>
           </thead>
           <tbody>
             {doc.lines.map((l, i) => (
-              <tr key={l.id ?? i} className="border-b border-neutral-100 align-top">
-                <td className="py-2 pr-2 text-neutral-500">{i + 1}</td>
+              <tr key={l.id ?? i} className={cn("border-b border-neutral-100 align-top", modern && i % 2 === 1 && "bg-neutral-50")}>
+                <td className={cn("py-2 pr-2 text-neutral-500", modern && "pl-2", compact && "py-1")}>{i + 1}</td>
                 <td className="py-2 pr-2">
                   {l.description}
                   {l.batches?.length ? <span className="block text-xs text-neutral-500">{l.batches.map((b) => `Batch ${b.number}${b.expiry ? ` · Exp ${b.expiry.slice(5, 7)}/${b.expiry.slice(2, 4)}` : ""}${l.batches!.length > 1 ? ` (${b.quantity})` : ""}`).join(", ")}</span> : null}
@@ -146,7 +150,7 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
                 <td className="py-2 pr-2 text-right tabular-nums">{l.discountPaise ? formatPaise(l.discountPaise) : "—"}</td>
                 {!billOfSupply && <td className="py-2 pr-2 text-right tabular-nums">{formatPaise(l.taxablePaise ?? 0)}</td>}
                 {!billOfSupply && <td className="py-2 pr-2 text-right tabular-nums">{l.gstRateBp / 100}%</td>}
-                <td className="py-2 text-right font-medium tabular-nums">{formatPaise(l.totalPaise ?? 0)}</td>
+                <td className={cn("py-2 text-right font-medium tabular-nums", modern && "pr-2")}>{formatPaise(l.totalPaise ?? 0)}</td>
               </tr>
             ))}
           </tbody>
@@ -174,7 +178,7 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
             <div className="flex justify-between"><dt className="text-neutral-500">IGST</dt><dd className="tabular-nums">{formatPaise(doc.igstPaise)}</dd></div>
           )}
           {!!doc.roundOffPaise && <div className="flex justify-between"><dt className="text-neutral-500">Round off</dt><dd className="tabular-nums">{formatPaise(doc.roundOffPaise)}</dd></div>}
-          <div className="flex justify-between border-t border-neutral-300 pt-2 text-base font-semibold"><dt>Total</dt><dd className="tabular-nums">{formatPaise(doc.totalPaise)}</dd></div>
+          <div className={cn("flex justify-between border-t pt-2 font-semibold", compact ? "text-sm" : "text-base", modern ? "rounded-md border-transparent px-2 pb-2 text-white" : "border-neutral-300")} style={modern ? { backgroundColor: brand } : undefined}><dt>Total</dt><dd className="tabular-nums">{formatPaise(doc.totalPaise)}</dd></div>
           {doc.kind === "invoice" && doc.paidPaise > 0 && (
             <>
               {doc.paidPaise > credited && <div className="flex justify-between text-neutral-500"><dt>Paid</dt><dd className="tabular-nums">{formatPaise(doc.paidPaise - credited)}</dd></div>}
@@ -210,7 +214,13 @@ export function SalesDocView({ doc, fallbackSeller, className }: { doc: ViewDoc;
       {doc.kind !== "quotation" && seller && seller.showSignatory !== false && (
         <div className="mt-8 ml-auto w-56 text-center text-xs text-neutral-600">
           <p>For {seller.legalName || seller.name}</p>
-          <div className="mt-10 border-t border-neutral-400 pt-1">Authorised signatory</div>
+          {seller.signatureUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={seller.signatureUrl} alt="Signature" className="mx-auto mt-2 h-12 max-w-full object-contain" />
+          ) : (
+            <div className="h-10" />
+          )}
+          <div className="border-t border-neutral-400 pt-1">Authorised signatory</div>
         </div>
       )}
       <p className="mt-8 text-center text-[11px] text-neutral-400">This is a computer-generated document.</p>

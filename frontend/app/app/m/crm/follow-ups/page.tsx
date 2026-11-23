@@ -14,6 +14,7 @@ import { useApi } from "@/lib/use-api"
 import { waLink } from "@/lib/crm"
 import { formatDateTime } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Tasks and follow-ups across all leads, customers and deals: what is late, what is due today,
 // what is coming. Tick to finish; call or WhatsApp from the row.
@@ -48,7 +49,7 @@ export default function TasksPage() {
   const [done, setDone] = React.useState(false)
   const { data, reload } = useApi<{ data: Row[]; counts?: Record<string, number> }>(`/follow-ups${done ? "?done=true" : ""}`)
   const [now] = React.useState(() => Date.now())
-  if (!can("crm.activity.view")) return <PageHeader title="Tasks" description="You don't have access to tasks. Ask your admin." />
+  if (!can("crm.activity.view")) return <NoAccessPage title="Tasks" permission="crm.activity.view" />
 
   async function toggle(r: Row) {
     try {

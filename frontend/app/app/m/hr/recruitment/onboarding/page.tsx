@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { Field, FormError } from "@/components/form"
@@ -24,6 +23,7 @@ import { formatDate } from "@/lib/format"
 import { useRecords, type HrRecord } from "@/lib/hr"
 import { cn } from "@/lib/utils"
 import { useChanged } from "@/lib/use-dirty"
+import { NoAccessPage } from "@/components/page-states"
 
 // Candidate onboarding: a hired person's first days, run from a checklist, with a buddy.
 
@@ -129,7 +129,7 @@ export default function OnboardingPage() {
   const [editing, setEditing] = React.useState<Row | "new" | null>(null)
   const [viewing, setViewing] = React.useState<Row | null>(null)
   const [deleting, setDeleting] = React.useState<Row | null>(null)
-  if (!can("hr.recruitment.view")) return <PageHeader title="Candidate onboarding" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.recruitment.view")) return <NoAccessPage title="Candidate onboarding" permission="hr.recruitment.view" />
   const reload = () => setVersion((v) => v + 1)
   const today = todayInIndia()
   const columns: Column<Row>[] = [

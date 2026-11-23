@@ -5,10 +5,9 @@ import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { Ban, CalendarDays, CheckCircle2, Eye, Pencil, Plus, Trash2, UserRound, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, periodFilter, type Column, type ViewPreset } from "@/components/data-list"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 import { ActionMenu, Pill } from "@/components/page-parts"
 import { PersonCell, RecordView } from "@/components/record-view"
 import { LeaveWeek } from "@/components/hr/leave-week"
@@ -47,7 +46,7 @@ function Leave() {
   const [cancelling, setCancelling] = React.useState<LeaveApp | null>(null)
   const [viewing, setViewing] = React.useState<LeaveApp | null>(null)
   const rowsRef = React.useRef<LeaveApp[]>([])
-  if (!can("hr.leave.view")) return <PageHeader title="Leave" description="You don't have access to leave. Ask your admin." />
+  if (!can("hr.leave.view")) return <NoAccessPage title="Leave" permission="hr.leave.view" />
   const reload = () => setVersion((v) => v + 1)
   const approve = can("hr.leave.approve")
 

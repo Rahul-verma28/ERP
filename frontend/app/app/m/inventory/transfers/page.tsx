@@ -6,7 +6,6 @@ import { toast } from "sonner"
 import { ArrowLeftRight, ArrowRight, CalendarDays, CheckCheck, Eye, PackageCheck, Plus, Truck } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, type Column } from "@/components/data-list"
 import { Pill } from "@/components/page-parts"
@@ -16,6 +15,7 @@ import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { formatDate } from "@/lib/format"
 import { qty, type StockEntry } from "@/lib/inventory"
+import { NoAccessPage } from "@/components/page-states"
 
 // Moving stock from one warehouse to another. One request brings the rows, the tab counts and the cards.
 
@@ -25,7 +25,7 @@ export default function TransfersPage() {
   const { can } = useAuth()
   const [open, setOpen] = React.useState(false)
   const [version, setVersion] = React.useState(0)
-  if (!can("inventory.stock.view")) return <PageHeader title="Transfers" description="You don't have access to stock. Ask your admin." />
+  if (!can("inventory.stock.view")) return <NoAccessPage title="Transfers" permission="inventory.stock.view" />
   const moved = (r: StockEntry) => r.units ?? r.lines.reduce((n, l) => n + (l.baseQuantity ?? l.quantity ?? 0), 0)
   const receive = async (r: StockEntry) => {
     try {

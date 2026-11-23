@@ -6,11 +6,10 @@ import { toast } from "sonner"
 import { Building2, CheckCircle2, Clock, HandCoins, IndianRupee, Layers, MinusCircle, Pencil, PlusCircle, RotateCcw, Trash2, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState, MoneyInput } from "@/components/common"
 import { Field, FormError, NativeSelect } from "@/components/form"
 import { NumberStepper } from "@/components/number-stepper"
-import { PageError, PageLoading } from "@/components/page-states"
+import { PageError, PageLoading, NoAccessPage } from "@/components/page-states"
 import { ActionMenu, BackLink, DetailHeader, Pill, Section } from "@/components/page-parts"
 import { SalaryDialog } from "@/components/hr/employee-dialogs"
 import { ListSelect } from "@/components/hr/pickers"
@@ -100,7 +99,7 @@ export default function SetSalaryPage() {
   const ots = useApi<{ data: OT[] }>(view ? `/hr/overtime?employeeId=${id}` : null)
   const [open, setOpen] = React.useState<null | { t: "basic" } | { t: "item"; kind: Kind; index: number | null } | { t: "loan" } | { t: "ot"; ot: OT | null }>(null)
   const [removing, setRemoving] = React.useState<null | { t: "item"; index: number } | { t: "loan"; loan: Loan } | { t: "ot"; ot: OT }>(null)
-  if (!view) return <PageHeader title="Set salary" description="You don't have access to payroll. Ask your admin." />
+  if (!view) return <NoAccessPage title="Set salary" permission="hr.payroll.view" what="payroll" />
   if (emp.error) return <PageError error={emp.error} onRetry={() => void emp.reload()} />
   const e = emp.data
   if (!e) return <PageLoading />

@@ -5,7 +5,6 @@ import Link from "next/link"
 import { toast } from "sonner"
 import { CalendarDays, Clock, IndianRupee, Plus, Timer, Trash2, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, periodFilter, remoteList, type Column } from "@/components/data-list"
 import { Avatar, Pill } from "@/components/page-parts"
@@ -17,6 +16,7 @@ import { useAuth } from "@/lib/auth"
 import { useSharedApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { fmtMin, usePeople, type Project, type TimeLog } from "@/lib/tasks"
+import { NoAccessPage } from "@/components/page-states"
 
 // Timesheet: who spent how long on which task or project, by day. Log time here, from a task or
 // from a project. One request brings the entries and the week's totals.
@@ -28,7 +28,7 @@ export default function TimesheetPage() {
   const [version, setVersion] = React.useState(0)
   const [adding, setAdding] = React.useState(false)
   const [removing, setRemoving] = React.useState<TimeLog | null>(null)
-  if (!can("tasks.task.view")) return <PageHeader title="Timesheet" description="You don't have access to tasks. Ask your admin." />
+  if (!can("tasks.task.view")) return <NoAccessPage title="Timesheet" permission="tasks.task.view" />
   const reload = () => setVersion((v) => v + 1)
   const canEdit = can("tasks.task.edit")
 

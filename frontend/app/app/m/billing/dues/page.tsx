@@ -6,12 +6,12 @@ import { Mail, MessageCircle, MessageSquare, Wallet } from "lucide-react"
 import { buttonVariants } from "@/components/ui/button"
 import { EmptyState } from "@/components/common"
 import { DataList, HeaderLink, type Column } from "@/components/data-list"
-import { PageHeader } from "@/components/app-shell"
 import { api, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Who owes money, with reminders sent by hand on WhatsApp, SMS or email: no provider needed.
 // Each message carries the amount, the bills, their share links and the UPI ID.
@@ -60,7 +60,7 @@ export default function DuesPage() {
   const upiId = workspace.data?.preferences.payments.upiId || null
   const origin = typeof window === "undefined" ? "" : window.location.origin
 
-  if (!can("billing.invoice.view")) return <PageHeader title="Dues" description="You don't have access to dues. Ask your admin." />
+  if (!can("billing.invoice.view")) return <NoAccessPage title="Dues" permission="billing.invoice.view" />
 
   const note = (row: DueRow, via: Via) => {
     // Opening WhatsApp or the SMS app is the reminder; this only records it

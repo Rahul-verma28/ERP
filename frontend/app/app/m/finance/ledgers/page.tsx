@@ -4,7 +4,6 @@ import * as React from "react"
 import { toast } from "sonner"
 import { Archive, ArchiveRestore, BookOpen, FilePlus2, Pencil, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { DataList, localList, type Column } from "@/components/data-list"
 import { ActionMenu, Pill } from "@/components/page-parts"
@@ -15,6 +14,7 @@ import { useAuth } from "@/lib/auth"
 import { formatPaise } from "@/lib/format"
 import { GROUP_LABEL, GROUP_TONE, ledgerHref, useLedgers, type Ledger, type LedgerGroup } from "@/lib/finance"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 /** A row of the list: keyed by ledger key; ledgerId is set only on ledgers you added */
 type Row = Omit<Ledger, "id"> & { id: string; ledgerId?: string }
@@ -35,7 +35,7 @@ export default function LedgersPage() {
   const [editing, setEditing] = React.useState<Row | "new" | null>(null)
   const [journalFor, setJournalFor] = React.useState<string | null>(null)
   const [deleting, setDeleting] = React.useState<Row | null>(null)
-  if (!can("finance.expense.view")) return <PageHeader title="Chart of accounts" description="You don't have access to finance. Ask your admin." />
+  if (!can("finance.expense.view")) return <NoAccessPage title="Chart of accounts" permission="finance.expense.view" />
   const reload = () => { setVersion((v) => v + 1); void shared.reload() }
 
   async function toggle(l: Row) {

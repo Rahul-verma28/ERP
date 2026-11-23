@@ -205,6 +205,8 @@ export interface WorkspacePreferences {
     quotationTerms: string;
     showHsnSummary: boolean;
     showSignatory: boolean;
+    /** Signature image printed above "Authorised signatory" ("file:<id>"; empty = a blank line to sign) */
+    signatureUrl: string | null;
   };
   payments: {
     bankHolder: string;
@@ -243,6 +245,40 @@ export interface WorkspacePreferences {
     /** Expenses above this amount need the bill or receipt attached (null = never required) */
     receiptRequiredAbovePaise: number | null;
   };
+  /** Settings › Module settings › Sales */
+  sales: {
+    /** Quotations: days the rates hold ("Valid until") */
+    quotationValidDays: number;
+    /** Sales orders and delivery challans: days to "Deliver by" */
+    deliveryDays: number;
+    /** Invoices to customers with no payment days of their own (null = due on the bill date) */
+    invoiceDueDays: number | null;
+    /** A bill that takes a customer over their credit limit: stopped (someone who can approve may still issue it), or allowed */
+    creditLimit: 'block' | 'allow';
+  };
+  /** Settings › Module settings › Purchase (purchase orders on/off stays in inventory) */
+  purchase: {
+    /** Supplier bills from suppliers with no payment days of their own (null = no due date) */
+    billDueDays: number | null;
+    /** Purchase orders: days to "Expected by" (null = left empty) */
+    poExpectedDays: number | null;
+  };
+  /** Settings › Module settings › Items: what a new item starts with */
+  items: {
+    defaultUnit: string;
+    /** New products count stock */
+    trackStock: boolean;
+    /** Low stock level filled in on new products (null = none) */
+    lowStockLevel: number | null;
+  };
+  /** Settings › Module settings › Tasks */
+  tasks: {
+    defaultPriority: 'low' | 'medium' | 'high' | 'urgent';
+    /** Labels offered when tagging a task (others can still be typed) */
+    labels: string[];
+    /** Remind the person a task is given to: on the due day, the day before, or not at all */
+    dueReminder: 'off' | 'due_day' | 'day_before';
+  };
   branding: {
     brandColor: string;
     /** THEME_PRESETS key */
@@ -255,11 +291,15 @@ export interface WorkspacePreferences {
 }
 
 export const DEFAULT_PREFERENCES: WorkspacePreferences = {
-  documents: { invoicePrefix: 'INV/{FY}/', quotationPrefix: 'QT/{FY}/', receiptPrefix: 'RCT/{FY}/', creditNotePrefix: 'CN/{FY}/', salesOrderPrefix: 'SO/{FY}/', deliveryChallanPrefix: 'DC/{FY}/', debitNotePrefix: 'DN/{FY}/', purchaseOrderPrefix: 'PO/{FY}/', goodsReceiptPrefix: 'GRN/{FY}/', purchaseBillPrefix: 'PB/{FY}/', purchaseReturnPrefix: 'PR/{FY}/', supplierPaymentPrefix: 'PAY/{FY}/', expensePrefix: 'EXP/{FY}/', incomePrefix: 'INC/{FY}/', transferPrefix: 'TRF/{FY}/', journalPrefix: 'JV/{FY}/', template: 'classic', paper: 'a4', terms: '', quotationTerms: '', showHsnSummary: true, showSignatory: true },
+  documents: { invoicePrefix: 'INV/{FY}/', quotationPrefix: 'QT/{FY}/', receiptPrefix: 'RCT/{FY}/', creditNotePrefix: 'CN/{FY}/', salesOrderPrefix: 'SO/{FY}/', deliveryChallanPrefix: 'DC/{FY}/', debitNotePrefix: 'DN/{FY}/', purchaseOrderPrefix: 'PO/{FY}/', goodsReceiptPrefix: 'GRN/{FY}/', purchaseBillPrefix: 'PB/{FY}/', purchaseReturnPrefix: 'PR/{FY}/', supplierPaymentPrefix: 'PAY/{FY}/', expensePrefix: 'EXP/{FY}/', incomePrefix: 'INC/{FY}/', transferPrefix: 'TRF/{FY}/', journalPrefix: 'JV/{FY}/', template: 'classic', paper: 'a4', terms: '', quotationTerms: '', showHsnSummary: true, showSignatory: true, signatureUrl: null },
   payments: { bankHolder: '', bankAccount: '', ifsc: '', upiId: '', showUpiQr: false },
   taxes: { composition: false, compositionRateBp: null, pricesIncludeTax: true, roundOff: false, defaultGstRateBp: 1800, hsnDigits: 4, reverseCharge: false, eInvoicing: false },
   inventory: { blockNegative: false, adjustmentApprovalPaise: 500_000, backdateDays: 7, valuation: 'average', nearExpiryDays: 30, purchaseOrders: false },
   finance: { receiptRequiredAbovePaise: null },
+  sales: { quotationValidDays: 30, deliveryDays: 7, invoiceDueDays: null, creditLimit: 'block' },
+  purchase: { billDueDays: null, poExpectedDays: null },
+  items: { defaultUnit: 'pcs', trackStock: true, lowStockLevel: null },
+  tasks: { defaultPriority: 'medium', labels: [], dueReminder: 'due_day' },
   branding: { brandColor: '#2450D8', preset: 'default', theme: 'system', font: 'inter', density: 'comfortable' },
 };
 
@@ -275,6 +315,10 @@ export function withDefaults(stored: unknown, profile?: unknown): WorkspacePrefe
     taxes: { ...DEFAULT_PREFERENCES.taxes, ...(s.taxes ?? {}) },
     inventory: { ...DEFAULT_PREFERENCES.inventory, ...(s.inventory ?? {}) },
     finance: { ...DEFAULT_PREFERENCES.finance, ...(s.finance ?? {}) },
+    sales: { ...DEFAULT_PREFERENCES.sales, ...(s.sales ?? {}) },
+    purchase: { ...DEFAULT_PREFERENCES.purchase, ...(s.purchase ?? {}) },
+    items: { ...DEFAULT_PREFERENCES.items, ...(s.items ?? {}) },
+    tasks: { ...DEFAULT_PREFERENCES.tasks, ...(s.tasks ?? {}) },
     branding: { ...DEFAULT_PREFERENCES.branding, ...(s.branding ?? {}) },
   } as WorkspacePreferences;
 }

@@ -9,13 +9,13 @@ import { Button } from "@/components/ui/button"
 import { StockDialog } from "@/components/stock-dialogs"
 import { EmptyState } from "@/components/common"
 import { DataList, type Column, type FilterDef } from "@/components/data-list"
-import { PageHeader } from "@/components/app-shell"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 import { formatDate, formatPaise } from "@/lib/format"
 import { SummaryCards } from "@/components/summary-cards"
 import { qty, type StockLocation, type StockRow } from "@/lib/inventory"
 import { FileImg } from "@/components/file-field"
+import { NoAccessPage } from "@/components/page-states"
 
 // Stock on hand: one row per tracked item, all warehouses or one. Sales and purchases move it by themselves.
 
@@ -26,7 +26,7 @@ function StockList() {
   const showValue = can("inventory.valuation.view") || can("inventory.receipt.create")
   const [open, setOpen] = React.useState<{ kind: "add" | "adjust" | "move"; row: StockRow | null } | null>(null)
   const [version, setVersion] = React.useState(0)
-  if (!can("inventory.stock.view")) return <PageHeader title="Stock" description="You don't have access to stock. Ask your admin." />
+  if (!can("inventory.stock.view")) return <NoAccessPage title="Stock" permission="inventory.stock.view" />
 
   const columns: Column<StockRow>[] = [
     {

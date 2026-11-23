@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { PageHeader } from "@/components/app-shell"
 import { ConfirmDialog, EmptyState } from "@/components/common"
 import { countBy, DataList, localList, type Column, type ViewPreset } from "@/components/data-list"
 import { Field, FormError } from "@/components/form"
@@ -21,6 +20,7 @@ import { formatDate } from "@/lib/format"
 import { useHrLookups } from "@/lib/hr"
 import { cn } from "@/lib/utils"
 import { useChanged } from "@/lib/use-dirty"
+import { NoAccessPage } from "@/components/page-states"
 
 // Performance reviews: set one up (who, reviewer, cycle), then rate each area out of 5.
 
@@ -133,7 +133,7 @@ export default function ReviewsPage() {
   const [editing, setEditing] = React.useState<Review | "new" | null>(null)
   const [conducting, setConducting] = React.useState<Review | null>(null)
   const [deleting, setDeleting] = React.useState<Review | null>(null)
-  if (!can("hr.performance.view")) return <PageHeader title="Reviews" description="You don't have access to this. Ask your admin." />
+  if (!can("hr.performance.view")) return <NoAccessPage title="Reviews" permission="hr.performance.view" />
   const reload = () => setVersion((v) => v + 1)
   const columns: Column<Review>[] = [
     { key: "employee", header: "Employee", hideable: false, sort: (r) => r.employee, csv: (r) => r.employee, cell: (r) => <span className="flex items-center gap-2.5"><Avatar name={r.employee} className="size-8" /><span><span className="block font-medium">{r.employee}</span><span className="font-mono text-xs text-muted-foreground">{r.employeeCode}</span></span></span> },

@@ -17,7 +17,7 @@ import { useApi } from "@/lib/use-api"
 import { downloadCsv, parseCsv } from "@/lib/csv"
 import { qty, type BatchRow, type StockEntry, type StockLocation } from "@/lib/inventory"
 import { todayInIndia } from "@contracts/validation"
-import { PageLoading } from "@/components/page-states"
+import { PageLoading, NoAccessPage } from "@/components/page-states"
 
 // Opening stock or a stock count from a spreadsheet saved as CSV. Items are matched by SKU,
 // barcode or exact name; every row is checked and shown before anything is posted.
@@ -56,7 +56,7 @@ function ImportStock() {
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
 
-  if (!can(kind === "count" ? "inventory.stock_count.create" : "inventory.receipt.create")) return <PageHeader title="Import stock" description="You don't have access to this. Ask your admin." />
+  if (!can(kind === "count" ? "inventory.stock_count.create" : "inventory.receipt.create")) return <NoAccessPage title="Import stock" permission={kind === "count" ? "inventory.stock_count.create" : "inventory.receipt.create"} />
   if (!locations.data) return <PageLoading />
 
   async function read(f: File) {

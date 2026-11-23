@@ -6,7 +6,6 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { AlarmClock, Ban, CalendarCheck, CalendarDays, Check, CheckCheck, Eye, FileText, IndianRupee, MessageCircle, Pencil, Plus, UserX } from "lucide-react"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
 import { DataList, type Column, type ViewPreset } from "@/components/data-list"
 import { ActionMenu, Avatar, Pill } from "@/components/page-parts"
@@ -18,6 +17,7 @@ import { useSharedApi } from "@/lib/use-api"
 import { formatDate, formatDateTime, formatPaise } from "@/lib/format"
 import { SOURCE, STATUS, isOpen, reminderLink, timeOf, type Appointment, type Service, type StaffRow } from "@/lib/bookings"
 import { cn } from "@/lib/utils"
+import { NoAccessPage } from "@/components/page-states"
 
 // Appointments as a list: what is ahead, today, to confirm, done, not yet invoiced, cancelled and
 // no-shows, each a tab with its count. Every step of the day from the row.
@@ -35,7 +35,7 @@ function ListPage() {
   const [editing, setEditing] = React.useState<Appointment | null>(null)
   const [viewing, setViewing] = React.useState<Appointment | null>(null)
   const [cancelling, setCancelling] = React.useState<Appointment | null>(null)
-  if (!can("bookings.appointment.view")) return <PageHeader title="Appointments" description="You don't have access to appointments. Ask your admin." />
+  if (!can("bookings.appointment.view")) return <NoAccessPage title="Appointments" permission="bookings.appointment.view" />
   const reload = () => setVersion((v) => v + 1)
   const canEdit = can("bookings.appointment.edit")
   const started = (a: Appointment) => new Date(a.startAt).getTime() <= Date.now() + 15 * 60_000

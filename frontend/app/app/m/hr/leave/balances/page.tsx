@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { PageHeader } from "@/components/app-shell"
 import { EmptyState } from "@/components/common"
-import { PageError, PageLoading } from "@/components/page-states"
+import { PageError, PageLoading, NoAccessPage } from "@/components/page-states"
 import { Avatar } from "@/components/page-parts"
 import { HrTabs, TABS } from "@/components/hr/pickers"
 import { useAuth } from "@/lib/auth"
@@ -26,7 +26,7 @@ export default function LeaveBalancesPage() {
   const { can } = useAuth()
   const { data, error, reload } = useApi<Bal>(can("hr.leave.view") ? "/hr/leave-balances" : null)
   const [q, setQ] = React.useState("")
-  if (!can("hr.leave.view")) return <PageHeader title="Leave balance" description="You don't have access to leave. Ask your admin." />
+  if (!can("hr.leave.view")) return <NoAccessPage title="Leave balance" permission="hr.leave.view" />
   const rows = (data?.data ?? []).filter((r) => !q || `${r.name} ${r.code}`.toLowerCase().includes(q.toLowerCase()))
   const exportCsv = () => data && downloadCsv("leave-balances.csv", [["ID", "Employee", ...data.types.flatMap((t) => [`${t.code} total`, `${t.code} used`, `${t.code} left`])], ...rows.map((r) => [r.code, r.name, ...data.types.flatMap((t) => { const l = r.leave.find((x) => x.typeId === t.id); return [l?.allowed ?? 0, l?.used ?? 0, l?.left ?? ""] })])])
   return (
