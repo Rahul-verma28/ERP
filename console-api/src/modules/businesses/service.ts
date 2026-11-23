@@ -51,7 +51,7 @@ export const CreateInput = z.object({
   /** Trial: Professional for the trial days, then Free. Paid: the chosen plan opens after the first payment. */
   start: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('trial') }),
-    z.object({ kind: z.literal('paid'), planKey: z.string(), cycle: z.enum(['monthly', 'yearly']) }),
+    z.object({ kind: z.literal('paid'), planKey: z.string(), cycle: z.enum(['monthly', 'yearly']), extraUsers: z.number().int().min(0).max(500).default(0), couponCode: z.string().trim().toUpperCase().max(20).nullish(), discountPct: z.number().int().min(1).max(100).nullish() }),
   ]),
   /** Admin and Staff may add a business for a partner */
   partnerId: z.string().uuid().nullish(),

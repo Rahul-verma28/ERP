@@ -219,6 +219,7 @@ model Business {
   overrides    ModuleOverride[]
   licences     Licence[]
   notes        Note[]
+  orders       Order[]
 
   @@index([partnerId])
   @@index([onboardedById])
@@ -345,4 +346,147 @@ model SeenCall {
   at    DateTime @default(now()) @db.Timestamptz
 
   @@map("seen_calls")
+}
+
+// ── Billing ──
+// Amounts are in paise (Int: up to ₹2.14 crore per document, far above any subscription order).
+
+enum OrderStatus {
+  pending_approval
+  awaiting_payment
+  paid
+  cancelled
+  expired
+
+  @@map("order_status")
+}
+
+/// What a business (or its partner) is asked to pay: a plan for a period, with extra users
+model Order {
+  id            String      @id @default(uuid(7)) @db.Uuid
+  businessId    String      @map("business_id") @db.Uuid
+  /// new | renewal | change
+  kind          String
+  status        OrderStatus @default(awaiting_payment)
+  planKey       String      @map("plan_key")
+  cycle         String
+  extraUsers    Int         @default(0) @map("extra_users")
+  /// [{ description, sac, quantity, unitPaise, amountPaise }]
+  lines         Json
+  listPaise     Int         @map("list_paise")
+  /// One discount per order: a coupon, or a percent given by the person who made the order
+  couponCode    String?     @map("coupon_code")
+  discountPct   Int?        @map("discount_pct")
+  discountPaise Int         @default(0) @map("discount_paise")
+  taxablePaise  Int         @map("taxable_paise")
+  cgstPaise     Int         @default(0) @map("cgst_paise")
+  sgstPaise     Int         @default(0) @map("sgst_paise")
+  igstPaise     Int         @default(0) @map("igst_paise")
+  totalPaise    Int         @map("total_paise")
+  /// Who pays: the business, or its partner. Name, GSTIN, state, email, mobile at order time.
+  billTo        Json        @map("bill_to")
+  createdById   String?     @map("created_by_id") @db.Uuid
+  approvedById  String?     @map("approved_by_id") @db.Uuid
+  approvedAt    DateTime?   @map("approved_at") @db.Timestamptz
+  cancelReason  String?     @map("cancel_reason")
+  expiresAt     DateTime    @map("expires_at") @db.Timestamptz
+  paidAt        DateTime?   @map("paid_at") @db.Timestamptz
+  linkId        String?     @unique @map("link_id")
+  linkUrl       String?     @map("link_url")
+  linkSentAt    DateTime?   @map("link_sent_at") @db.Timestamptz
+  createdAt     DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  payments Payment[]
+  invoice  Invoice?
+
+  @@index([businessId, createdAt])
+  @@index([status, expiresAt])
+  @@map("orders")
+}
+
+model Payment {
+  id               String   @id @default(uuid(7)) @db.Uuid
+  orderId          String   @map("order_id") @db.Uuid
+  businessId       String   @map("business_id") @db.Uuid
+  /// online | bank | upi | cheque | cash
+  method           String
+  amountPaise      Int      @map("amount_paise")
+  reference        String?
+  gatewayPaymentId String?  @unique @map("gateway_payment_id")
+  receivedAt       DateTime @map("received_at") @db.Timestamptz
+  recordedById     String?  @map("recorded_by_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("payments")
+}
+
+/// AHEAD's GST invoice: numbered when the order is paid, never changed
+model Invoice {
+  id           String      @id @default(uuid(7)) @db.Uuid
+  number       String      @unique
+  fy           String
+  businessId   String      @map("business_id") @db.Uuid
+  orderId      String      @unique @map("order_id") @db.Uuid
+  seller       Json
+  billTo       Json        @map("bill_to")
+  lines        Json
+  taxablePaise Int         @map("taxable_paise")
+  cgstPaise    Int         @map("cgst_paise")
+  sgstPaise    Int         @map("sgst_paise")
+  igstPaise    Int         @map("igst_paise")
+  totalPaise   Int         @map("total_paise")
+  issuedAt     DateTime    @default(now()) @map("issued_at") @db.Timestamptz
+  order        Order       @relation(fields: [orderId], references: [id])
+  creditNote   CreditNote?
+
+  @@index([businessId])
+  @@map("invoices")
+}
+
+/// A full credit note against one invoice (a refund), never changed
+model CreditNote {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  number       String   @unique
+  fy           String
+  businessId   String   @map("business_id") @db.Uuid
+  invoiceId    String   @unique @map("invoice_id") @db.Uuid
+  reason       String
+  taxablePaise Int      @map("taxable_paise")
+  cgstPaise    Int      @map("cgst_paise")
+  sgstPaise    Int      @map("sgst_paise")
+  igstPaise    Int      @map("igst_paise")
+  totalPaise   Int      @map("total_paise")
+  createdById  String   @map("created_by_id") @db.Uuid
+  issuedAt     DateTime @default(now()) @map("issued_at") @db.Timestamptz
+  invoice      Invoice  @relation(fields: [invoiceId], references: [id])
+
+  @@map("credit_notes")
+}
+
+/// Every payment gateway event, kept once by its id (the same event twice does nothing)
+model WebhookEvent {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  gateway     String
+  eventId     String    @unique @map("event_id")
+  type        String
+  payload     Json
+  receivedAt  DateTime  @default(now()) @map("received_at") @db.Timestamptz
+  processedAt DateTime? @map("processed_at") @db.Timestamptz
+  error       String?
+
+  @@map("webhook_events")
+}
+
+/// Running numbers per document type and financial year (AHD/26-27/000001)
+model Sequence {
+  docType String @map("doc_type")
+  fy      String
+  nextNo  Int    @default(1) @map("next_no")
+
+  @@id([docType, fy])
+  @@map("sequences")
 }

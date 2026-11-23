@@ -34,6 +34,20 @@ npm run import:erp
 Calls go through the `deliveries` outbox (every 3 s, retried with growing waits up to 1 hour,
 12 tries, then shown in System health). Licences are renewed hourly before half their life.
 
+## Billing
+
+Orders (a plan for a month or a year, extra users, one discount: a coupon or a percent within the
+role's limit, else Admin approves) → a Razorpay payment link emailed to whoever pays (the owner, or
+the partner for a partner's client). Without Razorpay keys, development uses a test gateway whose
+page is on this API. A paid order, online (signed webhook, each event once) or recorded by the
+team (bank, UPI, cheque, cash), issues the GST invoice (AHD/26-27/000001), puts the subscription on
+the plan for the period and sends the licence. Admin can issue a credit note, optionally ending the
+plan. Hourly: renewal orders before the period ends, past due with grace, then Free; unpaid orders
+expire; a business whose first order lapsed closes.
+
+Outside production every Console email goes to `MAIL_REDIRECT_TO` (default: the SMTP mailbox), so
+test data never mails real people.
+
 ## Roles
 
 Admin (everything) · Staff (businesses, plans on businesses) · Sales and Vendor (add businesses,
@@ -47,4 +61,5 @@ npm run typecheck
 npm test
 PORT=5101 SMTP_HOST= npx tsx src/server.ts   # a second API with email off
 npx tsx scripts/e2e.ts                         # sign-in, two-step, add a business, plan/close/reopen through the ERP
+npx tsx scripts/e2e-billing.ts                 # order, payment link, webhook, invoice, approval, offline payment, credit note
 ```

@@ -5,7 +5,7 @@ Status: approved direction (23 Nov 2026), being built in phases. Owner: Rahul.
 | Phase | State |
 |---|---|
 | 1. Licence in the ERP | Done: signed licences, `tenant_licences`, entitlements from the licence, provisioning API, closed-business screen |
-| 2. console-api | Core done: own service and database, staff login with two-step, plans and coupons, businesses and subscriptions, licences issued and delivered through the outbox, team, system health, import from the ERP. Billing (orders, payments, invoices), partners admin, leads: next |
+| 2. console-api | Core done: own service and database, staff login with two-step, plans and coupons, businesses and subscriptions, licences issued and delivered through the outbox, team, system health, import from the ERP. Billing done: orders with one discount and approval, Razorpay links (dev test gateway), webhooks, offline payments, GST invoices, credit notes, renewals, grace and Free. The ERP no longer runs trial or billing jobs. Partners admin and leads: next |
 | 3. Flows rewired | Not started |
 | 4. console-web | Not started |
 | 5. Clean up | Not started |

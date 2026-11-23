@@ -3,6 +3,7 @@ import { env } from './config/env';
 import { runTracked } from './kernel/jobs';
 import { runDeliveries } from './modules/erp/deliveries';
 import { runLicenceJobs } from './modules/licences/jobs';
+import { runBillingJobs } from './modules/billing/jobs';
 
 const server = app.listen(env.PORT, () => {
   console.log(`🧭 Console API on http://localhost:${env.PORT} (ERP: ${env.ERP_URL}, deployment ${env.DEPLOYMENT_ID})`);
@@ -24,13 +25,15 @@ if (env.RUN_WORKER) {
     }
   };
   const hourly = async () => {
-    const err = await runTracked('licences', () => runLicenceJobs());
-    if (err && err !== 'Already running.') console.error('[licences]', err);
+    for (const [name, run] of [['billing', runBillingJobs], ['licences', runLicenceJobs]] as const) {
+      const err = await runTracked(name, () => run());
+      if (err && err !== 'Already running.') console.error(`[${name}]`, err);
+    }
   };
   setInterval(() => void tick(), 3_000).unref();
   setInterval(() => void hourly(), 3_600_000).unref();
   setTimeout(() => void hourly(), 10_000).unref();
-  console.log('⚙️  Worker: ERP calls every 3 s, licences and trials hourly');
+  console.log('⚙️  Worker: ERP calls every 3 s, billing, licences and trials hourly');
 }
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => server.close(() => process.exit(0)));

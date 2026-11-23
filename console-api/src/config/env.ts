@@ -26,6 +26,14 @@ const EnvSchema = z.object({
   SMTP_USER: z.string().optional(),
   SMTP_PASS: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
+  /** Where this API is reached from outside (payment pages, gateway webhooks) */
+  PUBLIC_URL: z.string().url().default('http://localhost:5100'),
+  // Razorpay payment links. Without keys, development uses a built-in test gateway.
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  /** Every email goes to this address instead (subject names the real recipient). Development: SMTP_USER unless set. */
+  MAIL_REDIRECT_TO: z.string().email().optional(),
   RUN_WORKER: z.string().default('true').transform((v) => v !== 'false'),
 });
 
@@ -36,6 +44,6 @@ if (!parsed.success) {
   process.exit(1);
 }
 
-export const env = parsed.data;
+export const env = { ...parsed.data, MAIL_REDIRECT_TO: parsed.data.MAIL_REDIRECT_TO ?? (parsed.data.NODE_ENV === 'production' ? undefined : parsed.data.SMTP_USER) };
 export const isDev = env.NODE_ENV !== 'production';
 export const testing = env.NODE_ENV === 'test' || !!process.env.VITEST;

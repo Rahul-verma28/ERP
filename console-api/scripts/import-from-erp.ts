@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { Client } from 'pg';
-import type { ConsoleRole, OnboardedBy, SubStatus } from '@prisma/client';
+import type { ConsoleRole, OnboardedBy, Prisma, SubStatus } from '@prisma/client';
 import { prisma } from '../src/kernel/db';
 import { issueLicence } from '../src/modules/licences/service';
 
@@ -92,6 +92,12 @@ async function main() {
       await issueLicence(tx, r.id);
     });
     businesses++;
+  }
+  // AHEAD's own invoice details
+  const [seller] = await q<{ value: Record<string, unknown> }>("SELECT value FROM config_values WHERE key = 'ahead.billing' LIMIT 1");
+  if (seller) {
+    const cur = ((await prisma.setting.findUnique({ where: { key: 'seller' } }))?.value ?? {}) as Record<string, unknown>;
+    await prisma.setting.upsert({ where: { key: 'seller' }, create: { key: 'seller', value: { ...cur, ...seller.value } as Prisma.InputJsonValue }, update: { value: { ...cur, ...seller.value } as Prisma.InputJsonValue } });
   }
   await erp.end();
   console.log(`import: ${partners.length} partners, ${staff} Console people, ${businesses} businesses (licences queued for the ERP)`);

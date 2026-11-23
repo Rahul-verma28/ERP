@@ -40,6 +40,14 @@ const SETTINGS: Record<string, Prisma.InputJsonValue> = {
   'renewal.grace_days': 7,
   /** Largest discount each role may give on one order (percent) */
   'discount.limits': { admin: 100, staff: 15, sales: 10, vendor: 5, partner_owner: 0, partner_staff: 0 },
+  /** AHEAD's own details on its invoices. SAC and rate: confirm with the CA. */
+  seller: { legalName: 'AHEAD Software', gstin: '', stateCode: '', address: '', email: '', sac: '998314', gstRateBp: 1800 },
+  /** First payment of a business that signed up with a referral code */
+  'referral.welcome_discount_percent': 10,
+  /** Days an unpaid first order stays open before it lapses */
+  'orders.pay_within_days': 14,
+  /** Days before the period ends that the renewal order goes out */
+  'renewal.notice_days': 7,
 };
 
 async function main() {

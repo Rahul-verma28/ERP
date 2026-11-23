@@ -4,6 +4,7 @@ import type { Prisma } from '@prisma/client';
 import { prisma } from '../../kernel/db';
 import { validate } from '../../middleware/request';
 import { allow, requireStaff } from '../../middleware/auth';
+import { createOrder } from '../billing/service';
 import { CreateInput, closeBusiness, createBusiness, extendTrial, findScoped, refreshFacts, reopenBusiness, resendOwnerLink, scopeOf, setModule, setPlan } from './service';
 
 const router = Router();
@@ -37,7 +38,11 @@ router.get('/', validate(ListQuery, 'query'), async (req, res) => {
 });
 
 router.post('/', allow('admin', 'staff', 'sales', 'vendor', 'partner_owner', 'partner_staff'), validate(CreateInput), async (req, res) => {
-  res.status(201).json(await createBusiness(req.staff!, req.body));
+  const b = await createBusiness(req.staff!, req.body);
+  // Starting on a paid plan: the first order and its payment link go out at once
+  const start = req.body.start as CreateInput['start'];
+  const order = start.kind === 'paid' ? await createOrder(req.staff!, b.id, { planKey: start.planKey, cycle: start.cycle, extraUsers: start.extraUsers, couponCode: start.couponCode, discountPct: start.discountPct }) : null;
+  res.status(201).json({ ...b, firstOrder: order && { id: order.id, status: order.status, totalPaise: order.totalPaise, linkUrl: order.linkUrl } });
 });
 
 router.get('/:id', validate(Id, 'params'), async (req, res) => {

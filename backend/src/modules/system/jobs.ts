@@ -1,19 +1,16 @@
 import { prisma } from '../../kernel/db';
 import { JobTally, reason } from '../../kernel/jobs';
-import { runTrialExpiry } from '../subscription/jobs';
-import { runBillingJobs } from '../platformBilling/jobs';
 import { runAutoFollowups } from '../console/sales';
 import { runCleanup } from './cleanup';
 import { runSupportAutoClose } from '../support/jobs';
 import { runTaskReminders } from '../tasks/jobs';
 
-// The scheduled jobs and their last run (Console › System health). The worker runs them hourly;
+// The scheduled jobs and their last run (Console › System health). Trials, renewals and billing
+// moved to console-api (docs/architecture/console-erp-split.md); they no longer run here. The worker runs them hourly;
 // an Admin can run one now. Each job is safe to run again: it only acts on what is due, and each
 // item in it runs on its own, so one bad business never stops the rest.
 
 export const JOBS = {
-  trial_expiry: { label: 'Trial endings', text: 'Ends free trials that are over and moves the business to Free', run: () => runTrialExpiry() },
-  billing: { label: 'Renewals & payments', text: 'Renewal orders, overdue payments, unpaid orders, trial reminders and module switches that ended', run: () => runBillingJobs() },
   followups: { label: 'Sales follow-ups', text: 'Creates follow-up reminders for the Console sales team', run: () => runAutoFollowups() },
   support_auto_close: { label: 'Close solved tickets', text: 'Closes resolved tickets the customer did not reopen, after the days set in Customer Service', run: () => runSupportAutoClose() },
   task_reminders: { label: 'Task reminders', text: 'Tells people their task is due, on the day each business chose in Settings › Tasks', run: () => runTaskReminders() },
