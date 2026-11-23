@@ -252,7 +252,7 @@ function CloseCard() {
   const router = useRouter()
   const t = me?.tenant
   const [name, setName] = React.useState("")
-  const [sent, setSent] = React.useState<{ mobile: string; devCode?: string } | null>(null)
+  const [sent, setSent] = React.useState<{ mobile: string } | null>(null)
   const [code, setCode] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -320,7 +320,6 @@ function CloseCard() {
           <>
             <span className="text-xs font-semibold">Code sent to {sent.mobile}</span>
             <OtpInput size="sm" value={code} onChange={setCode} autoFocus={false} />
-            {sent.devCode && <p className="text-xs text-muted-foreground">Development code: {sent.devCode}</p>}
           </>
         ) : (
           <Button variant="outline" size="sm" disabled={!nameOk || busy} onClick={sendCode}>

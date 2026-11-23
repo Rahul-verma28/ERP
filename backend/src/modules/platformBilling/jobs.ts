@@ -1,4 +1,4 @@
-import { db, withPlatform, withTenant } from '../../kernel/db';
+import { db, withPlatform } from '../../kernel/db';
 import { cache } from '../../kernel/cache';
 import { sendMessage } from '../notifications/service';
 import { getSetting } from '../settings/service';
@@ -159,7 +159,7 @@ export async function runTrialReminders(now = new Date(), tally = new JobTally()
 export async function runExpireModuleSwitches(now = new Date(), tally = new JobTally()) {
   const tenantIds = await withPlatform(() => expireOverrides(now));
   for (const tenantId of tenantIds) {
-    await tally.item(`module switch · business ${tenantId}`, () => withTenant({ kind: 'system', tenantId }, () => persistEntitlements(tenantId)));
+    await tally.item(`module switch · business ${tenantId}`, () => withPlatform(() => persistEntitlements(tenantId)));
   }
   tally.note(tenantIds.length > 0 && `module switches ended for ${tenantIds.length} business(es)`);
   return tally;

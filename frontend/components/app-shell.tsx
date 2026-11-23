@@ -28,6 +28,7 @@ import { formatDateTime, initials } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { useApi } from "@/lib/use-api"
 import { BreadcrumbProvider, Breadcrumbs } from "@/components/breadcrumbs"
+import { WorkspaceGate } from "@/components/workspace-gate"
 
 export function NavLink({ href, active, children, onClick }: { href: string; active: boolean; children: React.ReactNode; onClick?: () => void }) {
   return (
@@ -541,7 +542,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <main className={cn("w-full flex-1", fullBleed ? "flex min-w-0 flex-col" : "px-4 py-5 sm:px-6")}>
             {!fullBleed && <Breadcrumbs />}
             <ReadOnlyNotice />
-            {children}
+            <WorkspaceGate>{children}</WorkspaceGate>
           </main>
         </div>
       </div>

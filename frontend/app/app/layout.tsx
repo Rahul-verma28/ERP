@@ -14,7 +14,7 @@ function FullScreen({ children }: { children: React.ReactNode }) {
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const { status, me, retry, switchToConsole } = useAuth()
+  const { status, me, retry, switchToConsole, switchTenant } = useAuth()
   const [retrying, setRetrying] = React.useState(false)
 
   const inConsole = status === "authenticated" && me?.workspace === "console"
@@ -80,8 +80,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     return (
       <FullScreen>
         <div className="max-w-sm">
-          <p className="font-medium text-foreground">No active business</p>
-          <p className="mt-1">You&apos;re not an active member of any business yet. Ask your administrator for an invitation.</p>
+          {me.memberships.some((m) => m.status !== "purged") ? (
+            <>
+              <p className="font-medium text-foreground">Choose a business</p>
+              <p className="mt-1">The business you were in is no longer open to you. Pick one of yours to continue.</p>
+              <div className="mt-4 grid gap-2 text-left">
+                {me.memberships.filter((m) => m.status !== "purged").map((m) => (
+                  <Button key={m.tenantId} variant="outline" className="h-auto justify-between py-2.5" onClick={() => void switchTenant(m.tenantId)}>
+                    <span className="truncate font-medium">{m.name}</span>
+                    <span className="text-xs text-muted-foreground">{m.roleName}</span>
+                  </Button>
+                ))}
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="font-medium text-foreground">No active business</p>
+              <p className="mt-1">You&apos;re not an active member of any business yet. Ask your administrator for an invitation.</p>
+            </>
+          )}
           {me.console && (
             <Button className="mt-4" onClick={() => switchToConsole().then(() => router.replace("/console"))}>
               Open the AHEAD Console

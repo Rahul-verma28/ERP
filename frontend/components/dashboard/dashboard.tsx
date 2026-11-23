@@ -3,13 +3,14 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { ChevronDown, GripVertical, Plus } from "lucide-react"
+import { ChevronDown, GripVertical, LayoutDashboard, Plus } from "lucide-react"
 import { addDays, daysBetween, type DashboardLayout, type DashboardPrefs, type DashboardTab, type RangePreset } from "@contracts/dashboard"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
+import { LockedPage } from "@/components/page-states"
 import { Field, NativeSelect } from "@/components/form"
 import { ErrorState } from "@/components/page-states"
 import { useAuth } from "@/lib/auth"
@@ -64,7 +65,11 @@ export function Dashboard() {
     )
   }
   if (!data.tabs.length) {
-    return <p className="ui-surface p-6 text-sm text-muted-foreground">Your role has no dashboard. Use the menu to open your work.</p>
+    return (
+      <LockedPage title="Dashboard" icon={<LayoutDashboard className="size-5" />} heading="Nothing to show here yet">
+        Your role has no dashboard. Open your work from the menu on the left.
+      </LockedPage>
+    )
   }
   return <DashboardView config={data} />
 }

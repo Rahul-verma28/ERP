@@ -130,7 +130,8 @@ export async function startContactChange(userId: string, kind: Kind, value: stri
   const sent = await sendOtp(value, purposeOf(kind));
   // The code proves the new address; this token proves the password was checked
   const changeToken = signPurposeToken(`${kind}_change`, { sub: userId, value }, 10 * 60);
-  return { changeToken, devCode: sent.devCode };
+  void sent;
+  return { changeToken };
 }
 
 export async function confirmContactChange(req: Request, userId: string, kind: Kind, changeToken: string, code: string) {

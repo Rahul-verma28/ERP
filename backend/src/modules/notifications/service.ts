@@ -1,8 +1,12 @@
 import { db } from '../../kernel/db';
 import { isDev } from '../../config/env';
+import { providers, sendEmail, sendSms } from './delivery';
 
-// Message delivery. Providers (SMS via DLT templates, WhatsApp, SES email) are not connected
-// yet, so messages are written to the server log. Swap sendMessage's body per channel.
+/** Emails sent without a subject of their own (codes, notices) */
+const subjectFor = (m: OutgoingMessage) => (m.template.startsWith('otp.') ? 'Your AHEAD verification code' : 'A message from AHEAD ERP');
+
+// Message delivery: email over SMTP and SMS through textbee (see delivery.ts). A channel with no
+// provider (WhatsApp for now, or anything in tests) is written to the server log instead.
 
 export interface OutgoingMessage {
   channel: 'sms' | 'whatsapp' | 'email';
@@ -21,6 +25,10 @@ export async function sendMessage(msg: OutgoingMessage) {
     devOutbox.unshift({ ...msg, at: new Date().toISOString() });
     devOutbox.length = Math.min(devOutbox.length, 50);
   }
+  // Delivered for real when the channel is set up; a failure stops the action that sent it, so
+  // nobody waits for a code or an invite that never left
+  if (msg.channel === 'email' && providers.email) return sendEmail(msg.to, msg.subject ?? subjectFor(msg), msg.text);
+  if (msg.channel === 'sms' && providers.sms) return sendSms(msg.to, msg.text);
   console.log(`\n📨 [${msg.channel}] to ${msg.to} (${msg.template})${msg.subject ? `\n   ${msg.subject}` : ''}\n   ${msg.text}\n`);
 }
 

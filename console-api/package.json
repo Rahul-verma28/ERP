@@ -1,0 +1,52 @@
+{
+  "name": "console-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AHEAD Console: staff, partners, plans, subscriptions, billing and licences. Talks to ERP installations only through the signed provisioning API.",
+  "scripts": {
+    "dev": "tsx scripts/db-prepare.ts && nodemon",
+    "db:prepare": "tsx scripts/db-prepare.ts",
+    "db:migrate": "tsx prisma/migrate.ts",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:generate": "prisma generate",
+    "import:erp": "tsx scripts/import-from-erp.ts",
+    "staff:add": "tsx scripts/staff-add.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "start": "tsx src/server.ts"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.2.2",
+    "@prisma/client": "^6.19.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^5.3.0",
+    "express-rate-limit": "^7.5.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^10.6.1",
+    "pg": "^8.23.1",
+    "prisma": "^6.19.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.20.5",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
+    "nodemon": "^3.1.14",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.1.1"
+  },
+  "allowScripts": {
+    "@prisma/client@6.19.3": true,
+    "prisma@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "esbuild@0.28.2": true
+  }
+}

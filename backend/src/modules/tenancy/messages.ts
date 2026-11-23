@@ -7,6 +7,7 @@ import { CUSTOMER_EVENTS, DEFAULT_NOTIFICATIONS, TEAM_EVENTS, notificationsWithD
 import { audit } from '../audit/service';
 import { consumer } from '../events/outbox';
 import { sendMessage } from '../notifications/service';
+import { providers } from '../notifications/delivery';
 
 // Settings › Notifications: messages to customers (templates per event) and team alerts.
 // SMS and WhatsApp stay off until a provider is connected.
@@ -30,7 +31,7 @@ const raw = (prefs: unknown) => (prefs ?? {}) as Record<string, unknown>;
 
 export async function getNotifications(tenantId: string) {
   const t = await db().tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { preferences: true } });
-  return { settings: notificationsWithDefaults(raw(t.preferences).notifications), defaults: DEFAULT_NOTIFICATIONS, providers: { email: true, sms: false, whatsapp: false } };
+  return { settings: notificationsWithDefaults(raw(t.preferences).notifications), defaults: DEFAULT_NOTIFICATIONS, providers: { email: true, sms: providers.sms, whatsapp: providers.whatsapp } };
 }
 
 export async function updateNotifications(tenantId: string, input: z.infer<typeof NotificationsInput>) {

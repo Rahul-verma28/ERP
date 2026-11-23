@@ -57,18 +57,32 @@ export function NoAccess({ what = "this page" }: { what?: string }) {
   )
 }
 
-/** Module not in the plan: what it does + upgrade (owner) or ask (staff). */
+/**
+ * The one layout for a page that can't open (plan, role, or a closed business): the page's own
+ * title, then one full-width card saying why and what to do. Every locked page looks the same.
+ */
+export function LockedPage({ title, description, icon, heading, children, action }: { title: string; description?: string; icon: React.ReactNode; heading: string; children?: React.ReactNode; action?: React.ReactNode }) {
+  return (
+    <div className="grid gap-4">
+      <div>
+        <h1 className="text-[26px] leading-tight font-bold tracking-tight">{title}</h1>
+        {description && <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>}
+      </div>
+      <div className="ui-surface">
+        <StateFrame icon={icon} tone="brand" title={heading} action={action}>
+          {children}
+        </StateFrame>
+      </div>
+    </div>
+  )
+}
+
+/** Module not in the plan: what it does + upgrade (owner) or ask (staff). A whole page. */
 export function ModuleLocked({ name, description, canUpgrade }: { name: string; description: string; canUpgrade: boolean }) {
   return (
-    <StateFrame
-      icon={<Lock className="size-5" />}
-      tone="brand"
-      title={`${name} isn't in your plan`}
-      action={canUpgrade ? <Link href="/app/billing" className={buttonVariants()}>See plans</Link> : undefined}
-    >
-      {description}
-      {!canUpgrade && <p className="mt-1">Ask your business owner to add it.</p>}
-    </StateFrame>
+    <LockedPage title={name} description={description} icon={<Lock className="size-5" />} heading={`${name} isn't in your plan`} action={canUpgrade ? <Link href="/app/billing" className={buttonVariants()}>See plans</Link> : undefined}>
+      Your data stays safe. {canUpgrade ? "Choose a plan with it to start using it." : "Ask your business owner to add it to the plan."}
+    </LockedPage>
   )
 }
 
@@ -181,25 +195,15 @@ export function NoAccessPage({ title, permission, what }: { title: string; permi
   if (lock) {
     const t = LOCK_TEXT[lock]
     return (
-      <div className="grid gap-4">
-        <h1 className="text-[26px] leading-tight font-bold tracking-tight">{title}</h1>
-        <div className="ui-surface">
-          <StateFrame icon={<Lock className="size-5" />} tone="brand" title={`${title} ${t.title}`} action={canUpgrade ? <Link href="/app/billing" className={buttonVariants()}>See plans</Link> : undefined}>
-            {t.body}
-            {!canUpgrade && <p className="mt-1">Ask your business owner to upgrade the plan.</p>}
-          </StateFrame>
-        </div>
-      </div>
+      <LockedPage title={title} icon={<Lock className="size-5" />} heading={`${title} ${t.title}`} action={canUpgrade ? <Link href="/app/billing" className={buttonVariants()}>See plans</Link> : undefined}>
+        {t.body}
+        {!canUpgrade && <p className="mt-1">Ask your business owner to upgrade the plan.</p>}
+      </LockedPage>
     )
   }
   return (
-    <div className="grid gap-4">
-      <h1 className="text-[26px] leading-tight font-bold tracking-tight">{title}</h1>
-      <div className="ui-surface">
-        <StateFrame icon={<ShieldAlert className="size-5" />} title="You don't have access">
-          Your role can&apos;t open {what ?? title.toLowerCase()}. Ask your admin to change your role.
-        </StateFrame>
-      </div>
-    </div>
+    <LockedPage title={title} icon={<ShieldAlert className="size-5" />} heading="You don't have access">
+      Your role can&apos;t open {what ?? title.toLowerCase()}. Ask your admin to change your role.
+    </LockedPage>
   )
 }

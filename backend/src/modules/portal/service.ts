@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import jwt from 'jsonwebtoken';
 import { Prisma } from '@prisma/client';
-import { env, isDev } from '../../config/env';
+import { env } from '../../config/env';
 import { db } from '../../kernel/db';
 import { attachCustomerFiles } from '../files/service';
 import { bundle } from '../../kernel/bundle';
@@ -118,9 +118,11 @@ export async function requestCode(slug: string, b: z.infer<typeof OtpInput>) {
   const s = await bySlug(slug);
   const found = await customersByMobile(s.tenantId, b.mobile);
   // In development, say why no code came; a live portal never tells whose number it is
-  if (!found.length) return { sent: true, devCode: undefined as string | undefined, devNote: isDev ? `No customer of this business has the mobile ${b.mobile}. Add it on the customer, or try another number.` : undefined };
+  // The same answer whether or not the number is a customer's, so numbers can't be tried out
+  if (!found.length) return { sent: true };
   const r = await sendOtp(`+91${b.mobile}`, 'portal');
-  return { sent: true, devCode: r.devCode, devNote: undefined as string | undefined };
+  void r;
+  return { sent: true };
 }
 
 export async function verifyCode(slug: string, b: z.infer<typeof VerifyInput>) {

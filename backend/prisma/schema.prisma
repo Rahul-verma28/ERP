@@ -8,8 +8,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // ───────────────────────────── Enums ─────────────────────────────
@@ -236,7 +236,7 @@ model User {
   passwordChangedAt DateTime?  @map("password_changed_at") @db.Timestamptz
   createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz
   updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz
-  avatarUrl String? @map("avatar_url")
+  avatarUrl         String?    @map("avatar_url")
 
   sessions        UserSession[]
   mfa             UserMfa?
@@ -320,6 +320,7 @@ model Tenant {
   acquisition  TenantAcquisition?
   partner      Partner?           @relation(fields: [partnerId], references: [id], map: "tenants_partner_fkey")
   accessLinks  AccessLink[]
+  licence      TenantLicence?
 
   @@index([partnerId])
   @@index([status])
@@ -1008,6 +1009,23 @@ model TenantEntitlement {
   @@map("tenant_entitlements")
 }
 
+/// The licence a business runs on (signed by the Console, or a licence file when self-hosted)
+model TenantLicence {
+  tenantId   String   @id @map("tenant_id") @db.Uuid
+  token      String
+  seq        Int
+  status     String
+  planKey    String   @map("plan_key")
+  payload    Json
+  issuedAt   DateTime @map("issued_at") @db.Timestamptz
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz
+  source     String   @default("console")
+  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_licences")
+}
+
 model UsageCounter {
   tenantId String @map("tenant_id") @db.Uuid
   metric   String
@@ -1031,18 +1049,18 @@ model CreditBalance {
 // ─────────────────────── Events, audit, notifications ───────────────────────
 
 model OutboxEvent {
-  id          String    @id @default(uuid(7)) @db.Uuid
-  tenantId    String?   @map("tenant_id") @db.Uuid
-  type        String
-  version     Int       @default(1) @db.SmallInt
-  payload     Json
-  actor       Json
-  occurredAt  DateTime  @default(now()) @map("occurred_at") @db.Timestamptz
-  publishedAt DateTime? @map("published_at") @db.Timestamptz
-  attempts    Int       @default(0)
-  lastError   String?   @map("last_error")
+  id            String    @id @default(uuid(7)) @db.Uuid
+  tenantId      String?   @map("tenant_id") @db.Uuid
+  type          String
+  version       Int       @default(1) @db.SmallInt
+  payload       Json
+  actor         Json
+  occurredAt    DateTime  @default(now()) @map("occurred_at") @db.Timestamptz
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz
+  attempts      Int       @default(0)
+  lastError     String?   @map("last_error")
   /// Claimed by a relay until then (a crash mid-way frees it)
-  lockedUntil DateTime? @map("locked_until") @db.Timestamptz
+  lockedUntil   DateTime? @map("locked_until") @db.Timestamptz
   /// After a failure: not tried again before this
   nextAttemptAt DateTime? @map("next_attempt_at") @db.Timestamptz
 
@@ -1340,7 +1358,7 @@ model PriceList {
   name       String
   discountBp Int      @default(0) @map("discount_bp")
   /// Inactive: hidden from new choices, kept on old records
-  isActive  Boolean  @default(true) @map("is_active")
+  isActive   Boolean  @default(true) @map("is_active")
   createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
   updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
@@ -1529,6 +1547,7 @@ model Payment {
 
   /// Cheque photo or UPI screenshot
   attachmentUrl String? @map("attachment_url")
+
   @@index([tenantId, documentId])
   @@index([tenantId, paidOn])
   @@index([tenantId, contactId])
@@ -1563,31 +1582,31 @@ model AdvanceAdjustment {
 // ── Expenses (FIN-01) ──
 
 model Expense {
-  id          String        @id @default(uuid(7)) @db.Uuid
-  tenantId    String        @map("tenant_id") @db.Uuid
-  branchId    String?       @map("branch_id") @db.Uuid
-  category    String
-  amountPaise BigInt        @map("amount_paise")
-  paidOn      DateTime      @map("paid_on") @db.Date
-  method      PaymentMethod @default(cash)
-  payee       String?
-  notes       String?
-  receiptUrl  String?       @map("receipt_url")
-  number      String?
+  id           String        @id @default(uuid(7)) @db.Uuid
+  tenantId     String        @map("tenant_id") @db.Uuid
+  branchId     String?       @map("branch_id") @db.Uuid
+  category     String
+  amountPaise  BigInt        @map("amount_paise")
+  paidOn       DateTime      @map("paid_on") @db.Date
+  method       PaymentMethod @default(cash)
+  payee        String?
+  notes        String?
+  receiptUrl   String?       @map("receipt_url")
+  number       String?
   /// Paid from this cash or bank account; empty = by method (cash goes to cash, the rest to the default bank)
-  accountId   String?       @map("account_id") @db.Uuid
-  contactId   String?       @map("contact_id") @db.Uuid
-  reference   String?
+  accountId    String?       @map("account_id") @db.Uuid
+  contactId    String?       @map("contact_id") @db.Uuid
+  reference    String?
   /// GST bill: the supplier's bill number and GSTIN, and the split of the amount
-  billNo      String?       @map("bill_no")
-  vendorGstin String?       @map("vendor_gstin") @db.VarChar(15)
-  taxablePaise BigInt?      @map("taxable_paise")
-  gstRateBp   Int?          @map("gst_rate_bp")
-  gstPaise    BigInt?       @map("gst_paise")
-  createdBy   String?       @map("created_by") @db.Uuid
-  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
-  version     Int           @default(1)
+  billNo       String?       @map("bill_no")
+  vendorGstin  String?       @map("vendor_gstin") @db.VarChar(15)
+  taxablePaise BigInt?       @map("taxable_paise")
+  gstRateBp    Int?          @map("gst_rate_bp")
+  gstPaise     BigInt?       @map("gst_paise")
+  createdBy    String?       @map("created_by") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  version      Int           @default(1)
 
   @@index([tenantId, paidOn])
   @@map("expenses")
@@ -1720,35 +1739,35 @@ model TaskEvent {
 // ── Calendar & bookings (BKG-01, BKG-02, BKG-08) ──
 
 model Appointment {
-  id        String            @id @default(uuid(7)) @db.Uuid
-  tenantId  String            @map("tenant_id") @db.Uuid
-  branchId  String?           @map("branch_id") @db.Uuid
-  kind      AppointmentKind   @default(appointment)
-  title     String
-  contactId String?           @map("contact_id") @db.Uuid
-  itemId    String?           @map("item_id") @db.Uuid
-  staffId   String?           @map("staff_id") @db.Uuid
-  startAt   DateTime          @map("start_at") @db.Timestamptz
-  endAt     DateTime          @map("end_at") @db.Timestamptz
-  status    AppointmentStatus @default(scheduled)
-  notes     String?
-  invoiceId String?           @map("invoice_id") @db.Uuid
-  resourceId   String?        @map("resource_id") @db.Uuid
+  id            String            @id @default(uuid(7)) @db.Uuid
+  tenantId      String            @map("tenant_id") @db.Uuid
+  branchId      String?           @map("branch_id") @db.Uuid
+  kind          AppointmentKind   @default(appointment)
+  title         String
+  contactId     String?           @map("contact_id") @db.Uuid
+  itemId        String?           @map("item_id") @db.Uuid
+  staffId       String?           @map("staff_id") @db.Uuid
+  startAt       DateTime          @map("start_at") @db.Timestamptz
+  endAt         DateTime          @map("end_at") @db.Timestamptz
+  status        AppointmentStatus @default(scheduled)
+  notes         String?
+  invoiceId     String?           @map("invoice_id") @db.Uuid
+  resourceId    String?           @map("resource_id") @db.Uuid
   /// walk_in | phone | whatsapp | online
-  source       String         @default("walk_in") @db.VarChar(12)
+  source        String            @default("walk_in") @db.VarChar(12)
   /// Online bookings by someone not yet a customer
-  guestName    String?        @map("guest_name")
-  guestPhone   String?        @map("guest_phone") @db.VarChar(15)
-  pricePaise   BigInt?        @map("price_paise")
-  cancelReason String?        @map("cancel_reason")
-  confirmedAt  DateTime?      @map("confirmed_at") @db.Timestamptz
-  checkedInAt  DateTime?      @map("checked_in_at") @db.Timestamptz
-  remindedAt   DateTime?      @map("reminded_at") @db.Timestamptz
-  createdBy String?           @map("created_by") @db.Uuid
-  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime          @updatedAt @map("updated_at") @db.Timestamptz
-  version   Int               @default(1)
-  attachmentUrl String? @map("attachment_url")
+  guestName     String?           @map("guest_name")
+  guestPhone    String?           @map("guest_phone") @db.VarChar(15)
+  pricePaise    BigInt?           @map("price_paise")
+  cancelReason  String?           @map("cancel_reason")
+  confirmedAt   DateTime?         @map("confirmed_at") @db.Timestamptz
+  checkedInAt   DateTime?         @map("checked_in_at") @db.Timestamptz
+  remindedAt    DateTime?         @map("reminded_at") @db.Timestamptz
+  createdBy     String?           @map("created_by") @db.Uuid
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz
+  version       Int               @default(1)
+  attachmentUrl String?           @map("attachment_url")
 
   @@index([tenantId, startAt])
   @@index([tenantId, staffId, startAt])
@@ -1965,21 +1984,21 @@ model ConsoleNote {
 
 /// A godown, store or van where stock is kept
 model StockLocation {
-  id        String   @id @default(uuid(7)) @db.Uuid
-  tenantId  String   @map("tenant_id") @db.Uuid
-  name      String
-  address   String?
-  city      String?
-  zipCode   String?  @map("zip_code") @db.VarChar(10)
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  name          String
+  address       String?
+  city          String?
+  zipCode       String?  @map("zip_code") @db.VarChar(10)
   /// GST state of the warehouse (dispatch-from on e-way bills)
-  stateCode String?  @map("state_code") @db.VarChar(2)
-  contactPerson String? @map("contact_person")
-  phone     String?  @db.VarChar(20)
-  email     String?
-  isDefault Boolean  @default(false) @map("is_default")
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  stateCode     String?  @map("state_code") @db.VarChar(2)
+  contactPerson String?  @map("contact_person")
+  phone         String?  @db.VarChar(20)
+  email         String?
+  isDefault     Boolean  @default(false) @map("is_default")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
 
   @@unique([tenantId, name])
   @@map("stock_locations")
@@ -2009,6 +2028,7 @@ model StockEntry {
 
   /// Photo proof of damage or loss
   attachmentUrl String? @map("attachment_url")
+
   @@index([tenantId, entryDate])
   @@map("stock_entries")
 }
@@ -2164,6 +2184,7 @@ model PurchaseDocument {
 
   /// The supplier own bill: needed to claim GST input credit (CGST Act s.16(2)(a))
   attachmentUrl String? @map("attachment_url")
+
   @@unique([tenantId, kind, number])
   @@index([tenantId, kind, status, issueDate])
   @@index([tenantId, contactId])
@@ -2205,21 +2226,21 @@ model PurchaseDocumentLine {
 
 /// Money paid to a supplier against a purchase bill; corrected by an opposite row, never edited
 model SupplierPayment {
-  id          String   @id @default(uuid(7)) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  contactId   String   @map("contact_id") @db.Uuid
-  documentId  String   @map("document_id") @db.Uuid
-  number      String
-  amountPaise BigInt   @map("amount_paise")
-  method      String   @db.VarChar(10)
-  reference   String?
-  paidOn      DateTime @map("paid_on") @db.Date
-  reversesId  String?  @unique @map("reverses_id") @db.Uuid
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  contactId     String   @map("contact_id") @db.Uuid
+  documentId    String   @map("document_id") @db.Uuid
+  number        String
+  amountPaise   BigInt   @map("amount_paise")
+  method        String   @db.VarChar(10)
+  reference     String?
+  paidOn        DateTime @map("paid_on") @db.Date
+  reversesId    String?  @unique @map("reverses_id") @db.Uuid
   /// The cash or bank account it was paid from; empty = by method
-  accountId   String?  @map("account_id") @db.Uuid
-  createdBy   String?  @map("created_by") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  attachmentUrl String? @map("attachment_url")
+  accountId     String?  @map("account_id") @db.Uuid
+  createdBy     String?  @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  attachmentUrl String?  @map("attachment_url")
 
   @@index([tenantId, contactId])
   @@index([tenantId, documentId])
@@ -2341,15 +2362,15 @@ model FinAccount {
 
 /// Expense and income heads the business keeps; kind = expense | income
 model FinCategory {
-  id       String @id @default(uuid(7)) @db.Uuid
-  tenantId String @map("tenant_id") @db.Uuid
-  kind     String @db.VarChar(8)
-  name     String
-  position Int    @default(0)
+  id          String  @id @default(uuid(7)) @db.Uuid
+  tenantId    String  @map("tenant_id") @db.Uuid
+  kind        String  @db.VarChar(8)
+  name        String
+  position    Int     @default(0)
   /// Expense heads only: the most to spend in a month
   budgetPaise BigInt? @map("budget_paise")
   /// Inactive: hidden from new choices, kept on old records
-  isActive  Boolean  @default(true) @map("is_active")
+  isActive    Boolean @default(true) @map("is_active")
 
   @@unique([tenantId, kind, name])
   @@map("fin_categories")
@@ -2357,22 +2378,22 @@ model FinCategory {
 
 /// Money in that is not a customer payment: interest, commission, rent received, scrap sale
 model Income {
-  id          String   @id @default(uuid(7)) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  number      String
-  receivedOn  DateTime @map("received_on") @db.Date
-  category    String
-  accountId   String   @map("account_id") @db.Uuid
-  amountPaise BigInt   @map("amount_paise")
-  payer       String?
-  contactId   String?  @map("contact_id") @db.Uuid
-  reference   String?
-  notes       String?
-  createdBy   String?  @map("created_by") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
-  version     Int      @default(1)
-  attachmentUrl String? @map("attachment_url")
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  number        String
+  receivedOn    DateTime @map("received_on") @db.Date
+  category      String
+  accountId     String   @map("account_id") @db.Uuid
+  amountPaise   BigInt   @map("amount_paise")
+  payer         String?
+  contactId     String?  @map("contact_id") @db.Uuid
+  reference     String?
+  notes         String?
+  createdBy     String?  @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz
+  version       Int      @default(1)
+  attachmentUrl String?  @map("attachment_url")
 
   @@index([tenantId, receivedOn])
   @@map("incomes")
@@ -2623,7 +2644,7 @@ model HrLoan {
   reason      String?
   createdBy   String?  @map("created_by") @db.Uuid
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  documentUrl String? @map("document_url")
+  documentUrl String?  @map("document_url")
 
   @@index([employeeId])
   @@map("hr_loans")
@@ -2671,17 +2692,17 @@ model Attendance {
 }
 
 model LeaveType {
-  id           String  @id @default(uuid(7)) @db.Uuid
-  tenantId     String  @map("tenant_id") @db.Uuid
-  name         String
-  code         String  @db.VarChar(6)
-  daysPerYear  Decimal @default(0) @map("days_per_year") @db.Decimal(5, 1)
-  paid         Boolean @default(true)
-  carryForward Boolean @default(false) @map("carry_forward")
-  color        String  @default("blue") @db.VarChar(12)
-  isActive     Boolean @default(true) @map("is_active")
-  position     Int     @default(0)
-  description  String?
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  name           String
+  code           String   @db.VarChar(6)
+  daysPerYear    Decimal  @default(0) @map("days_per_year") @db.Decimal(5, 1)
+  paid           Boolean  @default(true)
+  carryForward   Boolean  @default(false) @map("carry_forward")
+  color          String   @default("blue") @db.VarChar(12)
+  isActive       Boolean  @default(true) @map("is_active")
+  position       Int      @default(0)
+  description    String?
   /// Ask for proof when the leave is longer than this many days (empty = never)
   proofAfterDays Decimal? @map("proof_after_days") @db.Decimal(5, 1)
 
@@ -2710,6 +2731,7 @@ model LeaveApplication {
 
   /// Proof such as a medical certificate ("file:<id>" or a link)
   attachmentUrl String? @map("attachment_url")
+
   @@index([tenantId, fromDate])
   @@index([employeeId])
   @@map("leave_applications")

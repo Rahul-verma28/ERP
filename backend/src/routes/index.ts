@@ -18,6 +18,7 @@ import purchaseRoutes from '../modules/purchase/routes';
 import posRoutes from '../modules/pos/routes';
 import fileRoutes, { consoleFiles, publicFiles } from '../modules/files/routes';
 import consoleRoutes from '../modules/console/routes';
+import provisionRoutes from '../modules/licensing/provisionRoutes';
 import { publicPayments, tenantPayments } from '../modules/platformBilling/routes';
 import { isDev } from '../config/env';
 import { getDevOutbox } from '../modules/notifications/service';
@@ -38,6 +39,7 @@ router.get('/health', async (_req, res) => {
 router.use('/auth', identityRoutes);
 router.use('/me', meHandler);
 router.use('/account', accountRoutes); // My account: every business
+router.use('/internal/v1', provisionRoutes); // the Console's signed calls into this ERP, no login
 router.use('/console/files', consoleFiles); // KYC papers, before the rest of the Console
 router.use('/console', consoleRoutes); // AHEAD team workspace; before the tenant routers
 router.use('/', publicFiles); // signed file links: an <img> or a download sends no login header

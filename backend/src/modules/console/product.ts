@@ -1,6 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { db, withTenant } from '../../kernel/db';
+import { db, withPlatform } from '../../kernel/db';
 import { AppError, notFound } from '../../kernel/errors';
 import type { ConsoleCtx } from '../../kernel/context';
 import { audit } from '../audit/service';
@@ -168,7 +168,8 @@ async function scopedBusiness(ctx: ConsoleCtx, id: string) {
 }
 
 /** Re-compute a business's modules inside its own transaction (RLS on). */
-const recompute = (t: { id: string; ownerUserId: string }) => withTenant({ kind: 'system', tenantId: t.id, userId: t.ownerUserId }, () => persistEntitlements(t.id));
+// Console work: platform rights (plans, prices and subscriptions are not the business's tables)
+const recompute = (t: { id: string; ownerUserId: string }) => withPlatform(() => persistEntitlements(t.id));
 
 export async function setOverride(ctx: ConsoleCtx, id: string, moduleKey: string, input: z.infer<typeof OverrideInput>) {
   const t = await scopedBusiness(ctx, id);

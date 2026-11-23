@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { PasswordInput } from "@/components/ui/input-group"
 import { Field, FormError } from "@/components/form"
-import { api, errorMessage } from "@/lib/api"
+import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 
@@ -45,8 +45,9 @@ function InviteForm({ token, p }: { token: string; p: Preview }) {
   const [mobile, setMobile] = React.useState(p.mobile ?? "")
   const [otp, setOtp] = React.useState("")
   const [password, setPassword] = React.useState("")
-  const [devCode, setDevCode] = React.useState<string | undefined>()
   const [otpSent, setOtpSent] = React.useState(false)
+  const [otpChecked, setOtpChecked] = React.useState(false)
+  const [otpError, setOtpError] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
 
@@ -54,8 +55,7 @@ function InviteForm({ token, p }: { token: string; p: Preview }) {
     setBusy(true)
     setError(null)
     try {
-      const r = await api.post<{ devCode?: string }>("/auth/otp/send", { target: mobile, purpose: "invite" })
-      setDevCode(r.devCode)
+      await api.post("/auth/otp/send", { target: mobile, purpose: "invite" })
       setOtpSent(true)
     } catch (e) {
       setError(errorMessage(e))
@@ -64,9 +64,25 @@ function InviteForm({ token, p }: { token: string; p: Preview }) {
     }
   }
 
+  async function checkOtp() {
+    if (!/^\d{6}$/.test(otp)) return setOtpError("Enter the 6-digit code")
+    setBusy(true)
+    setOtpError(null)
+    try {
+      await api.post("/auth/otp/check", { target: mobile, purpose: "invite", code: otp })
+      setOtpChecked(true)
+    } catch (e) {
+      setOtp("")
+      setOtpError(errorMessage(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!p.hasAccount && !otpSent) return sendOtp()
+    if (!p.hasAccount && !otpChecked) return checkOtp()
     setBusy(true)
     setError(null)
     try {
@@ -75,6 +91,8 @@ function InviteForm({ token, p }: { token: string; p: Preview }) {
       await signIn(login.accessToken)
       router.replace("/app")
     } catch (e) {
+      // The code ran out before the password was set: check a new one
+      if (e instanceof ApiError && e.code === "OTP_INVALID") { setOtpChecked(false); setOtp("") }
       setError(errorMessage(e))
     } finally {
       setBusy(false)
@@ -95,29 +113,30 @@ function InviteForm({ token, p }: { token: string; p: Preview }) {
           {!p.hasAccount && (
             <>
               <Field label="Your name">
-                <Input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} />
+                <Input value={name} onChange={(e) => setName(e.target.value)} required minLength={2} disabled={otpSent} placeholder="e.g. Asha Rao" />
               </Field>
               <Field label="Email">
-                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!!p.email} required />
+                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} disabled={!!p.email || otpSent} required placeholder="e.g. asha@business.com" />
               </Field>
               <Field label="Mobile number">
                 <Input mask="mobile" value={mobile} onChange={(e) => setMobile(e.target.value)} disabled={!!p.mobile || otpSent} required />
               </Field>
-              {otpSent && (
-                <Field label="6-digit code" hint={devCode ? `Development code: ${devCode}` : "Sent by SMS"}>
-                  <Input inputMode="numeric" maxLength={6} value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))} required />
+              {otpSent && !otpChecked && (
+                <Field label="6-digit code" hint="Sent by SMS" error={otpError}>
+                  <Input inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(e) => { setOtp(e.target.value.replace(/\D/g, "")); setOtpError(null) }} required autoFocus placeholder="6 digits" />
                 </Field>
               )}
+              {otpChecked && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">Mobile verified. Now create your password.</p>}
             </>
           )}
-          {(p.hasAccount || otpSent) && (
+          {(p.hasAccount || otpChecked) && (
             <Field label={p.hasAccount ? "Your password" : "Create a password"} hint={p.hasAccount ? undefined : "At least 8 characters"}>
               <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
             </Field>
           )}
           <FormError message={error} />
           <Button type="submit" disabled={busy}>
-            {busy ? "Please wait…" : !p.hasAccount && !otpSent ? "Verify mobile" : "Accept invitation"}
+            {busy ? "Please wait…" : !p.hasAccount && !otpSent ? "Send code" : !p.hasAccount && !otpChecked ? "Check code" : "Accept invitation"}
           </Button>
         </form>
       </CardContent>

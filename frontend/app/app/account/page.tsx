@@ -265,7 +265,6 @@ function ChangeContactDialog({ kind, account, onClose, onDone }: { kind: "email"
   const [code, setCode] = React.useState("")
   const [token, setToken] = React.useState<string | null>(null)
   const [sentTo, setSentTo] = React.useState("")
-  const [devCode, setDevCode] = React.useState<string | undefined>()
   const [errors, setErrors] = React.useState<Record<string, string | null>>({})
   const [busy, setBusy] = React.useState(false)
   const label = kind === "email" ? "email" : "mobile number"
@@ -283,9 +282,8 @@ function ChangeContactDialog({ kind, account, onClose, onDone }: { kind: "email"
     if (!check()) return
     setBusy(true)
     try {
-      const out = await api.post<{ changeToken: string; devCode?: string }>(`/account/${kind}/start`, { value: kind === "email" ? value.trim().toLowerCase() : cleanMobile(value), password })
+      const out = await api.post<{ changeToken: string }>(`/account/${kind}/start`, { value: kind === "email" ? value.trim().toLowerCase() : cleanMobile(value), password })
       setToken(out.changeToken)
-      setDevCode(out.devCode)
       setSentTo(kind === "email" ? value.trim().toLowerCase() : `+91 ${cleanMobile(value)}`)
       setErrors({})
     } catch (e) {
@@ -341,7 +339,6 @@ function ChangeContactDialog({ kind, account, onClose, onDone }: { kind: "email"
               <span className="text-xs font-semibold">Code sent to {sentTo}</span>
               <OtpInput size="sm" value={code} onChange={setCode} onComplete={(c) => void confirm(c)} invalid={!!errors.code} />
               {errors.code && <p className="text-xs text-destructive">{errors.code}</p>}
-              {devCode && <p className="text-xs text-muted-foreground">Development code: {devCode}</p>}
             </div>
           )}
           <FormError message={errors.form} />

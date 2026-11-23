@@ -81,6 +81,8 @@ export interface Me {
     createdAt: string
     branding: WorkspacePreferences["branding"]
     purchaseOrders: boolean
+    /** Set while the business is closed */
+    closedAt?: string | null
     /** What new records start with (Settings › Module settings); older servers may not send it */
     defaults?: {
       sales: WorkspacePreferences["sales"]

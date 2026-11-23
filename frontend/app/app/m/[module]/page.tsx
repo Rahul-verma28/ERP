@@ -19,14 +19,11 @@ export default function ModulePage({ params }: { params: Promise<{ module: strin
   const ent = me?.modules?.[nav.key]
   const title = nav.termKey ? term(nav.termKey, nav.label) : nav.label
 
+  if (ent?.status === "inactive") return <ModuleLocked name={title} description={nav.description} canUpgrade={can("tenant.billing.view")} />
   return (
     <>
       <PageHeader title={title} description={nav.description} />
-      {ent?.status === "inactive" ? (
-        <div className="max-w-xl ui-surface">
-          <ModuleLocked name={title} description={nav.description} canUpgrade={can("tenant.billing.view")} />
-        </div>
-      ) : (
+      {(
         <Card className="max-w-xl">
           <CardHeader>
             <span className="mb-2 grid size-10 place-items-center rounded-2xl bg-muted">

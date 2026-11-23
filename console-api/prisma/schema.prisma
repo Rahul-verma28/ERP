@@ -1,0 +1,348 @@
+// AHEAD Console database (ahead_console). Owns everything about selling and running the ERP:
+// staff and partner accounts, plans, the businesses AHEAD serves, their subscriptions and the
+// licences issued to them. It never holds a business's own data (that lives in the ERP).
+// See docs/architecture/console-erp-split.md.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── People ──
+
+/// Admin: everything. Staff: run businesses and billing. Sales and Vendor: bring in businesses
+/// (discount limits differ). Partner owner and Partner staff: their partner's businesses only.
+enum ConsoleRole {
+  admin
+  staff
+  sales
+  vendor
+  partner_owner
+  partner_staff
+
+  @@map("console_role")
+}
+
+enum AccountStatus {
+  invited
+  active
+  disabled
+
+  @@map("account_status")
+}
+
+model ConsoleUser {
+  id           String        @id @default(uuid(7)) @db.Uuid
+  name         String
+  email        String        @unique
+  mobile       String?       @unique
+  passwordHash String?       @map("password_hash")
+  role         ConsoleRole
+  partnerId    String?       @map("partner_id") @db.Uuid
+  status       AccountStatus @default(invited)
+  /// Code a vendor or salesperson shares; a business that signs up with it is theirs
+  referralCode String?       @unique @map("referral_code")
+  /// Two-step sign-in (TOTP). Secret kept encrypted; required for AHEAD staff roles.
+  mfaSecret    String?       @map("mfa_secret")
+  mfaEnabledAt DateTime?     @map("mfa_enabled_at") @db.Timestamptz
+  failedLogins Int           @default(0) @map("failed_logins")
+  lockedUntil  DateTime?     @map("locked_until") @db.Timestamptz
+  lastLoginAt  DateTime?     @map("last_login_at") @db.Timestamptz
+  createdById  String?       @map("created_by_id") @db.Uuid
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  partner   Partner?         @relation(fields: [partnerId], references: [id])
+  sessions  ConsoleSession[]
+  links     AccountLink[]
+  onboarded Business[]       @relation("onboardedBy")
+
+  @@index([partnerId])
+  @@map("console_users")
+}
+
+model ConsoleSession {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  userId      String      @map("user_id") @db.Uuid
+  refreshHash String      @unique @map("refresh_hash")
+  ip          String?
+  userAgent   String?     @map("user_agent")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  lastUsedAt  DateTime    @default(now()) @map("last_used_at") @db.Timestamptz
+  expiresAt   DateTime    @map("expires_at") @db.Timestamptz
+  revokedAt   DateTime?   @map("revoked_at") @db.Timestamptz
+  user        ConsoleUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("console_sessions")
+}
+
+/// One-use links to set a password: a new account (invite) or a forgotten password (reset)
+model AccountLink {
+  id        String      @id @default(uuid(7)) @db.Uuid
+  userId    String      @map("user_id") @db.Uuid
+  purpose   String
+  tokenHash String      @unique @map("token_hash")
+  expiresAt DateTime    @map("expires_at") @db.Timestamptz
+  usedAt    DateTime?   @map("used_at") @db.Timestamptz
+  createdAt DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  user      ConsoleUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("account_links")
+}
+
+model Partner {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  name        String
+  /// Short code shown on the partner's businesses and used in their referral links
+  code        String        @unique
+  contactName String        @map("contact_name")
+  email       String
+  mobile      String
+  gstin       String?
+  city        String?
+  status      AccountStatus @default(active)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  users       ConsoleUser[]
+  businesses  Business[]
+
+  @@map("partners")
+}
+
+// ── Product ──
+
+/// Pricing option A (29 Oct): Free, Standard, Professional (the trial plan), Enterprise (quoted)
+model Plan {
+  key           String         @id
+  name          String
+  tagline       String         @default("")
+  /// Paise; null = quoted (Enterprise)
+  monthlyPaise  Int?           @map("monthly_paise")
+  yearlyPaise   Int?           @map("yearly_paise")
+  /// { users, branches, contacts, items, invoicesPerMonth, storageMb, aiCredits }
+  limits        Json
+  /// Module keys open in full on this plan (Free: the free-tier modules, at basic)
+  modules       String[]
+  isFree        Boolean        @default(false) @map("is_free")
+  isTrial       Boolean        @default(false) @map("is_trial")
+  isPublic      Boolean        @default(true) @map("is_public")
+  active        Boolean        @default(true)
+  sortOrder     Int            @default(0) @map("sort_order")
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Coupon {
+  code           String    @id
+  percentOff     Int?      @map("percent_off")
+  amountOffPaise Int?      @map("amount_off_paise")
+  validUntil     DateTime? @map("valid_until") @db.Timestamptz
+  maxUses        Int?      @map("max_uses")
+  used           Int       @default(0)
+  /// Empty = every paid plan
+  planKeys       String[]  @map("plan_keys")
+  active         Boolean   @default(true)
+  createdById    String?   @map("created_by_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("coupons")
+}
+
+/// Values the team can change without a release (trial days, trial limits, extra user price)
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("settings")
+}
+
+// ── Businesses ──
+
+enum OnboardedBy {
+  website
+  team
+  sales
+  vendor
+  partner
+
+  @@map("onboarded_by")
+}
+
+enum SubStatus {
+  incomplete
+  trialing
+  active
+  past_due
+  free
+  closed
+
+  @@map("sub_status")
+}
+
+/// A business AHEAD serves. Its id is the business's id in the ERP.
+model Business {
+  id              String      @id @db.Uuid
+  /// The ERP installation it lives on
+  deployment      String      @default("cloud-dev")
+  name            String
+  legalName       String?     @map("legal_name")
+  gstin           String?
+  stateCode       String?     @map("state_code")
+  industryKey     String      @map("industry_key")
+  ownerName       String      @map("owner_name")
+  ownerEmail      String      @map("owner_email")
+  ownerMobile     String      @map("owner_mobile")
+  onboardedBy     OnboardedBy @default(website) @map("onboarded_by")
+  onboardedById   String?     @map("onboarded_by_id") @db.Uuid
+  partnerId       String?     @map("partner_id") @db.Uuid
+  referralCode    String?     @map("referral_code")
+  /// Set once the ERP has made the workspace
+  provisionedAt   DateTime?   @map("provisioned_at") @db.Timestamptz
+  ownerLinkSentAt DateTime?   @map("owner_link_sent_at") @db.Timestamptz
+  /// What the ERP last told us (overview call / daily usage)
+  facts           Json        @default("{}")
+  factsAt         DateTime?   @map("facts_at") @db.Timestamptz
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz
+
+  onboarder    ConsoleUser?     @relation("onboardedBy", fields: [onboardedById], references: [id])
+  partner      Partner?         @relation(fields: [partnerId], references: [id])
+  subscription Subscription?
+  overrides    ModuleOverride[]
+  licences     Licence[]
+  notes        Note[]
+
+  @@index([partnerId])
+  @@index([onboardedById])
+  @@map("businesses")
+}
+
+model Subscription {
+  businessId        String    @id @map("business_id") @db.Uuid
+  planKey           String    @map("plan_key")
+  status            SubStatus
+  cycle             String    @default("monthly")
+  trialEndsAt       DateTime? @map("trial_ends_at") @db.Timestamptz
+  periodStart       DateTime? @map("period_start") @db.Timestamptz
+  periodEnd         DateTime? @map("period_end") @db.Timestamptz
+  graceEndsAt       DateTime? @map("grace_ends_at") @db.Timestamptz
+  extraUsers        Int       @default(0) @map("extra_users")
+  cancelAtPeriodEnd Boolean   @default(false) @map("cancel_at_period_end")
+  closedAt          DateTime? @map("closed_at") @db.Timestamptz
+  /// A closed business's data is deleted after this
+  purgeAt           DateTime? @map("purge_at") @db.Timestamptz
+  version           Int       @default(1)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz
+  business          Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plan              Plan      @relation(fields: [planKey], references: [key])
+
+  @@map("subscriptions")
+}
+
+/// A module switched on or off for one business on top of its plan (until a date, or for good)
+model ModuleOverride {
+  businessId  String    @map("business_id") @db.Uuid
+  moduleKey   String    @map("module_key")
+  state       String
+  until       DateTime? @db.Timestamptz
+  createdById String?   @map("created_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@id([businessId, moduleKey])
+  @@map("module_overrides")
+}
+
+/// Every licence issued; the newest per business is the one in force
+model Licence {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  businessId  String    @map("business_id") @db.Uuid
+  seq         Int
+  token       String
+  status      SubStatus
+  planKey     String    @map("plan_key")
+  issuedAt    DateTime  @map("issued_at") @db.Timestamptz
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, seq])
+  @@map("licences")
+}
+
+model Note {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  businessId String   @map("business_id") @db.Uuid
+  authorId   String   @map("author_id") @db.Uuid
+  text       String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("notes")
+}
+
+// ── Talking to ERP installations ──
+
+/// Outbox of calls to an ERP: made, a licence delivered, an owner link. Retried with growing waits.
+model Delivery {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  kind          String
+  businessId    String    @map("business_id") @db.Uuid
+  payload       Json
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz
+  lockedUntil   DateTime? @map("locked_until") @db.Timestamptz
+  lastError     String?   @map("last_error")
+  doneAt        DateTime? @map("done_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([doneAt, nextAttemptAt])
+  @@index([businessId])
+  @@map("deliveries")
+}
+
+// ── Records ──
+
+model AuditEntry {
+  id       String   @id @default(uuid(7)) @db.Uuid
+  actorId  String?  @map("actor_id") @db.Uuid
+  action   String
+  entity   String
+  entityId String?  @map("entity_id")
+  before   Json?
+  after    Json?
+  ip       String?
+  at       DateTime @default(now()) @db.Timestamptz
+
+  @@index([entity, entityId])
+  @@index([at])
+  @@map("audit_log")
+}
+
+model JobRun {
+  name           String    @id
+  lastStartedAt  DateTime? @map("last_started_at") @db.Timestamptz
+  lastFinishedAt DateTime? @map("last_finished_at") @db.Timestamptz
+  lastError      String?   @map("last_error")
+  lastSummary    String?   @map("last_summary")
+  lockedUntil    DateTime? @map("locked_until") @db.Timestamptz
+
+  @@map("job_runs")
+}
+
+/// One-use ids of signed calls received (replay guard), kept a day
+model SeenCall {
+  nonce String   @id @db.Uuid
+  at    DateTime @default(now()) @db.Timestamptz
+
+  @@map("seen_calls")
+}

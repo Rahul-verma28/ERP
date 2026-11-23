@@ -254,14 +254,7 @@ function ReportsPageInner() {
   const [to, setTo] = React.useState(today)
   const query = `from=${from}&to=${to}`
 
-  if (me?.modules?.reports?.status === "inactive") {
-    return (
-      <>
-        <PageHeader title="Reports" />
-        <div className="max-w-xl ui-surface"><ModuleLocked name="Reports" description="Sales, collection and GST reports." canUpgrade={can("tenant.billing.view")} /></div>
-      </>
-    )
-  }
+  if (me?.modules?.reports?.status === "inactive") return <ModuleLocked name="Reports" description="Sales, collection and GST reports." canUpgrade={can("tenant.billing.view")} />
   if (!can("reports.report.view")) return <NoAccessPage title="Reports" permission="reports.report.view" />
 
   return (

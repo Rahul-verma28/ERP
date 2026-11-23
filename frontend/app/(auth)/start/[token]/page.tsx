@@ -52,8 +52,9 @@ function SetupForm({ token, info }: { token: string; info: LinkInfo }) {
   const router = useRouter()
   const { signIn } = useAuth()
   const [sent, setSent] = React.useState(false)
-  const [devCode, setDevCode] = React.useState<string | undefined>()
   const [code, setCode] = React.useState("")
+  // Choosing a password: the code is checked on its own first
+  const [checked, setChecked] = React.useState(false)
   const [password, setPassword] = React.useState("")
   const [error, setError] = React.useState<string | null>(null)
   const [fields, setFields] = React.useState<Record<string, string>>({})
@@ -67,8 +68,7 @@ function SetupForm({ token, info }: { token: string; info: LinkInfo }) {
     setBusy(true)
     setError(null)
     try {
-      const r = await api.post<{ devCode?: string }>(`/auth/start/${token}/otp`)
-      setDevCode(r.devCode)
+      await api.post(`/auth/start/${token}/otp`)
       setSent(true)
     } catch (e) {
       setError(errorMessage(e))
@@ -77,9 +77,26 @@ function SetupForm({ token, info }: { token: string; info: LinkInfo }) {
     }
   }
 
+  async function checkCode() {
+    if (!/^\d{6}$/.test(code)) return setFields({ code: "Enter the 6-digit code" })
+    setBusy(true)
+    setError(null)
+    setFields({})
+    try {
+      await api.post(`/auth/start/${token}/check`, { code })
+      setChecked(true)
+    } catch (e) {
+      setCode("")
+      setFields({ code: errorMessage(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!sent) return sendCode()
+    if (info.needsPassword && !checked) return checkCode()
     setBusy(true)
     setError(null)
     setFields({})
@@ -91,6 +108,8 @@ function SetupForm({ token, info }: { token: string; info: LinkInfo }) {
     } catch (e) {
       // A field error shows under its field; only other problems show at the bottom
       const f = e instanceof ApiError ? e.fields : {}
+      // The code ran out or was wrong after all: ask for it again
+      if (f.code || (e instanceof ApiError && e.code === "OTP_INVALID")) setChecked(false)
       setFields(f)
       setError(Object.values(f).some(Boolean) ? null : errorMessage(e))
     } finally {
@@ -127,21 +146,24 @@ function SetupForm({ token, info }: { token: string; info: LinkInfo }) {
             <dt className="text-muted-foreground">Mobile</dt>
             <dd className="tabular-nums">{info.mobile}</dd>
           </dl>
-          {sent && (
-            <Field label="6-digit code" hint={devCode ? `Development code: ${devCode}` : `Sent by SMS to ${info.mobile}`} error={fields.code}>
+          {sent && checked && (
+            <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">Mobile verified. Now choose your password.</p>
+          )}
+          {sent && !checked && (
+            <Field label="6-digit code" hint={`Sent by SMS to ${info.mobile}`} error={fields.code}>
               <Input id="start-code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} required autoFocus />
             </Field>
           )}
-          {sent && info.needsPassword && (
+          {sent && info.needsPassword && checked && (
             <Field label="Choose a password" hint="At least 8 characters, with a letter and a number" error={fields.password}>
               <PasswordInput id="start-password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} required />
             </Field>
           )}
           <FormError message={error} />
           <Button type="submit" disabled={busy}>
-            {busy ? "Please wait…" : !sent ? `Send code to ${info.mobile}` : info.needsPassword ? "Set up my login" : "Continue"}
+            {busy ? "Please wait…" : !sent ? `Send code to ${info.mobile}` : info.needsPassword ? (checked ? "Set up my login" : "Check code") : "Continue"}
           </Button>
-          {sent && (
+          {sent && !checked && (
             <button type="button" className="text-sm text-muted-foreground underline-offset-4 hover:underline" onClick={sendCode} disabled={busy}>
               Send the code again
             </button>

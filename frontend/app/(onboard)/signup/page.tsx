@@ -908,7 +908,7 @@ function VerifyStep({
 }) {
   const v = form.values
   const mobile = cleanMobile(v.mobile)
-  const [sent, setSent] = React.useState<{ at: number; devCode?: string } | null>(null)
+  const [sent, setSent] = React.useState<{ at: number } | null>(null)
   const [sendError, setSendError] = React.useState<string | null>(null)
   const [now, setNow] = React.useState(0)
   const [sending, setSending] = React.useState(false)
@@ -917,8 +917,8 @@ function VerifyStep({
     setSending(true)
     setSendError(null)
     try {
-      const r = await api.post<{ devCode?: string }>("/auth/otp/send", { target: mobile, purpose: "signup" })
-      setSent({ at: Date.now(), devCode: r.devCode })
+      await api.post("/auth/otp/send", { target: mobile, purpose: "signup" })
+      setSent({ at: Date.now() })
       form.set("otp", "")
     } catch (err) {
       if (err instanceof ApiError && err.code === "MOBILE_TAKEN") {
@@ -984,7 +984,6 @@ function VerifyStep({
                 {resendIn > 0 ? `Resend code in 0:${String(resendIn).padStart(2, "0")}` : "Resend code"}
               </button>
             </div>
-            {sent?.devCode && <p className="rounded-2xl bg-muted px-3 py-2 text-xs text-muted-foreground">Development code: {sent.devCode}</p>}
             {form.errors.otp && (
               <div role="alert" className="rounded-lg border border-[#F1B5AE] bg-[#FDECEA] px-3 py-2.5 text-[13px] text-[#7A1A12] dark:border-red-900 dark:bg-red-950 dark:text-red-200">
                 {form.errors.otp}

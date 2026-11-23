@@ -142,7 +142,8 @@ export async function startClose(ctx: TenantCtx) {
   if (t.status === 'closed') throw new AppError('CONFLICT', 'This business is already closed.');
   const owner = await prisma.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { mobile: true } });
   const sent = await withPlatform(() => sendOtp(owner.mobile, 'close_account'));
-  return { mobile: owner.mobile.replace(/^(\+91)(\d{5})(\d{5})$/, '$1 $2 $3'), devCode: sent.devCode };
+  void sent;
+  return { mobile: owner.mobile.replace(/^(\+91)(\d{5})(\d{5})$/, '$1 $2 $3') };
 }
 
 export const CloseInput = z.object({

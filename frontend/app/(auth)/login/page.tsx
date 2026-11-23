@@ -78,7 +78,6 @@ export default function LoginPage() {
   const [mobile, setMobile] = React.useState("")
   const [otp, setOtp] = React.useState("")
   const [otpSent, setOtpSent] = React.useState(false)
-  const [devCode, setDevCode] = React.useState<string | undefined>()
   const [wait, setWait] = React.useState(0)
 
   // After the password: two-step code, backup code, lost phone, or an expired password (wireframe A4)
@@ -144,9 +143,8 @@ export default function LoginPage() {
     setBusy(true)
     setError(null)
     try {
-      const r = await api.post<{ devCode?: string }>("/auth/otp/send", { target: mobile, purpose: "login" })
+      await api.post("/auth/otp/send", { target: mobile, purpose: "login" })
       setOtpSent(true)
-      setDevCode(r.devCode)
       setWait(30)
       setSubmitted(false)
     } catch (err) {
@@ -219,11 +217,10 @@ export default function LoginPage() {
               <div className="grid gap-2">
                 <div className="flex items-center justify-between text-sm">
                   <span className="font-medium">6-digit code</span>
-                  <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => { setOtpSent(false); setOtp(""); setDevCode(undefined) }}>Change number</button>
+                  <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => { setOtpSent(false); setOtp("")}}>Change number</button>
                 </div>
                 <OtpInput size="md" value={otp} onChange={setOtp} onComplete={(c) => void onOtp(undefined, c)} invalid={submitted && !!errs.otp} disabled={busy} />
                 <p className="text-xs text-muted-foreground">
-                  {devCode ? <>Development code: <b className="font-mono text-foreground">{devCode}</b> · </> : null}
                   {wait > 0 ? `Send again in ${wait}s` : <button type="button" className="font-medium text-primary hover:underline" onClick={() => void sendOtp()}>Send the code again</button>}
                 </p>
               </div>

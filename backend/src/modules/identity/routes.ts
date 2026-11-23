@@ -14,7 +14,7 @@ import { getMember } from '../access/service';
 import { getPlatformMember } from '../console/service';
 import { createTenant } from '../tenancy/createTenant';
 import { audit } from '../audit/service';
-import { consumeOtp, sendOtp } from './otp';
+import { checkOtp, consumeOtp, sendOtp } from './otp';
 import { zEmail, zMobileIN, zPassword, zPersonName } from '../../kernel/zodRules';
 import { BusinessSignup, signupToTenant } from '../tenancy/workspace';
 import { referralAcquisition } from '../console/referral';
@@ -41,11 +41,28 @@ router.post(
       const existing = await db().user.findFirst({ where: target.includes('@') ? { email: target } : { mobile: target } });
       if ((purpose === 'signup' || purpose === 'invite') && target.includes('@')) throw new AppError('VALIDATION_FAILED', 'Use a mobile number.', { fields: { target: 'Use a mobile number' } });
       if (purpose === 'signup' && existing) throw new AppError('MOBILE_TAKEN', 'An account with this mobile number already exists. Please sign in.');
-      // login/reset: never reveal whether the account exists
-      if ((purpose === 'login' || purpose === 'reset') && !existing) return { channel: target.includes('@') ? 'email' : 'sms' };
+      // Sign-in and reset: no code goes out for an account that doesn't exist, and the person is told
+      // so plainly. (Sign-up already says when a mobile is taken, so hiding it here would protect
+      // nothing; the OTP rate limit stops anyone trying numbers in bulk.)
+      if ((purpose === 'login' || purpose === 'reset') && !existing) {
+        const field = target.includes('@') ? 'email' : 'mobile number';
+        throw new AppError('NOT_FOUND', `No account uses this ${field}. Check it, or create an account.`, { fields: { target: `No account with this ${field}` } });
+      }
       return sendOtp(target, purpose);
     });
     res.json({ sent: true, ...result });
+  },
+);
+
+// Check a code before the rest of the form is shown (invitation: then the password). Not used up.
+router.post(
+  '/otp/check',
+  publicRoute,
+  otpLimiter,
+  validate(z.object({ target: Mobile, purpose: z.enum(['invite']), code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code') })),
+  async (req, res) => {
+    await withPlatform(() => checkOtp(req.body.target, req.body.purpose, req.body.code));
+    res.json({ ok: true });
   },
 );
 
@@ -246,6 +263,15 @@ router.post('/start/:token/otp', publicRoute, otpLimiter, validate(LinkParam, 'p
   res.json({ sent: true, ...out });
 });
 
+// Login link: the code is checked first, then the password is asked for (the code is used up there)
+router.post('/start/:token/check', publicRoute, otpLimiter, validate(LinkParam, 'params'), validate(z.object({ code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code') })), async (req, res) => {
+  await withPlatform(async () => {
+    const link = await usableLink(req.params.token as string);
+    await checkOtp(link.user.mobile, 'invite', req.body.code);
+  });
+  res.json({ ok: true });
+});
+
 router.post(
   '/start/:token',
   publicRoute,
@@ -343,17 +369,38 @@ router.post('/email/resend', authenticate, otpLimiter, async (req, res) => {
   res.json({ sent: true });
 });
 
+// Forgot password, step 2: the code is checked on its own first. A short-lived token then allows
+// one new password; it stops working once the password has been changed.
+const resetStamp = (u: { passwordChangedAt: Date | null }) => u.passwordChangedAt?.toISOString() ?? 'never';
+
+router.post(
+  '/password/reset/verify',
+  publicRoute,
+  otpLimiter,
+  validate(z.object({ target: Target, code: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code') })),
+  async (req, res) => {
+    const { target, code } = req.body;
+    const resetToken = await withPlatform(async () => {
+      const user = await db().user.findFirst({ where: target.includes('@') ? { email: target } : { mobile: target } });
+      if (!user) throw new AppError('OTP_INVALID', 'The code is incorrect.');
+      await consumeOtp(target, 'reset', code);
+      return signPurposeToken('password_reset', { userId: user.id, since: resetStamp(user) }, 10 * 60);
+    });
+    res.json({ resetToken });
+  },
+);
+
 router.post(
   '/password/reset',
   publicRoute,
   otpLimiter,
-  validate(z.object({ target: Target, code: z.string().regex(/^\d{6}$/), password: Password })),
+  validate(z.object({ resetToken: z.string().min(20), password: Password })),
   async (req, res) => {
-    const { target, code, password } = req.body;
+    const { resetToken, password } = req.body;
     await withPlatform(async () => {
-      const user = await db().user.findFirst({ where: target.includes('@') ? { email: target } : { mobile: target } });
-      if (!user) throw new AppError('OTP_INVALID', 'The code is incorrect.');
-      await consumeOtp(target, 'reset', code);
+      const proof = verifyPurposeToken<{ userId: string; since: string }>('password_reset', resetToken);
+      const user = await db().user.findUnique({ where: { id: proof.userId } });
+      if (!user || resetStamp(user) !== proof.since) throw new AppError('OTP_TOKEN_INVALID', 'This reset has already been used or has run out. Ask for a new code.');
       await applyNewPassword(user.id, password);
       await db().userSession.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
       await audit({ tenantId: null, actorId: user.id, action: 'auth.password_reset' });

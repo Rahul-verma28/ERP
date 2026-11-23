@@ -168,5 +168,7 @@ export async function linksFor(tenantId: string | null, refs: string[]) {
 export async function readForLink(id: string) {
   const f = await db().storedFile.findUnique({ where: { id } });
   if (!f) throw notFound('File');
-  return { file: f, bytes: await storage.get(f.storageKey) };
+  // The record is there but the bytes are not (removed, or never copied to this storage)
+  const bytes = await storage.get(f.storageKey).catch(() => { throw notFound('File'); });
+  return { file: f, bytes };
 }

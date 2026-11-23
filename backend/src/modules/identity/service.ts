@@ -159,7 +159,7 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
         id: tenant.id, name: tenant.name, legalName: tenant.legalName, industryKey: tenant.industryKey, status: tenant.status,
         logoUrl: publicLink(tenant.logoUrl), gstin: tenant.gstin, billingStateCode: tenant.billingStateCode, timezone: tenant.timezone, fyStartMonth: tenant.fyStartMonth,
         billingOwner: tenant.billingOwner, configApplied: !!tenant.configAppliedAt, needsSeatChoice: tenant.needsSeatChoice,
-        isOwner: tenant.ownerUserId === userId, onboarding: tenant.onboarding, createdAt: tenant.createdAt,
+        isOwner: tenant.ownerUserId === userId, onboarding: tenant.onboarding, createdAt: tenant.createdAt, closedAt: tenant.closedAt,
         // Workspace look for every member; modules the owner chose at signup come first in the menu
         branding: withDefaults(tenant.preferences).branding,
         purchaseOrders: withDefaults(tenant.preferences).inventory.purchaseOrders,

@@ -5,6 +5,8 @@ import { MODULES, MODULE_KEYS, type ModuleKey, type ModuleTier } from '../../con
 import type { PlanLimits } from '../../contracts/plans';
 import { getSetting } from '../settings/service';
 import { getCatalog } from './catalog';
+import { issueLicence, licenceModules } from './licenceIssuer';
+import { applyLicence, heldLicence, licenceLapsed, moduleRows } from '../licensing/service';
 
 // SUB-04: the entitlement table is the single source the app reads to unlock modules.
 
@@ -97,6 +99,11 @@ export function applyOverrides<T extends Record<string, { status: 'active' | 're
   return out;
 }
 
+/**
+ * Console side: what the subscription gives, issued as a signed licence and handed to the ERP side,
+ * which stores it and opens the modules. (Phase 2: sent over the provisioning API instead.)
+ * Call inside a platform transaction.
+ */
 export async function persistEntitlements(tenantId: string) {
   const tx = db();
   const sub = await loadSubscription(tenantId, tx);
@@ -106,55 +113,52 @@ export async function persistEntitlements(tenantId: string) {
     const prices = await tx.price.findMany({ where: { id: { in: sub.items.map((i) => i.priceId) }, itemType: 'addon_module' } });
     prices.forEach((p) => full.add(p.itemRef));
   }
-  const rows = await tx.tenantEntitlement.findMany({ where: { tenantId } });
-  const everUsed = new Set(rows.filter((r) => r.activatedAt).map((r) => r.moduleKey));
   const { catalog, defaults } = await limitDefaults();
-  const resolved = applyOverrides(
-    resolveEntitlements(sub.status, full, everUsed, catalog.freeTierModules),
+  // What the plan gives. Whether a module that is not given is read-only (used before) is the ERP's call.
+  const none = new Set<string>();
+  const given = applyOverrides(
+    resolveEntitlements(sub.status, full, none, catalog.freeTierModules),
     await tx.tenantModuleOverride.findMany({ where: { tenantId, OR: [{ until: null }, { until: { gt: new Date() } }] }, select: { moduleKey: true, state: true } }),
     sub.status,
-    everUsed,
+    none,
   );
   const limits = withExtraUsers(resolveLimits(sub.status, plan.limits as unknown as PlanLimits, defaults), await extraUsers(tx, sub.items), sub.status);
-  const now = new Date();
-
-  const dataFor = (key: ModuleKey) => {
-    const e = resolved[key];
-    const prev = rows.find((r) => r.moduleKey === key);
-    return { status: e.status, limits: { tier: e.tier }, activatedAt: prev?.activatedAt ?? (e.status === 'active' ? now : null) };
-  };
-  // New tenant: one INSERT instead of a round trip per module (signup is latency-bound)
-  const missing = MODULE_KEYS.filter((k) => !rows.some((r) => r.moduleKey === k));
-  if (missing.length) await tx.tenantEntitlement.createMany({ data: missing.map((key) => ({ tenantId, moduleKey: key, ...dataFor(key) })) });
+  const { token } = issueLicence({
+    tenantId,
+    status: sub.status,
+    plan: { key: plan.key, name: plan.name },
+    modules: licenceModules(given),
+    limits,
+    trialEndsAt: sub.trialEndsAt,
+    periodEnd: sub.currentPeriodEnd,
+    graceEndsAt: sub.graceEndsAt,
+  });
+  await applyLicence(token, { tenantId });
+  const rows = await tx.tenantEntitlement.findMany({ where: { tenantId } });
+  const modules = {} as Record<ModuleKey, ModuleEntitlement>;
   for (const key of MODULE_KEYS) {
-    if (missing.includes(key)) continue;
-    const data = dataFor(key);
-    const prev = rows.find((r) => r.moduleKey === key)!;
-    if (prev.status === data.status && JSON.stringify(prev.limits) === JSON.stringify(data.limits) && +(prev.activatedAt ?? 0) === +(data.activatedAt ?? 0)) continue;
-    await tx.tenantEntitlement.update({ where: { tenantId_moduleKey: { tenantId, moduleKey: key } }, data });
+    const r = rows.find((x) => x.moduleKey === key);
+    modules[key] = { status: r?.status ?? 'inactive', tier: (r?.limits as { tier?: ModuleTier } | null)?.tier ?? 'basic' };
   }
-  cache.del(`ent:tenant:${tenantId}`);
-  return { modules: resolved, limits, planKey: plan.key };
+  return { modules, limits, planKey: plan.key };
 }
 
-/** Cached snapshot used by middleware and /me (reads with platform privileges). */
+/** Cached snapshot used by middleware and /me: read from the licence the business holds */
 export function getEntitlements(tenantId: string): Promise<EntitlementSnapshot> {
   return cache.getOrSet(`ent:tenant:${tenantId}`, async () => {
-    const sub = await loadSubscription(tenantId, prisma);
-    const plan = await prisma.plan.findUniqueOrThrow({ where: { id: sub.planId } });
-    const rows = await prisma.tenantEntitlement.findMany({ where: { tenantId } });
-    const modules = {} as Record<ModuleKey, ModuleEntitlement>;
-    for (const key of MODULE_KEYS) {
-      const r = rows.find((x) => x.moduleKey === key);
-      modules[key] = { status: r?.status ?? 'inactive', tier: ((r?.limits as { tier?: ModuleTier } | null)?.tier ?? 'basic') };
-    }
+    const held = await heldLicence(tenantId);
+    if (!held) throw new Error(`Business ${tenantId} has no licence`);
+    const l = held.licence;
+    const modules = await moduleRows(tenantId);
+    // Ran out and past the grace days: everything still opens, but only to read
+    if (licenceLapsed(held.expiresAt)) for (const k of MODULE_KEYS) if (modules[k].status === 'active') modules[k] = { status: 'read_only', tier: modules[k].tier };
     return {
       tenantId,
-      status: sub.status,
-      planKey: plan.key,
-      trialEndsAt: sub.trialEndsAt,
-      currentPeriodEnd: sub.currentPeriodEnd,
-      limits: withExtraUsers(resolveLimits(sub.status, plan.limits as unknown as PlanLimits, (await limitDefaults()).defaults), await extraUsers(prisma, sub.items), sub.status),
+      status: l.status as TenantStatus,
+      planKey: l.plan.key,
+      trialEndsAt: l.trialEndsAt ? new Date(l.trialEndsAt) : null,
+      currentPeriodEnd: l.periodEnd ? new Date(l.periodEnd) : null,
+      limits: l.limits,
       modules,
     };
   });
