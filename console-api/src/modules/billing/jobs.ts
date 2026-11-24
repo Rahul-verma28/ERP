@@ -4,12 +4,14 @@ import { audit } from '../../kernel/audit';
 import { getSetting } from '../system/settings';
 import { issueLicence } from '../licences/service';
 import { createOrder } from './service';
+import { billPartner } from '../partners/service';
 
 // Hourly billing housekeeping, each business on its own:
 //   1. renewal orders (with a payment link) a few days before a paid period ends
 //   2. a period that ended unpaid: past due, paid modules open through the grace days
 //   3. grace over, or the plan was set to stop at the period end: on to Free (data kept)
 //   4. unpaid orders past their date: expired; a business still waiting for its first payment then closes
+//   5. each partner's monthly bill for its paying clients
 
 const DAY = 86_400_000;
 const SYSTEM = { id: 'system', role: 'admin' as const, partnerId: null };
@@ -22,7 +24,7 @@ export async function runBillingJobs(now = new Date()) {
   // 1. Renewals
   const soon = new Date(now.getTime() + (noticeDays ?? 7) * DAY);
   const due = await prisma.subscription.findMany({
-    where: { status: { in: ['active', 'past_due'] }, cancelAtPeriodEnd: false, periodEnd: { lte: soon }, business: { orders: { none: { status: { in: ['awaiting_payment', 'pending_approval'] } } } } },
+    where: { status: { in: ['active', 'past_due'] }, cancelAtPeriodEnd: false, periodEnd: { lte: soon }, business: { partnerId: null, orders: { none: { status: { in: ['awaiting_payment', 'pending_approval'] } } } } },
     select: { businessId: true, planKey: true, cycle: true, extraUsers: true, periodEnd: true },
   });
   let renewals = 0;
@@ -87,5 +89,10 @@ export async function runBillingJobs(now = new Date()) {
       }),
     );
   }
+  // 5. Partners: one bill a month for their paying clients (made once, on the first run of the month)
+  const partners = await prisma.partner.findMany({ where: { status: 'active' }, select: { id: true, name: true } });
+  let bills = 0;
+  for (const p of partners) await tally.item(`partner bill · ${p.name}`, async () => { if (await billPartner(p.id, now)) bills++; });
+  tally.note(bills > 0 && `${bills} partner bill${bills === 1 ? '' : 's'} sent`);
   return tally;
 }

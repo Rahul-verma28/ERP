@@ -51,6 +51,8 @@ export const CreateInput = z.object({
   /** Trial: Professional for the trial days, then Free. Paid: the chosen plan opens after the first payment. */
   start: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('trial') }),
+    /** A partner's client on a plan the partner pays for in its monthly bill */
+    z.object({ kind: z.literal('partner_plan'), planKey: z.string() }),
     z.object({ kind: z.literal('paid'), planKey: z.string(), cycle: z.enum(['monthly', 'yearly']), extraUsers: z.number().int().min(0).max(500).default(0), couponCode: z.string().trim().toUpperCase().max(20).nullish(), discountPct: z.number().int().min(1).max(100).nullish() }),
   ]),
   /** Admin and Staff may add a business for a partner */
@@ -72,10 +74,13 @@ export async function createBusiness(a: Actor, input: CreateInput) {
     });
     if (used) throw new AppError('DUPLICATE_TRIAL', `These details already had a free trial (${used.name}). Start this one on a paid plan.`);
   }
+  if (input.start.kind === 'partner_plan' && !partnerId) throw new AppError('VALIDATION_FAILED', 'Only a partner’s client can start on a partner-billed plan.', { fields: { start: 'Choose trial or paid' } });
+  if (input.start.kind === 'paid' && partnerId) throw new AppError('VALIDATION_FAILED', 'A partner’s client is billed to the partner: start it on a trial or a partner plan.', { fields: { start: 'Choose trial or partner plan' } });
   const plan =
-    input.start.kind === 'paid'
+    input.start.kind === 'paid' || input.start.kind === 'partner_plan'
       ? await prisma.plan.findFirst({ where: { key: input.start.planKey, active: true, isFree: false, monthlyPaise: { not: null } } })
       : await prisma.plan.findFirst({ where: { isTrial: true, active: true } });
+  if (plan && input.start.kind === 'partner_plan' && plan.monthlyPaise == null && plan.yearlyPaise == null) throw new AppError('VALIDATION_FAILED', 'Choose a priced plan.', { fields: { 'start.planKey': 'Priced by quote' } });
   if (!plan) throw new AppError('VALIDATION_FAILED', input.start.kind === 'paid' ? 'Choose a paid plan.' : 'No trial plan is set up.', { fields: { 'start.planKey': 'Choose a plan' } });
   const trialDays = (await getSetting<number>('trial.days')) ?? 14;
   const onboardedBy = partnerId ? 'partner' : ONBOARDED[a.role];
@@ -92,7 +97,9 @@ export async function createBusiness(a: Actor, input: CreateInput) {
     await tx.subscription.create({
       data: input.start.kind === 'trial'
         ? { businessId: id, planKey: plan.key, status: 'trialing', trialEndsAt: trialEnd(now, trialDays) }
-        : { businessId: id, planKey: plan.key, status: 'incomplete', cycle: input.start.cycle },
+        : input.start.kind === 'partner_plan'
+          ? { businessId: id, planKey: plan.key, status: 'active' }
+          : { businessId: id, planKey: plan.key, status: 'incomplete', cycle: input.start.cycle },
     });
     await issueLicence(tx, id);
     await tx.delivery.create({ data: { kind: 'provision', businessId: id, payload: { industryKey: input.industryKey, billedToPartner: !!partnerId, source: SOURCE[onboardedBy] } } });
@@ -122,6 +129,9 @@ export const setPlan = (a: Actor, id: string, planKey: string, cycle: 'monthly' 
     const plan = await tx.plan.findFirst({ where: { key: planKey, active: true } });
     if (!plan) throw new AppError('VALIDATION_FAILED', 'Choose a plan.', { fields: { planKey: 'Unknown plan' } });
     if (plan.isFree) return { planKey, status: 'free', periodStart: null, periodEnd: null, trialEndsAt: null, graceEndsAt: null };
+    // A partner's client is paid for in the partner's monthly bill: no period of its own
+    const b = await tx.business.findUniqueOrThrow({ where: { id }, select: { partnerId: true } });
+    if (b.partnerId) return { planKey, status: 'active', periodStart: null, periodEnd: null, trialEndsAt: null, graceEndsAt: null, cancelAtPeriodEnd: false };
     const now = new Date();
     const end = new Date(now);
     end.setMonth(end.getMonth() + (cycle === 'yearly' ? 12 : 1));

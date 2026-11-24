@@ -65,7 +65,7 @@ router.get('/:id', validate(Id, 'params'), async (req, res) => {
 
 const staffOnly = allow('admin', 'staff');
 
-router.post('/:id/plan', staffOnly, validate(Id, 'params'), validate(z.object({ planKey: z.string().min(1), cycle: z.enum(['monthly', 'yearly']).default('monthly') })), async (req, res) => {
+router.post('/:id/plan', allow('admin', 'staff', 'partner_owner', 'partner_staff'), validate(Id, 'params'), validate(z.object({ planKey: z.string().min(1), cycle: z.enum(['monthly', 'yearly']).default('monthly') })), async (req, res) => {
   res.json(await setPlan(req.staff!, String(req.params.id), req.body.planKey, req.body.cycle));
 });
 router.post('/:id/trial', staffOnly, validate(Id, 'params'), validate(z.object({ days: z.number().int().min(1, 'At least 1 day').max(60, 'At most 60 days') })), async (req, res) => {

@@ -87,23 +87,31 @@ publicBilling.post('/webhooks/:gateway', async (req, res) => {
 const page = (body: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AHEAD test payment</title>
 <style>body{font-family:system-ui,sans-serif;background:#f4f5f7;display:grid;place-items:center;min-height:100vh;margin:0}main{background:#fff;padding:32px;border-radius:16px;box-shadow:0 8px 30px #0001;max-width:380px;text-align:center}button{background:#2450d8;color:#fff;border:0;border-radius:10px;padding:12px 24px;font-size:16px;cursor:pointer}small{color:#777;display:block;margin-top:16px}</style></head><body><main>${body}</main></body></html>`;
 
+/** What a test link is for: an order, or a partner's monthly bill */
+async function linkTarget(linkId: string) {
+  const o = await prisma.order.findUnique({ where: { linkId }, include: { business: { select: { name: true } } } });
+  if (o) return { totalPaise: o.totalPaise, paid: o.status === 'paid', label: `AHEAD ${o.kind === 'renewal' ? 'renewal' : 'plan'} for ${o.business.name}` };
+  const b = await prisma.partnerBill.findUnique({ where: { linkId }, include: { partner: { select: { name: true } } } });
+  if (b) return { totalPaise: b.totalPaise, paid: b.status === 'paid', label: `AHEAD partner bill ${b.month} for ${b.partner.name}` };
+  throw new AppError('NOT_FOUND', 'No such payment link.');
+}
+
 /** Development only: what a Razorpay payment page would be */
 publicBilling.get('/pay/test/:linkId', async (req, res) => {
   if (!isDev) throw new AppError('NOT_FOUND', 'Not found.');
-  const o = await prisma.order.findUnique({ where: { linkId: String(req.params.linkId) }, include: { business: { select: { name: true } } } });
-  if (!o) throw new AppError('NOT_FOUND', 'No such payment link.');
+  const t = await linkTarget(String(req.params.linkId));
   res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'");
   res.type('html').send(
-    o.status === 'paid'
-      ? page(`<h2>Paid</h2><p>${rupees(o.totalPaise)} for ${o.business.name} was received.</p>`)
-      : page(`<h2>Pay ${rupees(o.totalPaise)}</h2><p>AHEAD ${o.kind === 'renewal' ? 'renewal' : 'plan'} for ${o.business.name}</p><form method="post"><button>Pay now (test)</button></form><small>Development test gateway: no real money moves.</small>`),
+    t.paid
+      ? page(`<h2>Paid</h2><p>${rupees(t.totalPaise)} for ${t.label} was received.</p>`)
+      : page(`<h2>Pay ${rupees(t.totalPaise)}</h2><p>${t.label}</p><form method="post"><button>Pay now (test)</button></form><small>Development test gateway: no real money moves.</small>`),
   );
 });
 publicBilling.post('/pay/test/:linkId', async (req, res) => {
   if (!isDev) throw new AppError('NOT_FOUND', 'Not found.');
-  const o = await prisma.order.findUnique({ where: { linkId: String(req.params.linkId) } });
-  if (!o) throw new AppError('NOT_FOUND', 'No such payment link.');
-  const hook = testWebhook(o.linkId!, o.totalPaise);
+  const linkId = String(req.params.linkId);
+  const t = await linkTarget(linkId);
+  const hook = testWebhook(linkId, t.totalPaise);
   const out = await handleWebhook('test', Buffer.from(hook.body), hook.signature, JSON.parse(hook.body), hook.eventId);
-  res.type('html').send(page(out.status === 'processed' || out.status === 'duplicate' ? `<h2>Payment received</h2><p>${rupees(o.totalPaise)}. The invoice is on its way by email.</p>` : `<h2>Something went wrong</h2><p>${out.detail ?? out.status}</p>`));
+  res.type('html').send(page(out.status === 'processed' || out.status === 'duplicate' ? `<h2>Payment received</h2><p>${rupees(t.totalPaise)}. The invoice is on its way by email.</p>` : `<h2>Something went wrong</h2><p>${out.detail ?? out.status}</p>`));
 });

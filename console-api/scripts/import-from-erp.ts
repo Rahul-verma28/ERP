@@ -22,13 +22,13 @@ async function main() {
   const q = async <T>(sql: string) => (await erp.query(sql)).rows as T[];
 
   // Partners
-  const partners = await q<{ id: string; name: string; contact_name: string; email: string; mobile: string; gstin: string | null; status: string; created_at: Date }>(`SELECT * FROM partners`);
+  const partners = await q<{ id: string; name: string; contact_name: string; email: string; mobile: string; gstin: string | null; state_code: string | null; discount_bp: number; status: string; created_at: Date }>(`SELECT * FROM partners`);
   for (const p of partners) {
     const code = p.name.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8) || 'PARTNER';
     await prisma.partner.upsert({
       where: { id: p.id },
-      update: {},
-      create: { id: p.id, name: p.name, code: (await prisma.partner.findUnique({ where: { code } })) ? `${code}${p.id.slice(-4).toUpperCase()}` : code, contactName: p.contact_name, email: p.email, mobile: p.mobile, gstin: p.gstin, status: p.status === 'active' ? 'active' : 'disabled', createdAt: p.created_at },
+      update: { discountBp: p.discount_bp, stateCode: p.state_code ?? p.gstin?.slice(0, 2) ?? null },
+      create: { id: p.id, discountBp: p.discount_bp, stateCode: p.state_code ?? p.gstin?.slice(0, 2) ?? null, name: p.name, code: (await prisma.partner.findUnique({ where: { code } })) ? `${code}${p.id.slice(-4).toUpperCase()}` : code, contactName: p.contact_name, email: p.email, mobile: p.mobile, gstin: p.gstin, status: p.status === 'active' ? 'active' : 'disabled', createdAt: p.created_at },
     });
   }
 

@@ -20,8 +20,8 @@ export async function requireStaff(req: Request, _res: Response, next: NextFunct
     if (!m) throw new AppError('UNAUTHENTICATED', 'Please sign in.');
     const c = readAccess(m[1]);
     // A disabled account or a signed-out session stops working at once, not when the token ends
-    const s = await prisma.consoleSession.findUnique({ where: { id: c.sid }, select: { revokedAt: true, expiresAt: true, user: { select: { status: true, role: true, partnerId: true } } } });
-    if (!s || s.revokedAt || s.expiresAt < new Date() || s.user.status !== 'active') throw new AppError('UNAUTHENTICATED', 'Please sign in again.');
+    const s = await prisma.consoleSession.findUnique({ where: { id: c.sid }, select: { revokedAt: true, expiresAt: true, user: { select: { status: true, role: true, partnerId: true, partner: { select: { status: true } } } } } });
+    if (!s || s.revokedAt || s.expiresAt < new Date() || s.user.status !== 'active' || (s.user.partner && s.user.partner.status !== 'active')) throw new AppError('UNAUTHENTICATED', 'Please sign in again.');
     req.staff = { id: c.sub, role: s.user.role, partnerId: s.user.partnerId, sessionId: c.sid };
     next();
   } catch (e) {

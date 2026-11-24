@@ -9,6 +9,7 @@ import { issueLicence } from '../licences/service';
 import { findScoped, type Actor } from '../businesses/service';
 import { financialYear, nextPeriod, quote, rupees, type BillTo, type Seller } from './money';
 import { gateway, webhookGateway } from './gateway';
+import { markBillPaid } from '../partners/service';
 
 // AHEAD's bills to the businesses it serves (or to their partner): orders, payment links,
 // payments (online or recorded by the team), GST invoices and credit notes. A paid order puts the
@@ -226,6 +227,13 @@ export async function handleWebhook(name: string, raw: Buffer, signature: string
     return { status: 'ignored' };
   }
   try {
+    // A partner's monthly bill paid through its link
+    const bill = await prisma.partnerBill.findUnique({ where: { linkId: evt.linkId }, select: { id: true } });
+    if (bill) {
+      await prisma.$transaction((tx) => markBillPaid(tx, bill.id, evt.paymentId ?? evt.eventId));
+      await prisma.webhookEvent.update({ where: { eventId: evt.eventId }, data: { processedAt: new Date() } });
+      return { status: 'processed' };
+    }
     const out = await prisma.$transaction(async (tx) => {
       const o = await tx.order.findUnique({ where: { linkId: evt.linkId! } });
       if (!o) throw new Error(`No order has payment link ${evt.linkId}`);

@@ -34,6 +34,11 @@ const EnvSchema = z.object({
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
   /** Every email goes to this address instead (subject names the real recipient). Development: SMTP_USER unless set. */
   MAIL_REDIRECT_TO: z.string().email().optional(),
+  S3_BUCKET: z.string().optional(),
+  S3_REGION: z.string().default('ap-south-1'),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_ENDPOINT: z.string().url().optional(),
   RUN_WORKER: z.string().default('true').transform((v) => v !== 'false'),
 });
 

@@ -104,12 +104,19 @@ model Partner {
   email       String
   mobile      String
   gstin       String?
+  /// GST state (from the GSTIN when there is one): decides CGST+SGST or IGST on its bills
+  stateCode   String?       @map("state_code")
   city        String?
+  /// Off the list price of every client on the monthly bill (basis points: 2000 = 20%)
+  discountBp  Int           @default(0) @map("discount_bp")
+  /// active, or disabled (paused: its people can't sign in; its businesses keep running)
   status      AccountStatus @default(active)
+  createdById String?       @map("created_by_id") @db.Uuid
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz
   updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz
   users       ConsoleUser[]
   businesses  Business[]
+  bills       PartnerBill[]
 
   @@map("partners")
 }
@@ -489,4 +496,86 @@ model Sequence {
 
   @@id([docType, fy])
   @@map("sequences")
+}
+
+// ── Partners ──
+
+enum BillStatus {
+  awaiting_payment
+  paid
+  cancelled
+
+  @@map("bill_status")
+}
+
+/// A partner's monthly bill: each paying client at list price minus the partner's discount, plus GST
+model PartnerBill {
+  id            String     @id @default(uuid(7)) @db.Uuid
+  partnerId     String     @map("partner_id") @db.Uuid
+  /// The month billed, YYYY-MM (in advance, on its first day)
+  month         String
+  status        BillStatus @default(awaiting_payment)
+  /// [{ businessId, name, plan, listPaise, chargePaise }]
+  lines         Json
+  subtotalPaise Int        @map("subtotal_paise")
+  cgstPaise     Int        @default(0) @map("cgst_paise")
+  sgstPaise     Int        @default(0) @map("sgst_paise")
+  igstPaise     Int        @default(0) @map("igst_paise")
+  totalPaise    Int        @map("total_paise")
+  dueAt         DateTime   @map("due_at") @db.Timestamptz
+  linkId        String?    @unique @map("link_id")
+  linkUrl       String?    @map("link_url")
+  paidAt        DateTime?  @map("paid_at") @db.Timestamptz
+  paymentRef    String?    @map("payment_ref")
+  /// AHEAD's GST invoice number, given when paid
+  invoiceNumber String?    @unique @map("invoice_number")
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  partner       Partner    @relation(fields: [partnerId], references: [id])
+
+  @@unique([partnerId, month])
+  @@map("partner_bills")
+}
+
+/// Someone applied on the website to sell AHEAD: as a vendor (a Console login) or a partner (a company)
+model Application {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  /// vendor | partner
+  kind         String
+  name         String
+  company      String?
+  email        String
+  mobile       String
+  city         String?
+  stateCode    String?   @map("state_code")
+  gstin        String?
+  message      String?
+  /// new | approved | rejected
+  status       String    @default("new")
+  decidedById  String?   @map("decided_by_id") @db.Uuid
+  decidedAt    DateTime? @map("decided_at") @db.Timestamptz
+  decisionNote String?   @map("decision_note")
+  /// The partner or Console person made on approval
+  resultId     String?   @map("result_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([status, createdAt])
+  @@map("applications")
+}
+
+/// Papers kept by the Console (partner KYC: PAN, GST certificate, agreement)
+model ConsoleFile {
+  id           String   @id @default(uuid(7)) @db.Uuid
+  /// partner | application
+  entityType   String   @map("entity_type")
+  entityId     String   @map("entity_id") @db.Uuid
+  field        String   @default("kyc")
+  name         String
+  mime         String
+  sizeBytes    Int      @map("size_bytes")
+  storageKey   String   @unique @map("storage_key")
+  uploadedById String?  @map("uploaded_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([entityType, entityId])
+  @@map("console_files")
 }

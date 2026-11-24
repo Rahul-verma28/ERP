@@ -48,6 +48,7 @@ export async function login(req: Request, res: Response, email: string, password
     throw wrong;
   }
   if (user.status === 'disabled') throw new AppError('PERMISSION_DENIED', 'This account is switched off. Ask an AHEAD admin.');
+  if (user.partnerId && (await prisma.partner.findUnique({ where: { id: user.partnerId }, select: { status: true } }))?.status !== 'active') throw new AppError('PERMISSION_DENIED', 'Your partner account is paused. Ask AHEAD.');
   if (user.lockedUntil && user.lockedUntil > new Date()) throw new AppError('ACCOUNT_LOCKED', `Too many wrong passwords. Try again after ${user.lockedUntil.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}.`);
   if (!(await verifyPassword(user.passwordHash, password))) {
     const failed = user.failedLogins + 1;
