@@ -7,7 +7,7 @@ import { api } from "@/lib/api"
 // itself opens through a signed link that runs out, fetched here when the record is shown.
 
 export type FileKind = "image" | "document"
-export type FileScope = "tenant" | "console"
+export type FileScope = "tenant"
 
 export interface UploadedFile {
   id: string
@@ -27,7 +27,7 @@ export const ACCEPT: Record<FileKind, string> = {
 const MAX_BYTES: Record<FileKind, number> = { image: 5 * 1024 * 1024, document: 10 * 1024 * 1024 }
 export const LIMIT_TEXT: Record<FileKind, string> = { image: "JPG, PNG or WebP", document: "PDF, photo, Word or Excel · up to 10 MB" }
 
-const base = (scope: FileScope) => (scope === "console" ? "/console/files" : "/files")
+const base = () => "/files"
 export const isFileRef = (v: string | null | undefined): boolean => !!v && /^file:[0-9a-f-]{36}$/i.test(v)
 export const formatSize = (n: number) => {
   if (n < 1024) return `${n} B`
@@ -73,7 +73,7 @@ export async function uploadFile(file: File, opts: { kind: FileKind; scope?: Fil
   if (opts.entityType) q.set("entityType", opts.entityType)
   if (opts.entityId) q.set("entityId", opts.entityId)
   if (opts.field) q.set("field", opts.field)
-  const out = await api.upload<UploadedFile>(`${base(opts.scope ?? "tenant")}?${q}`, blob, name)
+  const out = await api.upload<UploadedFile>(`${base()}?${q}`, blob, name)
   if (out?.url) linkCache.set(out.ref, { url: out.url, name: out.name, mime: out.mime, size: out.size, at: Date.now() })
   return out
 }
@@ -81,13 +81,13 @@ export async function uploadFile(file: File, opts: { kind: FileKind; scope?: Fil
 /** Ties files uploaded on a new record to it once it is saved */
 export async function attachFiles(ids: string[], entityType: string, entityId: string, opts: { field?: string; scope?: FileScope } = {}) {
   if (!ids.length) return
-  await api.post(`${base(opts.scope ?? "tenant")}/attach`, { ids, entityType, entityId, field: opts.field })
+  await api.post(`${base()}/attach`, { ids, entityType, entityId, field: opts.field })
 }
 
 export const listFiles = (entityType: string, entityId: string, opts: { field?: string; scope?: FileScope } = {}) =>
-  api.get<{ data: UploadedFile[] }>(`${base(opts.scope ?? "tenant")}?${new URLSearchParams({ entityType, entityId, ...(opts.field ? { field: opts.field } : {}) })}`)
+  api.get<{ data: UploadedFile[] }>(`${base()}?${new URLSearchParams({ entityType, entityId, ...(opts.field ? { field: opts.field } : {}) })}`)
 
-export const removeFile = (id: string, scope: FileScope = "tenant") => api.delete(`${base(scope)}/${id}`)
+export const removeFile = (id: string) => api.delete(`${base()}/${id}`)
 
 // ── Opening saved files: signed links, fetched in batches and kept for an hour ──
 

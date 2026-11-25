@@ -3,7 +3,7 @@ import { db } from '../../kernel/db';
 import type { TenantCtx } from '../../kernel/context';
 import { scopeWhere } from '../../kernel/query';
 import { getFieldAccess, getRolePermissions } from '../access/service';
-import { getEntitlements } from '../subscription/entitlements';
+import { getEntitlements } from '../licensing/entitlements';
 
 // Ctrl+K search (wireframe 5.8-D): customers and leads, invoices, quotations, appointments and
 // items the person may see, each filtered by its module's data scope. Mobiles are masked

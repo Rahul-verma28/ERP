@@ -7,7 +7,7 @@ import { getUser, listUsers, resendInvitation, signOutEverywhere } from '../modu
 
 // The test business lives inside a rolled-back transaction the entitlement cache can't see:
 // every module on, 5 seats
-vi.mock('../modules/subscription/entitlements', () => ({
+vi.mock('../modules/licensing/entitlements', () => ({
   getEntitlements: async () => ({ modules: Object.fromEntries(MODULE_KEYS.map((k) => [k, { status: 'active', tier: 'full' }])), limits: { users: 5 } }),
 }));
 
@@ -63,7 +63,7 @@ describe('users', () => {
       await resendInvitation(ctx, inv.id);
       expect((await db().invitation.findUniqueOrThrow({ where: { id: inv.id } })).expiresAt.getTime()).toBeGreaterThan(Date.now() + 6 * 86_400_000);
 
-      await db().userSession.create({ data: { userId: staff.id, familyId: randomUUID(), tenantId, workspace: 'tenant', refreshTokenHash: randomUUID(), expiresAt: new Date(Date.now() + 86_400_000) } });
+      await db().userSession.create({ data: { userId: staff.id, familyId: randomUUID(), tenantId, refreshTokenHash: randomUUID(), expiresAt: new Date(Date.now() + 86_400_000) } });
       expect((await signOutEverywhere(ctx, staffMember.id)).signedOut).toBe(1);
       await expect(signOutEverywhere(ctx, ownerMember.id)).rejects.toThrow('yourself');
     });

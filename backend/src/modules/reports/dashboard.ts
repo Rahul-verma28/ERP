@@ -7,7 +7,7 @@ import { dateOnly, todayIST } from '../../kernel/gst';
 import { SETUP_STEPS, withDefaults, type SetupState } from '../../contracts/workspace';
 import { DASHBOARD_TABS, addDays, bucketsFor, daysBetween, gstr3bDue, previousRange, type DashboardTab } from '../../contracts/dashboard';
 import { getRolePermissions } from '../access/service';
-import { getEntitlements } from '../subscription/entitlements';
+import { getEntitlements } from '../licensing/entitlements';
 import { inventory, pos, purchase } from './dashboard-more';
 
 // Phase 3 dashboard (wireframes 5.1–5.8): one endpoint per tab, every figure filtered by the

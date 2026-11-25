@@ -264,7 +264,7 @@ export function AttachmentsField({
   }
   async function remove(f: UploadedFile) {
     try {
-      await removeFile(f.id, scope)
+      await removeFile(f.id)
       if (entityId) setSaved((s) => (s ?? []).filter((x) => x.id !== f.id))
       else onPendingChange?.((pending ?? []).filter((x) => x.id !== f.id))
     } catch (e) {

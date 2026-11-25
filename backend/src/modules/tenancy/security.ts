@@ -117,7 +117,7 @@ export async function updateSecurity(ctx: TenantCtx, input: z.infer<typeof Secur
 
 export async function teamSessions(ctx: TenantCtx) {
   const current = await prisma.userSession.findUnique({ where: { id: ctx.sessionId }, select: { familyId: true } });
-  const rows = await listSessions({ tenantId: ctx.tenantId, workspace: 'tenant' });
+  const rows = await listSessions({ tenantId: ctx.tenantId });
   return rows.map(({ userAgent: _ua, ...s }) => ({ ...s, current: s.familyId === current?.familyId }));
 }
 

@@ -1,6 +1,6 @@
 import { db } from '../../kernel/db';
 import { AppError } from '../../kernel/errors';
-import { getEntitlements } from '../subscription/entitlements';
+import { getEntitlements } from '../licensing/entitlements';
 
 // Storage per business: the plan's limit (Console › Plans), what is used (every uploaded file),
 // and where each file is used. Database rows (bills, customers…) are not counted: plans limit

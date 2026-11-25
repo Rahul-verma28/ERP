@@ -10,14 +10,14 @@ import { SENSITIVE_FIELDS, rolePermissionProblem } from '../../contracts/account
 import { audit } from '../audit/service';
 import { publish } from '../events/outbox';
 import { notify } from '../notifications/service';
-import { getEntitlements } from '../subscription/entitlements';
+import { getEntitlements } from '../licensing/entitlements';
 import { visibleRoles } from '../access/service';
 import type { TenantCtx } from '../../kernel/context';
 
 // Settings › Roles & permissions. Predefined roles are read-only; a business clones one to
 // customise it (custom roles need a paid plan or the trial).
 
-const TENANT_KEYS = PERMISSIONS.filter((p) => p.moduleKey !== 'platform').map((p) => p.key);
+const TENANT_KEYS = PERMISSIONS.map((p) => p.key);
 /** Only the Owner can close the business; no custom role gets it. */
 const OWNER_ONLY = new Set(['tenant.account.delete']);
 
@@ -67,7 +67,7 @@ export const CloneInput = z.object({
 });
 
 function assertPermissions(keys: string[]) {
-  const unknown = keys.find((k) => !PERMISSION_BY_KEY.has(k) || PERMISSION_BY_KEY.get(k)!.moduleKey === 'platform');
+  const unknown = keys.find((k) => !PERMISSION_BY_KEY.has(k));
   if (unknown) throw new AppError('VALIDATION_FAILED', `Unknown permission ${unknown}.`, { fields: { permissions: `Unknown permission ${unknown}` } });
   if (keys.some((k) => OWNER_ONLY.has(k))) throw new AppError('VALIDATION_FAILED', 'Only the Owner can close the business.', { fields: { permissions: 'Only the Owner can close the business' } });
   const problem = rolePermissionProblem(keys, TENANT_KEYS);

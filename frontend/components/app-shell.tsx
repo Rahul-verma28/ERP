@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { toast } from "sonner"
-import { Bell, Check, ChevronDown, ChevronsUpDown, CreditCard, Lock, LogOut, Menu, Search, Settings, ShieldCheck, UserRound, X, type LucideIcon } from "lucide-react"
+import { Bell, Check, ChevronDown, ChevronsUpDown, CreditCard, Lock, LogOut, Menu, Search, Settings, UserRound, X, type LucideIcon } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
@@ -244,15 +244,14 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   )
 }
 
-/** design v2: one menu to move between the AHEAD Console and the user's businesses */
+/** One menu to move between the person's businesses */
 export function WorkspaceSwitcher() {
-  const { me, switchTenant, switchToConsole } = useAuth()
+  const { me, switchTenant } = useAuth()
   const router = useRouter()
   if (!me) return null
-  const inConsole = me.workspace === "console"
-  if (!inConsole && !me.tenant) return null
-  const title = inConsole ? "AHEAD Console" : me.tenant!.name
-  const subtitle = inConsole ? me.console?.role.name : me.role?.name
+  if (!me.tenant) return null
+  const title = me.tenant.name
+  const subtitle = me.role?.name
   const go = async (fn: () => Promise<void>, href: string) => {
     try {
       await fn()
@@ -265,7 +264,7 @@ export function WorkspaceSwitcher() {
     <DropdownMenu>
       <DropdownMenuTrigger className="flex min-w-0 items-center gap-2 rounded-2xl px-2 py-1.5 text-left hover:bg-muted">
         <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-primary text-xs font-bold text-primary-foreground">
-          {inConsole ? <ShieldCheck className="size-4" /> : initials(title)}
+          {initials(title)}
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm font-semibold">{title}</span>
@@ -274,24 +273,11 @@ export function WorkspaceSwitcher() {
         <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-64">
-        {me.console && (
-          <>
-            <DropdownMenuGroup>
-              <DropdownMenuLabel>AHEAD team</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => !inConsole && go(switchToConsole, "/console")}>
-                <ShieldCheck className="size-4" />
-                <span className="flex-1 truncate">AHEAD Console</span>
-                {inConsole && <Check className="size-4" />}
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            {me.memberships.length > 0 && <DropdownMenuSeparator />}
-          </>
-        )}
         {me.memberships.length > 0 && (
           <DropdownMenuGroup>
             <DropdownMenuLabel>Your businesses</DropdownMenuLabel>
             {me.memberships.map((m) => {
-              const current = !inConsole && m.tenantId === me.tenant?.id
+              const current = m.tenantId === me.tenant?.id
               return (
                 <DropdownMenuItem key={m.tenantId} onClick={() => !current && go(() => switchTenant(m.tenantId), "/app")}>
                   <span className="flex-1 truncate">{m.name}</span>
@@ -417,11 +403,6 @@ function Banners() {
   const sub = me.subscription
   return (
     <div className="grid gap-px">
-      {me.announcement && (
-        <div className={cn("px-4 py-2 text-center text-sm", me.announcement.tone === "warning" ? "bg-amber-500 text-amber-950" : "bg-foreground text-background")} role="status">
-          {me.announcement.text}
-        </div>
-      )}
       {sub?.status === "trialing" && sub.daysLeft !== null && sub.daysLeft <= 7 && (
         <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-primary px-4 py-2 text-center text-sm text-primary-foreground">
           <span>

@@ -28,7 +28,6 @@ import { ACCEPT, checkFile, uploadAvatar } from "@/lib/files"
 
 // My account (one page): who you are at the top, then your details, password and sign-in,
 // working preferences, notifications and devices as plain lists. Changes open in a dialog.
-// The same in the ERP, the Console and the partner portal.
 
 export default function AccountPage() {
   const { data, error, reload } = useApi<AccountOverview>("/account")
@@ -68,7 +67,7 @@ export default function AccountPage() {
 
   return (
     <div className="grid w-full content-start gap-6">
-      <Hero account={data} role={auth.me?.console?.role.name ?? auth.me?.role?.name ?? null} onEdit={() => setDialog("name")} onPhoto={() => { void reload(); void auth.reload() }} />
+      <Hero account={data} role={auth.me?.role?.name ?? null} onEdit={() => setDialog("name")} onPhoto={() => { void reload(); void auth.reload() }} />
 
       <div className="grid items-start gap-6 lg:grid-cols-[13.5rem_minmax(0,1fr)]">
         <nav aria-label="My account" className="flex gap-1 overflow-x-auto lg:sticky lg:top-20 lg:grid lg:overflow-visible">

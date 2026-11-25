@@ -29,7 +29,7 @@ import {
   PipelineMock,
   StockMock,
 } from "@/components/marketing/mockups"
-import { SITE, absoluteUrl } from "@/lib/site"
+import { CONSOLE_WEB_URL, SITE, absoluteUrl } from "@/lib/site"
 import { cn } from "@/lib/utils"
 
 const display = Inter_Tight({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-inter-tight", display: "swap" })
@@ -192,7 +192,7 @@ function SiteFooter() {
   const year = new Date().getFullYear()
   const cols = [
     { title: "Product", links: [["Features", "#product"], ["Modules", "#modules"], ["Industries", "#industries"], ["FAQ", "#faq"]] },
-    { title: "Get started", links: [["Start free trial", "/signup"], ["Sign in", "/login"], ["Become a partner", "/apply?type=partner"], ["Become a vendor", "/apply"]] },
+    { title: "Get started", links: [["Start free trial", "/signup"], ["Sign in", "/login"], ["Become a partner", `${CONSOLE_WEB_URL}/apply?type=partner`], ["Become a vendor", `${CONSOLE_WEB_URL}/apply`]] },
     {
       title: "Built for",
       links: [["Salons & spas", "#industries"], ["Retail shops", "#industries"], ["Pharmacies", "#industries"], ["Gyms & studios", "#industries"], ["Coaching & schools", "#industries"], ["Service companies", "#industries"]],

@@ -8,8 +8,8 @@ import * as time from '../modules/hr/time';
 import { invite } from '../modules/tenancy/service';
 
 // The test business lives inside a rolled-back transaction the entitlement cache can't see: 1 seat
-vi.mock('../modules/subscription/entitlements', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../modules/subscription/entitlements')>()),
+vi.mock('../modules/licensing/entitlements', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../modules/licensing/entitlements')>()),
   getEntitlements: async () => ({ modules: Object.fromEntries(MODULE_KEYS.map((k) => [k, { status: 'active', tier: 'full' }])), limits: { users: 1 } }),
 }));
 

@@ -1,15 +1,14 @@
 // Demo HR team for the dev database: a two-level reporting line with app logins.
 //   Rakesh Sharma (Store Manager) → Priya Verma (Senior Sales, Team Manager login)
 //     → Amit Kumar, Anil Mehta (Employee self-service logins, free seats), Neha Joshi, Pooja Rani
-// Also moves the business to the Professional plan (15 users) so the logins fit, and leaves
-// pending leave requests from Priya's team for her to decide.
+// Leaves pending leave requests from Priya's team for her to decide. The business needs a plan
+// with room for the logins (set in the Console).
 // Test logins (dev database only), password for all: Team@Demo2026
 //   priya.verma.<first 8 of the business id>@example.test, amit.kumar.<…>@example.test, anil.mehta.<…>@example.test
 // Usage: npx tsx prisma/demo-hr-team.ts <tenantId> [<tenantId> …]   (skips a business where Priya already has a login)
 import { prisma, db, withPlatform } from '../src/kernel/db';
 import { hashPassword } from '../src/kernel/crypto';
 import { todayIST } from '../src/kernel/gst';
-import { persistEntitlements } from '../src/modules/subscription/entitlements';
 
 const PASSWORD = 'Team@Demo2026';
 const DAY = 86_400_000;
@@ -22,12 +21,6 @@ async function seed(tenantId: string) {
   const short = tenantId.slice(0, 8);
   const priyaEmail = `priya.verma.${short}@example.test`;
   if (await run(() => prisma.user.count({ where: { email: priyaEmail } }))) return console.log('  · team logins already there, skipped');
-
-  // Professional plan, paid for a year: 15 users
-  const plan = await run(() => prisma.plan.findFirstOrThrow({ where: { key: 'professional' } }));
-  await run(() => prisma.subscription.updateMany({ where: { tenantId }, data: { planId: plan.id, status: 'active', trialEndsAt: null, currentPeriodStart: new Date(), currentPeriodEnd: new Date(Date.now() + 365 * DAY), graceEndsAt: null } }));
-  await run(() => persistEntitlements(tenantId));
-  console.log('  ✔ on the Professional plan (15 users)');
 
   const emp = async (code: string) => run(() => prisma.employee.findFirstOrThrow({ where: { tenantId, code } }));
   const [rakesh, priya, amit, anil, nehaJ, pooja] = await Promise.all(['EMP-0001', 'EMP-0002', 'EMP-0003', 'EMP-0010', 'EMP-0009', 'EMP-0012'].map(emp));

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { FONTS, INDUSTRIES, THEME_PRESETS, brandColorError, contrastRatio, industryByKey, industryKeysFor, industryName, industryTemplateKey, prefixError, previewNumber, storedIndustryKey, withDefaults } from '../contracts/workspace';
-import { SETTINGS } from '../contracts/settings';
 import { BusinessSignup, PREFERENCE_SCHEMAS, SetupPatch, signupToTenant } from '../modules/tenancy/workspace';
 
 // Phase 1: signup v2 answers, workspace preferences and setup-wizard input (no database).
@@ -123,9 +122,4 @@ describe('colour themes', () => {
     }
   });
 
-  it('reads a stored look from before themes existed, and keeps a chosen theme', () => {
-    const schema = SETTINGS['defaults.branding'].schema;
-    expect(schema.parse({ brandColor: '#BE123C', font: 'inter', theme: 'dark', density: 'compact' }).preset).toBe('default');
-    expect(schema.parse({ brandColor: '#235347', preset: 'evergreen', font: FONTS[1].key, density: 'comfortable' })).toMatchObject({ preset: 'evergreen', font: 'roboto', theme: 'system' });
-  });
 });

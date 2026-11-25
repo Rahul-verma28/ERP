@@ -1,0 +1,132 @@
+# AHEAD in production on one server: PostgreSQL, the ERP (API + web) and the Console (API + web),
+# with Caddy serving both over HTTPS. Run from the repository root:
+#   cp deploy/.env.prod.example .env      # fill in every value
+#   docker compose -f deploy/docker-compose.prod.yml --env-file .env up -d --build
+# Each API creates its database, applies migrations and syncs reference data on every start.
+# Only Caddy is reachable from outside (80/443); everything else talks on the private network.
+name: ahead
+
+x-mail: &mail
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-465}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASS: ${SMTP_PASS:-}
+  EMAIL_FROM: ${EMAIL_FROM:-}
+x-files: &files
+  S3_BUCKET: ${S3_BUCKET:-}
+  S3_REGION: ${S3_REGION:-ap-south-1}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      TZ: UTC
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build: ../backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: [*mail, *files]
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/ahead_erp
+      JWT_SECRET: ${ERP_JWT_SECRET:?Set ERP_JWT_SECRET}
+      PEPPER: ${ERP_PEPPER:?Set ERP_PEPPER}
+      APP_URL: https://${ERP_DOMAIN}
+      TEXTBEE_API_KEY: ${TEXTBEE_API_KEY:-}
+      LICENCE_PUBLIC_KEY: ${LICENCE_PUBLIC_KEY:?Set LICENCE_PUBLIC_KEY}
+      PROVISION_KEY: ${PROVISION_KEY:?Set PROVISION_KEY}
+      CONSOLE_URL: http://console-api:5100
+      DEPLOYMENT_ID: ${DEPLOYMENT_ID:-cloud}
+    volumes:
+      - erp-files:/data/storage
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: frontend/Dockerfile
+      args:
+        BACKEND_URL: http://backend:5000
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  console-api:
+    build:
+      context: ..
+      dockerfile: console-api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: [*mail, *files]
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/ahead_console
+      JWT_SECRET: ${CONSOLE_JWT_SECRET:?Set CONSOLE_JWT_SECRET}
+      PEPPER: ${CONSOLE_PEPPER:?Set CONSOLE_PEPPER}
+      MFA_KEY: ${MFA_KEY:?Set MFA_KEY}
+      APP_ORIGINS: https://${CONSOLE_DOMAIN}
+      CONSOLE_WEB_URL: https://${CONSOLE_DOMAIN}
+      PUBLIC_URL: https://${CONSOLE_DOMAIN}
+      LICENCE_PRIVATE_KEY: ${LICENCE_PRIVATE_KEY:?Set LICENCE_PRIVATE_KEY}
+      ERP_URL: http://backend:5000
+      ERP_APP_URL: https://${ERP_DOMAIN}
+      PROVISION_KEY: ${PROVISION_KEY}
+      DEPLOYMENT_ID: ${DEPLOYMENT_ID:-cloud}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+    volumes:
+      - console-files:/data/storage
+
+  console-web:
+    build:
+      context: ..
+      dockerfile: console-web/Dockerfile
+      args:
+        CONSOLE_API_URL: http://console-api:5100
+        WEBSITE_URL: https://${ERP_DOMAIN}
+    restart: unless-stopped
+    depends_on:
+      - console-api
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - console-web
+    environment:
+      ERP_DOMAIN: ${ERP_DOMAIN:?Set ERP_DOMAIN}
+      CONSOLE_DOMAIN: ${CONSOLE_DOMAIN:?Set CONSOLE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  pgdata:
+  erp-files:
+  console-files:
+  caddy-data:
+  caddy-config:

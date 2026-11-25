@@ -15,24 +15,6 @@ const CRUD: PermissionAction[] = ['view', 'create', 'edit', 'delete'];
 const CRUDX: PermissionAction[] = ['view', 'create', 'edit', 'delete', 'export'];
 
 export const PERMISSION_CATALOG: Record<PermissionModule, ResourceDef[]> = {
-  // Console (AHEAD team). Scope on these keys: all = every client, team = clients brought in by
-  // me and the people reporting to me, own = clients I brought in (design v2 §2).
-  platform: [
-    { resource: 'dashboard', label: 'Overview', actions: ['view'] },
-    { resource: 'tenant', label: 'Businesses', actions: ['view', 'create', 'edit'] },
-    { resource: 'plan', label: 'Plans & pricing', actions: ['view', 'edit'] },
-    { resource: 'setting', label: 'Console settings', actions: ['view', 'edit'] },
-    { resource: 'grace', label: 'Extra days', actions: ['create'] },
-    { resource: 'payment', label: 'Billing', actions: ['view', 'create', 'approve'] },
-    { resource: 'discount', label: 'Discount approvals', actions: ['approve'] },
-    { resource: 'commission', label: 'Commission reports', actions: ['view'] },
-    { resource: 'member', label: 'Team', actions: ['view', 'create', 'edit'] },
-    { resource: 'audit', label: 'Security & audit', actions: ['view'] },
-    { resource: 'revenue', label: 'Income figures', actions: ['view'] },
-    { resource: 'prospect', label: 'Leads & follow-ups', actions: ['view', 'create', 'edit'] },
-    { resource: 'note', label: 'Internal notes', actions: ['view', 'create'] },
-    { resource: 'partner', label: 'Partners', actions: ['view', 'create', 'edit'] },
-  ],
   tenant: [
     { resource: 'settings', label: 'Business settings', actions: ['view', 'edit'] },
     { resource: 'branch', label: 'Branches', actions: ['view', 'create', 'edit'] },

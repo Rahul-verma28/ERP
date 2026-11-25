@@ -11,11 +11,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:generate": "prisma generate",
     "test": "vitest run",
-    "console:member": "tsx scripts/console-member.ts",
-    "entitlements:recompute": "tsx scripts/recompute-entitlements.ts",
     "files:move-images": "tsx scripts/move-images-to-storage.ts",
-    "files:to-s3": "tsx scripts/files-to-s3.ts",
-    "licence:keys": "tsx scripts/licence-keys.ts"
+    "files:to-s3": "tsx scripts/files-to-s3.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1175.0",

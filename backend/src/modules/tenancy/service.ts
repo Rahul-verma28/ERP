@@ -5,7 +5,7 @@ import { cache } from '../../kernel/cache';
 import { AppError, notFound } from '../../kernel/errors';
 import { hashPassword, normaliseEmail, normaliseMobile, randomToken, sha256, verifyPassword } from '../../kernel/crypto';
 import type { TenantCtx } from '../../kernel/context';
-import { getEntitlements } from '../subscription/entitlements';
+import { getEntitlements } from '../licensing/entitlements';
 import { visibleRoles } from '../access/service';
 import { publish } from '../events/outbox';
 import { audit } from '../audit/service';

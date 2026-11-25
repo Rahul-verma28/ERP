@@ -12,16 +12,15 @@ import { api, ApiError, errorMessage } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { useApi } from "@/lib/use-api"
 
-// Console v3: the login link a client owner or a Console user receives. They verify their
+// The login link a business owner receives when AHEAD sets up their workspace. They verify their
 // mobile, choose their own password and land in their workspace.
 
 interface LinkInfo {
-  kind: "client_owner" | "console_member"
+  kind: "client_owner"
   name: string
   email: string
   mobile: string
   businessName: string | null
-  partnerName: string | null
   needsPassword: boolean
   expiresAt: string
 }
@@ -61,8 +60,7 @@ function SetupForm({ token, info }: { token: string; info: LinkInfo }) {
   const [busy, setBusy] = React.useState(false)
   const [signInRequired, setSignInRequired] = React.useState(false)
 
-  const forConsole = info.kind === "console_member"
-  const title = info.partnerName ? `Join the ${info.partnerName} partner portal` : forConsole ? "Join the AHEAD Console" : `Set up your login for ${info.businessName}`
+  const title = `Set up your login for ${info.businessName}`
 
   async function sendCode() {
     setBusy(true)
@@ -104,7 +102,7 @@ function SetupForm({ token, info }: { token: string; info: LinkInfo }) {
       const r = await api.post<{ accessToken?: string; signInRequired?: boolean }>(`/auth/start/${token}`, { code, password: info.needsPassword ? password : undefined })
       if (r.signInRequired || !r.accessToken) return setSignInRequired(true)
       await signIn(r.accessToken)
-      router.replace(info.partnerName ? "/partner" : forConsole ? "/console" : "/app")
+      router.replace("/app")
     } catch (e) {
       // A field error shows under its field; only other problems show at the bottom
       const f = e instanceof ApiError ? e.fields : {}

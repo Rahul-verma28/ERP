@@ -2,6 +2,9 @@
 // Set NEXT_PUBLIC_SITE_URL to the production origin (no trailing slash) before deploying:
 // canonical URLs, the sitemap and Open Graph images are built from it.
 
+/** The AHEAD Console: the website's "sell AHEAD" links open its public apply page */
+export const CONSOLE_WEB_URL = (process.env.NEXT_PUBLIC_CONSOLE_WEB_URL ?? "http://localhost:3001").replace(/\/$/, "")
+
 export const SITE = {
   name: "AHEAD ERP",
   shortName: "AHEAD",

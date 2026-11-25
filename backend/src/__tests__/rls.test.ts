@@ -43,17 +43,8 @@ describe('row-level security', () => {
     ).rejects.toThrow(/row-level security/);
   });
 
-  it('platform tables are not readable by app_user', async () => {
-    await expect(
-      prisma.$transaction(async (tx) => {
-        await tx.$executeRawUnsafe('SET LOCAL ROLE app_user');
-        return tx.trialRegistry.findMany();
-      }),
-    ).rejects.toThrow(/permission denied/);
-  });
-
-  it('acquisition records and platform settings are not readable by app_user', async () => {
-    for (const read of [(tx: typeof prisma) => tx.tenantAcquisition.findMany(), (tx: typeof prisma) => tx.configValue.findMany(), (tx: typeof prisma) => tx.accessLink.findMany()]) {
+  it('owner access links are not readable by app_user', async () => {
+    for (const read of [(tx: typeof prisma) => tx.accessLink.findMany()]) {
       await expect(
         prisma.$transaction(async (tx) => {
           await tx.$executeRawUnsafe('SET LOCAL ROLE app_user');

@@ -10,14 +10,13 @@ import { setDateFormat } from "@/lib/format"
 import { applyBranding, type BrandLook } from "@/lib/theme"
 import { cn } from "@/lib/utils"
 
-// Applies the look to the whole page: in the ERP the business's Settings › Branding, in the
-// Console and the partner portal Console › Settings › Appearance. Light, dark or system is
-// each person's own choice, made with the switch in the top bar.
+// Applies the business's Settings › Branding to the whole page. Light, dark or system is each
+// person's own choice, made with the switch in the top bar.
 
 export function WorkspaceBranding() {
   const { me } = useAuth()
   const { setTheme } = useTheme()
-  const look = me?.tenant?.branding ?? me?.consoleBranding ?? null
+  const look = me?.tenant?.branding ?? null
   const personal = me?.user.preferences ?? null
   const { brandColor, preset, font, density } = look ?? {}
   // "workspace" is what older accounts have stored: it now means the device's setting
@@ -51,7 +50,7 @@ export function useBrandingPreview(look: BrandLook | null) {
   const { me } = useAuth()
   const saved = React.useRef<BrandLook | null>(null)
   React.useEffect(() => {
-    saved.current = me?.tenant?.branding ?? me?.consoleBranding ?? null
+    saved.current = me?.tenant?.branding ?? null
   })
   const { brandColor, preset, font, density } = look ?? {}
   React.useEffect(() => {

@@ -7,12 +7,10 @@ import { mfaRequirement } from '../account/policy';
 import { personalWithDefaults } from '../../contracts/account';
 import { AppError } from '../../kernel/errors';
 import { hashPassword, verifyPassword } from '../../kernel/crypto';
-import { getEntitlements } from '../subscription/entitlements';
+import { getEntitlements } from '../licensing/entitlements';
 import { effectivePermissions, getFieldAccess, getMember, lockedPermissions } from '../access/service';
 import { getTerms } from '../config/service';
 import { audit } from '../audit/service';
-import { consoleAccess } from '../console/service';
-import { getSetting } from '../settings/service';
 import { sendMessage } from '../notifications/service';
 import { avatarLink } from '../account/service';
 import { signPurposeToken, startSession } from './tokens';
@@ -32,20 +30,16 @@ export async function pickTenant(userId: string, preferred?: string | null) {
 }
 
 /** Shared tail of every successful login. Must run in a platform transaction. */
-export async function completeLogin(req: Request, res: Response, userId: string, method: string, open: { tenantId?: string | null; console?: boolean } = {}) {
+export async function completeLogin(req: Request, res: Response, userId: string, method: string, open: { tenantId?: string | null } = {}) {
   const tx = db();
   const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
-  const membership = open.console ? null : await pickTenant(user.id, open.tenantId ?? user.lastTenantId);
+  const membership = await pickTenant(user.id, open.tenantId ?? user.lastTenantId);
   await tx.user.update({
     where: { id: user.id },
     data: { lastLoginAt: new Date(), failedLogins: 0, lockedUntil: null, lastTenantId: membership?.tenantId ?? user.lastTenantId },
   });
-  // AHEAD team members with no business of their own (or arriving from a Console link) land in the Console
-  const platform = membership ? null : await tx.platformMember.findUnique({ where: { userId: user.id } });
-  const accessToken = platform?.status === 'active'
-    ? await startSession(req, res, user.id, null, platform.roleId, 'console')
-    : await startSession(req, res, user.id, membership?.tenantId ?? null, membership?.roleId ?? null);
-  await audit({ tenantId: membership?.tenantId ?? null, actorId: user.id, action: 'auth.login', after: { method, workspace: platform?.status === 'active' ? 'console' : 'tenant' }, ip: req.ip, requestId: req.requestId });
+  const accessToken = await startSession(req, res, user.id, membership?.tenantId ?? null, membership?.roleId ?? null);
+  await audit({ tenantId: membership?.tenantId ?? null, actorId: user.id, action: 'auth.login', after: { method }, ip: req.ip, requestId: req.requestId });
   await logSignIn(req, { userId: user.id, tenantId: membership?.tenantId ?? null, identifier: user.email, outcome: 'success', method });
   return { accessToken };
 }
@@ -95,32 +89,25 @@ export async function setPassword(userId: string, password: string) {
   await db().user.update({ where: { id: userId }, data: { passwordHash: await hashPassword(password), passwordChangedAt: new Date(), failedLogins: 0, lockedUntil: null } });
 }
 
-/** GET /me — everything the frontend needs to render the app for the current workspace. */
-export async function buildMe(userId: string, tenantId: string | null, workspace: 'tenant' | 'console' = 'tenant') {
+/** GET /me — everything the frontend needs to render the app for the current business. */
+export async function buildMe(userId: string, tenantId: string | null) {
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  const [memberships, consoleInfo, banner] = await Promise.all([
+  const [memberships] = await Promise.all([
     prisma.tenantMember.findMany({
       where: { userId, status: 'active', tenant: { status: { not: 'purged' } } },
       include: { tenant: { select: { id: true, name: true, status: true, logoUrl: true } }, role: { select: { name: true } } },
     }),
-    consoleAccess(userId),
-    getSetting('announcement.banner'),
   ]);
   const mfa = await mfaRequirement(userId);
-  const announcement = banner?.text && (!banner.until || new Date(banner.until) > new Date()) ? { text: banner.text, tone: banner.tone } : null;
-
-  const ws = workspace === 'console' && consoleInfo ? ('console' as const) : ('tenant' as const);
-  // Two-step blocks only the place that requires it: the Console's rule never locks a business,
-  // and one business's rule never locks another business or the Console
-  const mustSetUpMfa = ws === 'console' ? mfa.consoleBlocked : !!tenantId && mfa.blockedTenantIds.includes(tenantId);
+  // Two-step blocks only the business that requires it, never another one
+  const mustSetUpMfa = !!tenantId && mfa.blockedTenantIds.includes(tenantId);
   const base = {
-    workspace: ws,
     user: {
       id: user.id, name: user.name, email: user.email, mobile: user.mobile,
       emailVerified: !!user.emailVerifiedAt, mobileVerified: !!user.mobileVerifiedAt, avatarUrl: avatarLink(user.avatarUrl),
       preferences: personalWithDefaults(user.preferences),
     },
-    /** Two-step verification required by a business (or the Console) and its grace period */
+    /** Two-step verification required by a business and its grace period */
     security: {
       mfaEnabled: mfa.mfaEnabled,
       mfaRequired: mfa.requiredBy.length > 0,
@@ -129,14 +116,8 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
       mustSetUpMfa,
     },
     memberships: memberships.map((m) => ({ tenantId: m.tenantId, name: m.tenant.name, status: m.tenant.status, logoUrl: publicLink(m.tenant.logoUrl), roleName: m.role.name })),
-    /** Present only for AHEAD team members; drives the workspace switcher */
-    console: consoleInfo,
-    /** Console › Settings › Appearance: the look of the Console and the partner portal */
-    consoleBranding: consoleInfo ? await getSetting('defaults.branding') : null,
-    /** Platform-wide banner set from the Console */
-    announcement,
   };
-  if (!tenantId || base.workspace === 'console') return { ...base, tenant: null };
+  if (!tenantId) return { ...base, tenant: null };
 
   const member = await getMember(tenantId, userId);
   if (!member || member.status !== 'active') return { ...base, tenant: null };
@@ -158,7 +139,7 @@ export async function buildMe(userId: string, tenantId: string | null, workspace
       tenant: {
         id: tenant.id, name: tenant.name, legalName: tenant.legalName, industryKey: tenant.industryKey, status: tenant.status,
         logoUrl: publicLink(tenant.logoUrl), gstin: tenant.gstin, billingStateCode: tenant.billingStateCode, timezone: tenant.timezone, fyStartMonth: tenant.fyStartMonth,
-        billingOwner: tenant.billingOwner, configApplied: !!tenant.configAppliedAt, needsSeatChoice: tenant.needsSeatChoice,
+        configApplied: !!tenant.configAppliedAt,
         isOwner: tenant.ownerUserId === userId, onboarding: tenant.onboarding, createdAt: tenant.createdAt, closedAt: tenant.closedAt,
         // Workspace look for every member; modules the owner chose at signup come first in the menu
         branding: withDefaults(tenant.preferences).branding,

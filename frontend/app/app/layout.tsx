@@ -14,22 +14,18 @@ function FullScreen({ children }: { children: React.ReactNode }) {
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
-  const { status, me, retry, switchToConsole, switchTenant } = useAuth()
+  const { status, me, retry, switchTenant } = useAuth()
   const [retrying, setRetrying] = React.useState(false)
 
-  const inConsole = status === "authenticated" && me?.workspace === "console"
   React.useEffect(() => {
     if (status === "anonymous") router.replace("/login")
-    if (inConsole) router.replace("/console")
-  }, [status, inConsole, router])
+  }, [status, router])
 
   // LLD §11.1: the template is applied asynchronously right after signup — the loading
   // screen (/app/welcome) shows its real progress. Welcome and setup are full-screen.
   const pathname = usePathname()
   // A business requires two-step and the grace period is over: nothing else opens until it's set up (A4-D)
-  // Console users go to /console, whose own gate sends them to its two-step page; both redirecting
-  // at once left the page spinning
-  const mustSetUpMfa = status === "authenticated" && !inConsole && !!me?.security.mustSetUpMfa
+  const mustSetUpMfa = status === "authenticated" && !!me?.security.mustSetUpMfa
   const onTwoStep = pathname.startsWith("/app/account/two-step")
   React.useEffect(() => {
     if (mustSetUpMfa && !onTwoStep) router.replace("/app/account/two-step")
@@ -62,7 +58,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </FullScreen>
     )
   }
-  if (status !== "authenticated" || !me || inConsole) {
+  if (status !== "authenticated" || !me) {
     return (
       <FullScreen>
         <Loader2 className="size-5 animate-spin" aria-label="Loading" />
@@ -98,11 +94,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <p className="font-medium text-foreground">No active business</p>
               <p className="mt-1">You&apos;re not an active member of any business yet. Ask your administrator for an invitation.</p>
             </>
-          )}
-          {me.console && (
-            <Button className="mt-4" onClick={() => switchToConsole().then(() => router.replace("/console"))}>
-              Open the AHEAD Console
-            </Button>
           )}
         </div>
       </FullScreen>

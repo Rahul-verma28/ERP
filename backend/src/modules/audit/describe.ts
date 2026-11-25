@@ -7,7 +7,6 @@ const EXACT: Record<string, string> = {
   'auth.password_reset': 'Reset password',
   'auth.password_expired_change': 'Changed an expired password',
   'auth.access_link_used': 'Signed in with a login link',
-  'auth.switch_console': 'Opened the AHEAD Console',
   'tenant.created': 'Created the business',
   'tenant.update': 'Changed business details',
   'tenant.profile.update': 'Changed the business profile',

@@ -1,5 +1,0 @@
-{
-  "watch": ["src", "../backend/src/contracts"],
-  "ext": "ts,json",
-  "exec": "tsx src/server.ts"
-}

@@ -9,7 +9,7 @@ import { todayIST } from '../../kernel/gst';
 import { optionalText, zPhone } from '../../kernel/zodRules';
 import { withDefaults } from '../../contracts/workspace';
 import { getRolePermissions } from '../access/service';
-import { getEntitlements } from '../subscription/entitlements';
+import { getEntitlements } from '../licensing/entitlements';
 import { audit } from '../audit/service';
 import { ensureFinance, createExpense, createTransfer, EXPENSE_CATEGORIES } from '../finance/service';
 import { defaultLocation } from '../inventory/engine';

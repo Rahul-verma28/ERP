@@ -3,8 +3,8 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 
 // Uploads check the plan's storage; the plan is read outside the test's transaction, so it is
 // given here: 20 GB (Professional)
-vi.mock('../modules/subscription/entitlements', async (orig) => ({
-  ...(await orig<typeof import('../modules/subscription/entitlements')>()),
+vi.mock('../modules/licensing/entitlements', async (orig) => ({
+  ...(await orig<typeof import('../modules/licensing/entitlements')>()),
   getEntitlements: async () => ({ limits: { storageMb: 20480 }, modules: {}, status: 'active' }),
 }));
 import { prisma, db, withPlatform } from '../kernel/db';

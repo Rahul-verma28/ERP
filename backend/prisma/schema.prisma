@@ -57,56 +57,6 @@ enum TenantStatus {
   @@map("tenant_status")
 }
 
-enum TenantSource {
-  direct
-  vendor
-  sales
-  partner
-
-  @@map("tenant_source")
-}
-
-/// How the tenant started: self-signup trial, or created by sales/vendor and paid up front
-enum OnboardingType {
-  trial
-  direct_paid
-
-  @@map("onboarding_type")
-}
-
-enum AcquiredByType {
-  self
-  vendor
-  sales_user
-  partner_user
-
-  @@map("acquired_by_type")
-}
-
-enum AcquisitionMethod {
-  signup
-  referral_link
-  referral_code
-  manual
-
-  @@map("acquisition_method")
-}
-
-/// Which side of the app a session works in (design v2: Console + Business ERP)
-enum Workspace {
-  tenant
-  console
-
-  @@map("workspace")
-}
-
-enum BillingOwner {
-  self
-  partner
-
-  @@map("billing_owner")
-}
-
 enum MemberStatus {
   invited
   active
@@ -127,9 +77,6 @@ enum PermissionAction {
 }
 
 enum RoleLayer {
-  platform
-  partner
-  vendor
   tenant
 
   @@map("role_layer")
@@ -183,30 +130,6 @@ enum RecordSource {
   @@map("record_source")
 }
 
-enum PriceItemType {
-  plan
-  addon_module
-  extra_user
-  credit_pack
-
-  @@map("price_item_type")
-}
-
-enum BillingCycle {
-  monthly
-  yearly
-  one_time
-
-  @@map("billing_cycle")
-}
-
-enum CouponType {
-  percent
-  flat
-
-  @@map("coupon_type")
-}
-
 enum EntitlementStatus {
   active
   read_only
@@ -243,7 +166,6 @@ model User {
   trustedDevices  UserTrustedDevice[]
   passwordHistory UserPasswordHistory[]
   memberships     TenantMember[]
-  platformMember  PlatformMember?
   accessLinks     AccessLink[]
 
   @@map("users")
@@ -254,7 +176,6 @@ model UserSession {
   userId           String    @map("user_id") @db.Uuid
   familyId         String    @map("family_id") @db.Uuid
   tenantId         String?   @map("tenant_id") @db.Uuid // tenant the session is currently working in
-  workspace        Workspace @default(tenant) // console = AHEAD team workspace (tenantId is null)
   refreshTokenHash String    @unique @map("refresh_token_hash")
   userAgent        String?   @map("user_agent")
   ip               String?
@@ -291,11 +212,6 @@ model Tenant {
   industryKey      String         @map("industry_key")
   templateVersion  Int            @map("template_version")
   status           TenantStatus   @default(trialing)
-  source           TenantSource   @default(direct)
-  onboardingType   OnboardingType @default(trial) @map("onboarding_type")
-  isInternal       Boolean        @default(false) @map("is_internal")
-  partnerId        String?        @map("partner_id") @db.Uuid
-  billingOwner     BillingOwner   @default(self) @map("billing_owner")
   gstin            String?        @db.VarChar(15)
   billingStateCode String?        @map("billing_state_code") @db.Char(2)
   address          Json?
@@ -303,7 +219,6 @@ model Tenant {
   timezone         String         @default("Asia/Kolkata")
   fyStartMonth     Int            @default(4) @map("fy_start_month") @db.SmallInt
   ownerUserId      String         @map("owner_user_id") @db.Uuid
-  needsSeatChoice  Boolean        @default(false) @map("needs_seat_choice")
   configAppliedAt  DateTime?      @map("config_applied_at") @db.Timestamptz
   onboarding       Json           @default("{}")
   /// Signup answers: business type, team size, goals … (contracts/workspace.ts WorkspaceProfile)
@@ -316,15 +231,10 @@ model Tenant {
 
   branches     Branch[]
   members      TenantMember[]
-  subscription Subscription?
-  acquisition  TenantAcquisition?
-  partner      Partner?           @relation(fields: [partnerId], references: [id], map: "tenants_partner_fkey")
   accessLinks  AccessLink[]
   licence      TenantLicence?
 
-  @@index([partnerId])
   @@index([status])
-  @@index([source])
   @@map("tenants")
 }
 
@@ -391,237 +301,6 @@ model Invitation {
   @@map("invitations")
 }
 
-/// Platform table (no RLS, never visible to tenants): a member of the AHEAD team in the Console.
-/// reportsTo builds the sales hierarchy used by the "team" scope.
-model PlatformMember {
-  id            String       @id @default(uuid(7)) @db.Uuid
-  userId        String       @unique @map("user_id") @db.Uuid
-  roleId        String       @map("role_id") @db.Uuid
-  reportsTo     String?      @map("reports_to") @db.Uuid // user id of the manager
-  status        MemberStatus @default(active)
-  createdBy     String?      @map("created_by") @db.Uuid
-  joinedAt      DateTime     @default(now()) @map("joined_at") @db.Timestamptz
-  deactivatedAt DateTime?    @map("deactivated_at") @db.Timestamptz
-  /// Set for partner people: they only ever see that partner's clients
-  partnerId     String?      @map("partner_id") @db.Uuid
-  /// Vendors and salespeople: signups with this code are credited to them
-  referralCode  String?      @unique(map: "platform_members_referral_code_key") @map("referral_code") @db.VarChar(20)
-
-  user    User     @relation(fields: [userId], references: [id])
-  role    Role     @relation(fields: [roleId], references: [id])
-  partner Partner? @relation(fields: [partnerId], references: [id], map: "platform_members_partner_fkey")
-
-  @@index([reportsTo])
-  @@index([partnerId], map: "platform_members_partner_idx")
-  @@map("platform_members")
-}
-
-/// A reseller that brings its own clients; AHEAD bills it monthly at list price minus discountBp.
-model Partner {
-  id          String   @id @default(uuid(7)) @db.Uuid
-  name        String
-  contactName String   @map("contact_name")
-  email       String
-  mobile      String   @db.VarChar(15)
-  gstin       String?  @db.VarChar(15)
-  stateCode   String?  @map("state_code") @db.Char(2)
-  discountBp  Int      @default(0) @map("discount_bp")
-  status      String   @default("active")
-  createdBy   String?  @map("created_by") @db.Uuid
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz
-
-  members PlatformMember[]
-  tenants Tenant[]
-
-  @@map("partners")
-}
-
-/// What a Console extension changed: the trial end (trialing) or the payment grace end (past_due)
-enum ExtensionKind {
-  trial
-  grace
-
-  @@map("extension_kind")
-}
-
-/// Platform table: extra days given from the Console (design v2 §3), always with a reason.
-model GracePeriod {
-  id            String        @id @default(uuid(7)) @db.Uuid
-  tenantId      String        @map("tenant_id") @db.Uuid
-  kind          ExtensionKind
-  days          Int
-  reason        String
-  previousEndAt DateTime?     @map("previous_end_at") @db.Timestamptz
-  newEndAt      DateTime      @map("new_end_at") @db.Timestamptz
-  grantedBy     String        @map("granted_by") @db.Uuid
-  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
-
-  @@index([tenantId, createdAt])
-  @@map("grace_periods")
-}
-
-enum PlatformOrderStatus {
-  pending_approval // discount above the creator's limit; a Super Admin must approve
-  awaiting_payment
-  paid
-  cancelled
-
-  @@map("platform_order_status")
-}
-
-enum PlatformPaymentMethod {
-  bank_transfer
-  upi
-  cheque
-  cash
-  razorpay
-
-  @@map("platform_payment_method")
-}
-
-/// Platform table: what AHEAD sells to a client (plan + add-ons + users), priced and taxed once.
-model PlatformOrder {
-  id              String              @id @default(uuid(7)) @db.Uuid
-  tenantId        String              @map("tenant_id") @db.Uuid
-  kind            String              @default("fresh") // fresh | renewal | upgrade
-  status          PlatformOrderStatus @default(awaiting_payment)
-  planId          String              @map("plan_id") @db.Uuid
-  cycle           BillingCycle
-  items           Json // [{ itemType, itemRef, priceId, quantity, unitPaise, amountPaise, description }]
-  listPaise       BigInt              @map("list_paise")
-  discountBp      Int                 @default(0) @map("discount_bp") // sales discount, basis points
-  couponCode      String?             @map("coupon_code")
-  discountPaise   BigInt              @default(0) @map("discount_paise") // sales discount + coupon
-  taxablePaise    BigInt              @map("taxable_paise")
-  cgstPaise       BigInt              @default(0) @map("cgst_paise")
-  sgstPaise       BigInt              @default(0) @map("sgst_paise")
-  igstPaise       BigInt              @default(0) @map("igst_paise")
-  totalPaise      BigInt              @map("total_paise")
-  billTo          Json                @map("bill_to") // name, gstin, stateCode, address at order time
-  createdBy       String              @map("created_by") @db.Uuid
-  approvedBy      String?             @map("approved_by") @db.Uuid
-  approvedAt      DateTime?           @map("approved_at") @db.Timestamptz
-  cancelledReason String?             @map("cancelled_reason")
-  expiresAt       DateTime            @map("expires_at") @db.Timestamptz
-  paidAt          DateTime?           @map("paid_at") @db.Timestamptz
-  paymentLinkId   String?             @unique @map("payment_link_id")
-  paymentLinkUrl  String?             @map("payment_link_url")
-  paymentLinkAt   DateTime?           @map("payment_link_at") @db.Timestamptz
-  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz
-
-  payments PlatformPayment[]
-  invoice  PlatformInvoice?
-
-  @@index([tenantId, createdAt])
-  @@index([status])
-  @@map("platform_orders")
-}
-
-/// Platform table: money AHEAD received. Offline payments are recorded by Finance; gateway ones arrive by webhook.
-model PlatformPayment {
-  id               String                @id @default(uuid(7)) @db.Uuid
-  orderId          String                @map("order_id") @db.Uuid
-  tenantId         String                @map("tenant_id") @db.Uuid
-  method           PlatformPaymentMethod
-  amountPaise      BigInt                @map("amount_paise")
-  reference        String?
-  gatewayPaymentId String?               @unique @map("gateway_payment_id")
-  receivedAt       DateTime              @map("received_at") @db.Timestamptz
-  recordedBy       String?               @map("recorded_by") @db.Uuid
-  createdAt        DateTime              @default(now()) @map("created_at") @db.Timestamptz
-
-  order PlatformOrder @relation(fields: [orderId], references: [id])
-
-  @@index([tenantId])
-  @@map("platform_payments")
-}
-
-/// Platform table: AHEAD's GST invoice to a client. Numbered only when paid; never edited.
-model PlatformInvoice {
-  id           String   @id @default(uuid(7)) @db.Uuid
-  number       String   @unique // AHD/26-27/000123
-  fy           String
-  tenantId     String   @map("tenant_id") @db.Uuid
-  orderId      String   @unique @map("order_id") @db.Uuid
-  seller       Json // AHEAD billing details at issue time
-  billTo       Json     @map("bill_to")
-  lines        Json // [{ description, sac, quantity, taxablePaise, cgstPaise, sgstPaise, igstPaise, totalPaise }]
-  taxablePaise BigInt   @map("taxable_paise")
-  cgstPaise    BigInt   @map("cgst_paise")
-  sgstPaise    BigInt   @map("sgst_paise")
-  igstPaise    BigInt   @map("igst_paise")
-  totalPaise   BigInt   @map("total_paise")
-  issuedAt     DateTime @default(now()) @map("issued_at") @db.Timestamptz
-
-  order PlatformOrder @relation(fields: [orderId], references: [id])
-
-  @@index([tenantId])
-  @@map("platform_invoices")
-}
-
-/// Platform table: AHEAD's credit note against its own invoice (refunds). Never edited.
-model PlatformCreditNote {
-  id           String   @id @default(uuid(7)) @db.Uuid
-  number       String   @unique // CN/26-27/000001
-  fy           String
-  tenantId     String   @map("tenant_id") @db.Uuid
-  invoiceId    String   @unique @map("invoice_id") @db.Uuid // v1: one full credit note per invoice
-  reason       String
-  taxablePaise BigInt   @map("taxable_paise")
-  cgstPaise    BigInt   @map("cgst_paise")
-  sgstPaise    BigInt   @map("sgst_paise")
-  igstPaise    BigInt   @map("igst_paise")
-  totalPaise   BigInt   @map("total_paise")
-  createdBy    String   @map("created_by") @db.Uuid
-  issuedAt     DateTime @default(now()) @map("issued_at") @db.Timestamptz
-
-  @@index([tenantId])
-  @@map("platform_credit_notes")
-}
-
-/// Platform table: every gateway webhook, stored once by its event id (idempotency).
-model WebhookEvent {
-  id          String    @id @default(uuid(7)) @db.Uuid
-  gateway     String
-  eventId     String    @unique @map("event_id")
-  type        String
-  payload     Json
-  receivedAt  DateTime  @default(now()) @map("received_at") @db.Timestamptz
-  processedAt DateTime? @map("processed_at") @db.Timestamptz
-  error       String?
-  /// Console › System health: a person dealt with the error
-  resolvedAt  DateTime? @map("resolved_at") @db.Timestamptz
-  resolvedBy  String?   @map("resolved_by") @db.Uuid
-
-  @@map("webhook_events")
-}
-
-/// Platform table: someone applied on the website to be a vendor or partner (Console › Applications)
-model ConsoleApplication {
-  id           String    @id @default(uuid(7)) @db.Uuid
-  kind         String // vendor | partner
-  name         String
-  company      String?
-  email        String
-  mobile       String
-  city         String?
-  stateCode    String?   @map("state_code") @db.Char(2)
-  gstin        String?   @db.VarChar(15)
-  message      String?
-  status       String    @default("new") // new | approved | rejected
-  decidedBy    String?   @map("decided_by") @db.Uuid
-  decidedAt    DateTime? @map("decided_at") @db.Timestamptz
-  decisionNote String?   @map("decision_note")
-  /// The partner or Console member created on approval
-  resultId     String?   @map("result_id") @db.Uuid
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
-
-  @@index([status, createdAt])
-  @@index([email])
-  @@map("console_applications")
-}
-
 /// Platform table: last run of each scheduled job (Console › System health)
 model JobRun {
   name           String    @id
@@ -639,39 +318,8 @@ model JobRun {
   @@map("job_runs")
 }
 
-/// Platform table: AHEAD's own document number series per financial year.
-model PlatformSequence {
-  docType String @map("doc_type")
-  fy      String
-  nextNo  Int    @default(1) @map("next_no")
-
-  @@id([docType, fy])
-  @@map("platform_sequences")
-}
-
-/// Platform table (no RLS, never visible to tenants): who brought the tenant in.
-/// Written once by createTenant() and locked; only a Super Admin may change it, with a reason.
-model TenantAcquisition {
-  tenantId         String            @id @map("tenant_id") @db.Uuid
-  acquiredByType   AcquiredByType    @map("acquired_by_type")
-  acquiredByUserId String?           @map("acquired_by_user_id") @db.Uuid
-  method           AcquisitionMethod
-  referralCode     String?           @map("referral_code")
-  couponCode       String?           @map("coupon_code")
-  lockedAt         DateTime          @default(now()) @map("locked_at") @db.Timestamptz
-  changedBy        String?           @map("changed_by") @db.Uuid
-  changeReason     String?           @map("change_reason")
-  updatedAt        DateTime          @updatedAt @map("updated_at") @db.Timestamptz
-
-  tenant Tenant @relation(fields: [tenantId], references: [id])
-
-  @@index([acquiredByUserId])
-  @@map("tenant_acquisitions")
-}
-
 enum AccessLinkKind {
   client_owner
-  console_member
 
   @@map("access_link_kind")
 }
@@ -695,21 +343,6 @@ model AccessLink {
   @@index([userId], map: "access_links_user_idx")
   @@index([tenantId], map: "access_links_tenant_idx")
   @@map("access_links")
-}
-
-/// Platform table (no RLS): prevents repeated trials by the same business.
-model TrialRegistry {
-  id         String   @id @default(uuid(7)) @db.Uuid
-  mobileHash String?  @map("mobile_hash")
-  emailHash  String?  @map("email_hash")
-  gstin      String?  @db.VarChar(15)
-  tenantId   String   @map("tenant_id") @db.Uuid
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
-
-  @@index([mobileHash])
-  @@index([emailHash])
-  @@index([gstin])
-  @@map("trial_registry")
 }
 
 // ─────────────────────── Roles & permissions ───────────────────────
@@ -739,14 +372,11 @@ model Role {
   templateVersion Int       @default(1) @map("template_version")
   sort            Int       @default(0)
   version         Int       @default(1)
-  /// Console roles: permissions edited by an Admin; the seed leaves them alone until reset
-  customizedAt    DateTime? @map("customized_at") @db.Timestamptz
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz
 
   permissions     RolePermission[]
   fieldAccess     RoleFieldAccess[]
   members         TenantMember[]
-  platformMembers PlatformMember[]
 
   @@index([tenantId])
   @@map("roles")
@@ -841,161 +471,7 @@ model FormLayout {
   @@map("form_layouts")
 }
 
-// ───────────────── Plans, subscriptions & entitlements ─────────────────
-
-/// Platform table: values for settings defined in contracts/config.ts. scope = 'platform' for now.
-model ConfigValue {
-  scope     String
-  key       String
-  value     Json
-  version   Int      @default(1)
-  updatedBy String?  @map("updated_by") @db.Uuid
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz
-
-  @@id([scope, key])
-  @@map("config_values")
-}
-
-model Module {
-  key          String   @id
-  name         String
-  description  String?
-  category     String
-  dependsOn    String[] @default([]) @map("depends_on")
-  isFreeTier   Boolean  @default(false) @map("is_free_tier")
-  isUsageBased Boolean  @default(false) @map("is_usage_based")
-  isV1         Boolean  @default(true) @map("is_v1")
-  sort         Int      @default(0)
-
-  @@map("modules")
-}
-
-model Plan {
-  id       String  @id @default(uuid(7)) @db.Uuid
-  key      String  @unique
-  name     String
-  tagline  String?
-  limits   Json
-  isPublic Boolean @default(true) @map("is_public")
-  sort     Int     @default(0)
-
-  modules PlanModule[]
-
-  @@map("plans")
-}
-
-model PlanModule {
-  planId    String @map("plan_id") @db.Uuid
-  moduleKey String @map("module_key")
-
-  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
-
-  @@id([planId, moduleKey])
-  @@map("plan_modules")
-}
-
-model Price {
-  id          String        @id @default(uuid(7)) @db.Uuid
-  itemType    PriceItemType @map("item_type")
-  itemRef     String        @map("item_ref") // plan key / module key / 'user' / pack key
-  cycle       BillingCycle
-  amountPaise BigInt        @map("amount_paise")
-  activeFrom  DateTime      @default(now()) @map("active_from") @db.Timestamptz
-  activeTo    DateTime?     @map("active_to") @db.Timestamptz
-
-  @@index([itemType, itemRef, cycle])
-  @@map("prices")
-}
-
-model Coupon {
-  code           String     @id
-  type           CouponType
-  value          Int
-  appliesTo      String     @default("all") @map("applies_to")
-  validFrom      DateTime?  @map("valid_from") @db.Timestamptz
-  validTo        DateTime?  @map("valid_to") @db.Timestamptz
-  maxRedemptions Int?       @map("max_redemptions")
-  redeemed       Int        @default(0)
-  vendorId       String?    @map("vendor_id") @db.Uuid
-
-  @@map("coupons")
-}
-
-/// Console Phase D: a plan being edited; published by an Admin
-model PlanDraft {
-  planKey   String   @id @map("plan_key")
-  data      Json
-  updatedBy String?  @map("updated_by") @db.Uuid
-  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
-
-  @@map("plan_drafts")
-}
-
-/// Console Phase D: a module switched on (beyond the plan) or off for one business
-model TenantModuleOverride {
-  tenantId  String    @map("tenant_id") @db.Uuid
-  moduleKey String    @map("module_key")
-  state     String
-  until     DateTime? @db.Timestamptz
-  reason    String
-  createdBy String?   @map("created_by") @db.Uuid
-  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
-
-  @@id([tenantId, moduleKey])
-  @@map("tenant_module_overrides")
-}
-
-model Subscription {
-  id                 String       @id @default(uuid(7)) @db.Uuid
-  tenantId           String       @unique @map("tenant_id") @db.Uuid
-  planId             String       @map("plan_id") @db.Uuid
-  status             TenantStatus
-  cycle              BillingCycle @default(monthly)
-  trialEndsAt        DateTime?    @map("trial_ends_at") @db.Timestamptz
-  currentPeriodStart DateTime?    @map("current_period_start") @db.Timestamptz
-  currentPeriodEnd   DateTime?    @map("current_period_end") @db.Timestamptz
-  graceEndsAt        DateTime?    @map("grace_ends_at") @db.Timestamptz
-  cancelAtPeriodEnd  Boolean      @default(false) @map("cancel_at_period_end")
-  autoRenew          Boolean      @default(true) @map("auto_renew")
-  mandateId          String?      @map("mandate_id") @db.Uuid
-  purgeAt            DateTime?    @map("purge_at") @db.Timestamptz
-  version            Int          @default(1)
-  createdAt          DateTime     @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt          DateTime     @updatedAt @map("updated_at") @db.Timestamptz
-
-  tenant           Tenant             @relation(fields: [tenantId], references: [id])
-  items            SubscriptionItem[]
-  scheduledChanges ScheduledChange[]
-
-  @@index([status, trialEndsAt])
-  @@map("subscriptions")
-}
-
-model SubscriptionItem {
-  id              String    @id @default(uuid(7)) @db.Uuid
-  subscriptionId  String    @map("subscription_id") @db.Uuid
-  priceId         String    @map("price_id") @db.Uuid
-  quantity        Int       @default(1)
-  unitAmountPaise BigInt    @map("unit_amount_paise")
-  startsAt        DateTime  @map("starts_at") @db.Timestamptz
-  endsAt          DateTime? @map("ends_at") @db.Timestamptz
-
-  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-
-  @@map("subscription_items")
-}
-
-model ScheduledChange {
-  id             String    @id @default(uuid(7)) @db.Uuid
-  subscriptionId String    @map("subscription_id") @db.Uuid
-  change         Json
-  effectiveAt    DateTime  @map("effective_at") @db.Timestamptz
-  appliedAt      DateTime? @map("applied_at") @db.Timestamptz
-
-  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-
-  @@map("scheduled_changes")
-}
+// ───────────────── Licence & entitlements ─────────────────
 
 model TenantEntitlement {
   tenantId    String            @map("tenant_id") @db.Uuid
@@ -1034,16 +510,6 @@ model UsageCounter {
 
   @@id([tenantId, metric, period])
   @@map("usage_counters")
-}
-
-model CreditBalance {
-  tenantId  String    @map("tenant_id") @db.Uuid
-  type      String // ai | sms | whatsapp
-  balance   BigInt    @default(0)
-  expiresAt DateTime? @map("expires_at") @db.Timestamptz
-
-  @@id([tenantId, type])
-  @@map("credit_balances")
 }
 
 // ─────────────────────── Events, audit, notifications ───────────────────────
@@ -1918,69 +1384,6 @@ model SignInEvent {
   @@map("sign_in_events")
 }
 
-// ── Phase 4: Console sales workspace (platform tables) ──
-
-model ConsoleProspect {
-  id           String   @id @default(uuid(7)) @db.Uuid
-  name         String
-  businessName String   @map("business_name")
-  industryKey  String?  @map("industry_key")
-  city         String?
-  mobile       String?  @db.VarChar(15)
-  email        String?
-  source       String?
-  /// new | contacted | demo | trial | won | lost
-  stage        String   @default("new")
-  lostReason   String?  @map("lost_reason")
-  ownerUserId  String   @map("owner_user_id") @db.Uuid
-  /// The business once it signs up (self or from the Console)
-  tenantId     String?  @map("tenant_id") @db.Uuid
-  createdBy    String   @map("created_by") @db.Uuid
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz
-
-  followups ConsoleFollowup[]
-  notes     ConsoleNote[]
-
-  @@index([ownerUserId, stage], map: "console_prospects_owner_idx")
-  @@index([mobile], map: "console_prospects_mobile_idx")
-  @@index([tenantId], map: "console_prospects_tenant_idx")
-  @@map("console_prospects")
-}
-
-model ConsoleFollowup {
-  id          String    @id @default(uuid(7)) @db.Uuid
-  prospectId  String?   @map("prospect_id") @db.Uuid
-  tenantId    String?   @map("tenant_id") @db.Uuid
-  title       String
-  dueAt       DateTime  @map("due_at") @db.Timestamptz
-  ownerUserId String    @map("owner_user_id") @db.Uuid
-  doneAt      DateTime? @map("done_at") @db.Timestamptz
-  autoKey     String?   @unique(map: "console_followups_auto_key") @map("auto_key")
-  createdBy   String?   @map("created_by") @db.Uuid
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz
-
-  prospect ConsoleProspect? @relation(fields: [prospectId], references: [id], onDelete: Cascade, map: "console_followups_prospect_fkey")
-
-  @@index([ownerUserId, doneAt, dueAt], map: "console_followups_owner_idx")
-  @@index([tenantId], map: "console_followups_tenant_idx")
-  @@map("console_followups")
-}
-
-model ConsoleNote {
-  id            String   @id @default(uuid(7)) @db.Uuid
-  tenantId      String?  @map("tenant_id") @db.Uuid
-  prospectId    String?  @map("prospect_id") @db.Uuid
-  body          String
-  privateToTeam Boolean  @default(false) @map("private_to_team")
-  authorId      String   @map("author_id") @db.Uuid
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
-
-  prospect ConsoleProspect? @relation(fields: [prospectId], references: [id], onDelete: Cascade, map: "console_notes_prospect_fkey")
-
-  @@index([tenantId, createdAt(sort: Desc)], map: "console_notes_tenant_idx")
-  @@map("console_notes")
-}
 
 /// A godown, store or van where stock is kept
 model StockLocation {

@@ -6,8 +6,9 @@ import { financialYear } from '../../kernel/gst';
 import { audit } from '../audit/service';
 import { getFieldAccess } from '../access/service';
 import { sendMessage } from '../notifications/service';
-import { consumeOtp, sendOtp } from '../identity/otp';
-import { transition } from '../subscription/stateMachine';
+import { checkOtp, consumeOtp, sendOtp } from '../identity/otp';
+import { applyLicence } from '../licensing/service';
+import { consoleApi } from '../../kernel/consoleClient';
 import type { TenantCtx } from '../../kernel/context';
 
 // Settings › Data: import history, export, close and reopen the business.
@@ -157,21 +158,24 @@ export async function closeBusiness(ctx: TenantCtx, input: z.infer<typeof CloseI
     throw new AppError('VALIDATION_FAILED', "The name doesn't match.", { fields: { name: "The name doesn't match" } });
   }
   const owner = await prisma.user.findUniqueOrThrow({ where: { id: ctx.userId }, select: { mobile: true, name: true } });
-  const purgeAt = await withPlatform(async () => {
+  // The code is checked first; the Console then closes the subscription and sends back the closed licence
+  await withPlatform(() => checkOtp(owner.mobile, 'close_account', input.code));
+  const closed = await consoleApi<{ licence: string; purgeAt: string | null }>('POST', `/businesses/${ctx.tenantId}/close`);
+  const purgeAt = closed.purgeAt ? new Date(closed.purgeAt) : null;
+  await withPlatform(async () => {
     await consumeOtp(owner.mobile, 'close_account', input.code);
-    await transition(ctx.tenantId, 'owner_closed');
+    await applyLicence(closed.licence, { tenantId: ctx.tenantId });
     // Everyone else is signed out right away
     await db().userSession.updateMany({ where: { tenantId: ctx.tenantId, revokedAt: null, userId: { not: ctx.userId } }, data: { revokedAt: new Date() } });
-    const sub = await db().subscription.findUniqueOrThrow({ where: { tenantId: ctx.tenantId }, select: { purgeAt: true } });
-    return sub.purgeAt;
   });
   await audit({ action: 'tenant.close', entity: 'tenant', entityId: ctx.tenantId, after: { purgeAt } });
   const admins = await prisma.tenantMember.findMany({ where: { tenantId: ctx.tenantId, status: 'active', role: { key: { in: ['owner', 'admin'] } } }, select: { user: { select: { email: true, name: true } } } });
+  // The business is already closed: a notice that can't go out is logged, never shown as a failed close
   for (const a of admins) {
     await sendMessage({
       channel: 'email', to: a.user.email, template: 'tenant.closed', subject: `${t.name} was closed`,
       text: `Hi ${a.user.name}, ${owner.name} closed ${t.name} on AHEAD. It can be reopened until ${purgeAt?.toDateString()}; after that all data is deleted.`,
-    });
+    }).catch((e) => console.error(`[close] notice to ${a.user.email} not sent:`, e instanceof Error ? e.message : e));
   }
   return { status: 'closed', purgeAt };
 }
@@ -179,7 +183,8 @@ export async function closeBusiness(ctx: TenantCtx, input: z.infer<typeof CloseI
 export async function reopenBusiness(ctx: TenantCtx) {
   const t = await ownerOnly(ctx);
   if (t.status !== 'closed') throw new AppError('CONFLICT', 'This business is not closed.');
-  await withPlatform(() => transition(ctx.tenantId, 'owner_restored'));
+  const reopened = await consoleApi<{ licence: string }>('POST', `/businesses/${ctx.tenantId}/reopen`);
+  await withPlatform(() => applyLicence(reopened.licence, { tenantId: ctx.tenantId }));
   await audit({ action: 'tenant.reopen', entity: 'tenant', entityId: ctx.tenantId });
   return { status: 'free' };
 }

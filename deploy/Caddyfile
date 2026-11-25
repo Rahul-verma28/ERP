@@ -1,0 +1,14 @@
+# HTTPS in front of both products. Caddy gets and renews the certificates by itself;
+# both domains must point at this server (A record) before the first start.
+# API calls go straight to each API (one proxy hop, so the APIs see the visitor's real IP).
+{$ERP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy /api/* backend:5000
+	reverse_proxy frontend:3000
+}
+
+{$CONSOLE_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy /api/* console-api:5100
+	reverse_proxy console-web:3001
+}

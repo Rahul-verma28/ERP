@@ -1,19 +1,18 @@
 import { prisma } from '../../kernel/db';
 import { JobTally, reason } from '../../kernel/jobs';
-import { runAutoFollowups } from '../console/sales';
 import { runCleanup } from './cleanup';
 import { runSupportAutoClose } from '../support/jobs';
 import { runTaskReminders } from '../tasks/jobs';
+import { runConsoleSync } from '../licensing/consoleSync';
 
-// The scheduled jobs and their last run (Console › System health). Trials, renewals and billing
-// moved to console-api (docs/architecture/console-erp-split.md); they no longer run here. The worker runs them hourly;
-// an Admin can run one now. Each job is safe to run again: it only acts on what is due, and each
+// The ERP's scheduled jobs and their last run. Trials, renewals and billing belong to the Console
+// (docs/architecture/console-erp-split.md). The worker runs these hourly; an Admin can run one now. Each job is safe to run again: it only acts on what is due, and each
 // item in it runs on its own, so one bad business never stops the rest.
 
 export const JOBS = {
-  followups: { label: 'Sales follow-ups', text: 'Creates follow-up reminders for the Console sales team', run: () => runAutoFollowups() },
   support_auto_close: { label: 'Close solved tickets', text: 'Closes resolved tickets the customer did not reopen, after the days set in Customer Service', run: () => runSupportAutoClose() },
   task_reminders: { label: 'Task reminders', text: 'Tells people their task is due, on the day each business chose in Settings › Tasks', run: () => runTaskReminders() },
+  console_sync: { label: 'Console sync', text: 'Picks up licences from the AHEAD Console and sends it each business’s usage', run: () => runConsoleSync() },
   cleanup: { label: 'Clean-up', text: 'Removes files nobody kept, used sign-in codes, old sessions and old background events', run: () => runCleanup() },
 } as const satisfies Record<string, { label: string; text: string; run: () => Promise<JobTally> }>;
 export type JobKey = keyof typeof JOBS;

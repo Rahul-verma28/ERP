@@ -18,8 +18,8 @@ export const MODULE_KEYS = [
 ] as const;
 
 export type ModuleKey = (typeof MODULE_KEYS)[number];
-/** 'tenant' = business settings inside the ERP; 'platform' = the AHEAD Console */
-export type PermissionModule = ModuleKey | 'tenant' | 'platform';
+/** 'tenant' = business settings inside the ERP */
+export type PermissionModule = ModuleKey | 'tenant';
 
 /** basic = free-tier features only; full = all features of the module */
 export type ModuleTier = 'basic' | 'full';

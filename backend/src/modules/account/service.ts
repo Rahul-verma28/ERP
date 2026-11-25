@@ -224,7 +224,6 @@ export async function listSessions(where: Prisma.UserSessionWhereInput) {
     device: deviceLabel(s.userAgent),
     userAgent: s.userAgent,
     ip: s.ip,
-    workspace: s.workspace,
     tenantId: s.tenantId,
     lastActiveAt: s.createdAt,
     signedInAt: started.get(s.familyId) ?? s.createdAt,
@@ -381,17 +380,16 @@ export async function trustedUserAgents(userId: string) {
 
 /**
  * An Owner/Admin resets two-step for a member who lost their phone. Refused when the
- * person also belongs to another business or the Console: one business can't weaken the
+ * person also belongs to another business: one business can't weaken the
  * account for the others.
  */
 export async function adminResetMfa(tenantId: string, actorId: string, memberUserId: string, reason: string) {
   if (memberUserId === actorId) throw new AppError('VALIDATION_FAILED', 'Use My account › Security to change your own two-step verification.');
-  const [others, platform, user] = await Promise.all([
+  const [others, user] = await Promise.all([
     prisma.tenantMember.count({ where: { userId: memberUserId, status: 'active', tenantId: { not: tenantId } } }),
-    prisma.platformMember.findUnique({ where: { userId: memberUserId } }),
     prisma.user.findUniqueOrThrow({ where: { id: memberUserId } }),
   ]);
-  if (others > 0 || platform) {
+  if (others > 0) {
     throw new AppError('PERMISSION_DENIED', `${user.name} also uses another AHEAD workspace, so only they can reset two-step (with a backup code).`);
   }
   await prisma.$transaction([

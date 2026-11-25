@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import type { TenantCtx } from './context';
 import { AppError } from './errors';
 import { db } from './db';
-import { getEntitlements } from '../modules/subscription/entitlements';
+import { getEntitlements } from '../modules/licensing/entitlements';
 import { getFieldAccess } from '../modules/access/service';
 import type { PlanLimits } from '../contracts/plans';
 

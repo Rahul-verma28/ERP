@@ -16,10 +16,9 @@ import reportRoutes from '../modules/reports/routes';
 import inventoryRoutes from '../modules/inventory/routes';
 import purchaseRoutes from '../modules/purchase/routes';
 import posRoutes from '../modules/pos/routes';
-import fileRoutes, { consoleFiles, publicFiles } from '../modules/files/routes';
-import consoleRoutes from '../modules/console/routes';
+import fileRoutes, { publicFiles } from '../modules/files/routes';
 import provisionRoutes from '../modules/licensing/provisionRoutes';
-import { publicPayments, tenantPayments } from '../modules/platformBilling/routes';
+import billingPlanRoutes, { publicPlans } from '../modules/licensing/billingRoutes';
 import { isDev } from '../config/env';
 import { getDevOutbox } from '../modules/notifications/service';
 
@@ -40,8 +39,6 @@ router.use('/auth', identityRoutes);
 router.use('/me', meHandler);
 router.use('/account', accountRoutes); // My account: every business
 router.use('/internal/v1', provisionRoutes); // the Console's signed calls into this ERP, no login
-router.use('/console/files', consoleFiles); // KYC papers, before the rest of the Console
-router.use('/console', consoleRoutes); // AHEAD team workspace; before the tenant routers
 router.use('/', publicFiles); // signed file links: an <img> or a download sends no login header
 router.use('/', publicBilling); // public share links, before any authenticated router
 router.use('/', publicBookings); // the online booking page, no login
@@ -49,8 +46,8 @@ router.use('/', publicSupport); // the request form and tracking link, no login
 router.use('/', publicPortal); // the customer portal: its own sign-in, never a staff login
 // Development only: messages that would have gone by SMS or email (sign-in codes, invitations)
 router.get('/dev/messages', (_req, res) => { if (!isDev) { res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Not found.' } }); return; } res.json({ data: getDevOutbox() }); });
-router.use('/', publicPayments); // gateway webhooks (+ dev test gateway), signed, no login
-router.use('/', tenantPayments); // what the client owes AHEAD
+router.use('/', publicPlans); // plans and coupons for the signup page, from the Console
+router.use('/', billingPlanRoutes); // the owner's Plan & billing, from the Console
 router.use('/', tenancyRoutes);
 router.use('/', fileRoutes);
 router.use('/', catalogRoutes);

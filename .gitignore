@@ -29,3 +29,12 @@ logs/
 Thumbs.db
 .vscode/
 .idea/
+
+# Standalone Console repository (ERP-console)
+console-api/
+console-web/
+docs/console-ui-rules.md
+
+# Local tools & spreadsheets
+.claude/
+*.xlsx

@@ -12,8 +12,8 @@ import * as pos from '../modules/pos/service';
 // cash counted against the cash expected.
 
 // The test business lives inside a rolled-back transaction the entitlement cache can't see
-vi.mock('../modules/subscription/entitlements', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../modules/subscription/entitlements')>()),
+vi.mock('../modules/licensing/entitlements', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../modules/licensing/entitlements')>()),
   getEntitlements: async () => ({ modules: Object.fromEntries(MODULE_KEYS.map((k) => [k, { status: 'active', tier: 'full' }])), limits: { users: 10, invoicesPerMonth: null } }),
 }));
 

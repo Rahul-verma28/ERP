@@ -11,13 +11,12 @@ import { validate } from '../../middleware/request';
 import { authenticate, publicRoute } from '../../middleware/auth';
 import { loginLimiter, otpLimiter } from '../../middleware/rateLimit';
 import { getMember } from '../access/service';
-import { getPlatformMember } from '../console/service';
-import { createTenant } from '../tenancy/createTenant';
+import { createWorkspace } from '../licensing/provision';
+import { consoleApi } from '../../kernel/consoleClient';
 import { audit } from '../audit/service';
 import { checkOtp, consumeOtp, sendOtp } from './otp';
 import { zEmail, zMobileIN, zPassword, zPersonName } from '../../kernel/zodRules';
 import { BusinessSignup, signupToTenant } from '../tenancy/workspace';
-import { referralAcquisition } from '../console/referral';
 import { REFRESH_COOKIE, clearRefreshCookie, rotateSession, signAccessToken, signPurposeToken, startSession, verifyPurposeToken } from './tokens';
 import { buildMe, checkPassword, completeLogin, sendEmailVerification } from './service';
 import { linkInfo, usableLink, useLink } from './accessLinks';
@@ -98,50 +97,66 @@ router.post('/signup', publicRoute, loginLimiter, validate(SignupBody), async (r
   const body = req.body as z.infer<typeof SignupBody>;
   const proof = verifyPurposeToken<{ mobile: string; otpId: string; purpose: string }>('mobile_verified', body.mobileVerificationToken);
   if (proof.mobile !== body.mobile || proof.purpose !== 'signup') throw new AppError('OTP_TOKEN_INVALID', 'Please verify your mobile number again.');
+  // Checked before asking the Console, so a used code or a taken email never leaves a half-made business
+  await withPlatform(async () => {
+    if (!(await db().otpCode.findFirst({ where: { id: proof.otpId, consumedAt: { not: null } }, select: { id: true } }))) throw new AppError('OTP_TOKEN_INVALID', 'Please verify your mobile number again.');
+    if (await db().user.findUnique({ where: { email: body.email }, select: { id: true } })) throw new AppError('EMAIL_TAKEN', 'An account with this email already exists. Please sign in.');
+    if (await db().user.findUnique({ where: { mobile: body.mobile }, select: { id: true } })) throw new AppError('MOBILE_TAKEN', 'An account with this mobile number already exists. Please sign in.');
+  });
   const passwordHash = await hashPassword(body.password);
+  const t = signupToTenant(body);
+
+  // The Console registers the business (one-trial rule, referral, plan) and signs its licence
+  const reg = await consoleApi<{ businessId: string; licence: string; trial: boolean }>('POST', '/signups', {
+    name: t.businessName, legalName: t.legalName, industryKey: t.industryKey, gstin: t.gstin ?? null, stateCode: t.billingStateCode,
+    owner: { name: body.name, email: body.email, mobile: body.mobile }, referralCode: body.referralCode ?? null, couponCode: body.couponCode ?? null,
+  });
 
   const result = await withPlatform(async () => {
-    // Single use: the OTP row is deleted when the token is redeemed
+    // Single use: the code is gone once the account exists
     const used = await db().otpCode.deleteMany({ where: { id: proof.otpId, consumedAt: { not: null } } });
     if (!used.count) throw new AppError('OTP_TOKEN_INVALID', 'Please verify your mobile number again.');
-    // A valid vendor / sales referral credits them; otherwise it is a plain self-signup
-    const referral = await referralAcquisition(body.referralCode, body.referralVia);
-    const created = await createTenant({
-      owner: { kind: 'new', name: body.name, email: body.email, mobile: body.mobile, passwordHash, mobileVerified: true },
-      ...signupToTenant(body),
-      acquisition: { byType: 'self', method: 'signup', ...referral, couponCode: body.couponCode ?? undefined },
+    const made = await createWorkspace({
+      id: reg.businessId, name: t.businessName, industryKey: t.industryKey, legalName: t.legalName, gstin: t.gstin ?? null, stateCode: t.billingStateCode, profile: t.profile,
+      owner: { kind: 'new', name: body.name, email: body.email, mobile: body.mobile, passwordHash, mobileVerified: true }, licence: reg.licence,
     });
-    const accessToken = await startSession(req, res, created.user.id, created.tenant.id, created.ownerRoleId);
-    await sendEmailVerification(created.user);
-    return { ...created, accessToken };
-    // ~25 sequential queries; the database is far from the API today (see TASKS "Latency")
+    const user = await db().user.findUniqueOrThrow({ where: { id: made.ownerUserId } });
+    const accessToken = await startSession(req, res, user.id, made.tenantId, made.ownerRoleId);
+    await sendEmailVerification(user);
+    const tenant = await db().tenant.findUniqueOrThrow({ where: { id: made.tenantId }, select: { id: true, name: true, status: true } });
+    return { user, tenant, accessToken };
   }, undefined, { timeoutMs: SIGNUP_TX_TIMEOUT_MS });
 
+  // Not confirmed now (Console unreachable for a moment): its hourly check finds the business and confirms it
+  await consoleApi('POST', `/signups/${reg.businessId}/confirm`).catch(() => undefined);
   res.status(201).json({
     user: { id: result.user.id, name: result.user.name, emailVerified: false },
-    tenant: { id: result.tenant.id, name: result.tenant.name, status: result.tenant.status, trialEndsAt: result.subscription.trialEndsAt },
+    tenant: { ...result.tenant, trial: reg.trial },
     accessToken: result.accessToken,
   });
 });
 
 // "Add another business" for a signed-in user: same business steps, no new account.
-// The one-trial rule still applies (same mobile/email), so this usually needs a paid plan.
+// The one-trial rule still applies (same mobile/email), so a second business starts on Free.
 router.post('/businesses', authenticate, loginLimiter, validate(BusinessSignup), async (req, res) => {
   const body = req.body as z.infer<typeof BusinessSignup>;
-  const created = await withPlatform(
-    () =>
-      createTenant({
-        owner: { kind: 'existing', userId: req.auth!.sub },
-        ...signupToTenant(body),
-        acquisition: { byType: 'self', method: 'signup', couponCode: body.couponCode ?? undefined },
-      }),
+  const owner = await withPlatform(() => db().user.findUniqueOrThrow({ where: { id: req.auth!.sub }, select: { id: true, name: true, email: true, mobile: true } }));
+  const t = signupToTenant(body);
+  const reg = await consoleApi<{ businessId: string; licence: string; trial: boolean }>('POST', '/signups', {
+    name: t.businessName, legalName: t.legalName, industryKey: t.industryKey, gstin: t.gstin ?? null, stateCode: t.billingStateCode,
+    owner: { name: owner.name, email: owner.email, mobile: owner.mobile }, referralCode: body.referralCode ?? null, couponCode: body.couponCode ?? null,
+  });
+  const made = await withPlatform(
+    () => createWorkspace({ id: reg.businessId, name: t.businessName, industryKey: t.industryKey, legalName: t.legalName, gstin: t.gstin ?? null, stateCode: t.billingStateCode, profile: t.profile, owner: { kind: 'existing', userId: owner.id }, licence: reg.licence }),
     undefined,
     { timeoutMs: SIGNUP_TX_TIMEOUT_MS },
   );
-  await withPlatform(() => db().userSession.update({ where: { id: req.auth!.sid }, data: { tenantId: created.tenant.id, workspace: 'tenant' } }));
+  await consoleApi('POST', `/signups/${reg.businessId}/confirm`).catch(() => undefined);
+  await withPlatform(() => db().userSession.update({ where: { id: req.auth!.sid }, data: { tenantId: made.tenantId } }));
+  const tenant = await withPlatform(() => db().tenant.findUniqueOrThrow({ where: { id: made.tenantId }, select: { id: true, name: true, status: true } }));
   res.status(201).json({
-    tenant: { id: created.tenant.id, name: created.tenant.name, status: created.tenant.status },
-    accessToken: signAccessToken({ sub: req.auth!.sub, tid: created.tenant.id, rid: created.ownerRoleId, sid: req.auth!.sid, ws: 'tenant' }),
+    tenant: { ...tenant, trial: reg.trial },
+    accessToken: signAccessToken({ sub: req.auth!.sub, tid: made.tenantId, rid: made.ownerRoleId, sid: req.auth!.sid }),
   });
 });
 
@@ -289,7 +304,7 @@ router.post(
       // An account that already uses two-step signs in the normal way
       const user = await db().user.findUniqueOrThrow({ where: { id: link.userId }, select: { mfaEnabled: true } });
       if (user.mfaEnabled) return { signInRequired: true };
-      return completeLogin(req, res, link.userId, 'access_link', link.kind === 'console_member' ? { console: true } : { tenantId: link.tenantId });
+      return completeLogin(req, res, link.userId, 'access_link', { tenantId: link.tenantId });
     });
     res.json(out);
   },
@@ -300,12 +315,6 @@ router.post('/refresh', publicRoute, async (req, res) => {
   if (!refresh) throw new AppError('UNAUTHENTICATED', 'Please sign in.');
   const accessToken = await withPlatform(async () => {
     const session = await rotateSession(req, res, refresh);
-    if (session.workspace === 'console') {
-      // Removed from the AHEAD team since the last refresh: fall back to a session without a workspace
-      const platform = await getPlatformMember(session.userId);
-      if (platform?.status === 'active') return signAccessToken({ sub: session.userId, tid: null, rid: platform.roleId, sid: session.id, ws: 'console' });
-      await db().userSession.update({ where: { id: session.id }, data: { workspace: 'tenant' } });
-    }
     let tenantId = session.tenantId;
     let roleId: string | null = null;
     if (tenantId) {
@@ -313,7 +322,7 @@ router.post('/refresh', publicRoute, async (req, res) => {
       if (member?.status === 'active') roleId = member.roleId;
       else tenantId = null;
     }
-    return signAccessToken({ sub: session.userId, tid: tenantId, rid: roleId, sid: session.id, ws: 'tenant' });
+    return signAccessToken({ sub: session.userId, tid: tenantId, rid: roleId, sid: session.id });
   }).catch((e) => {
     clearRefreshCookie(res);
     throw e;
@@ -332,21 +341,10 @@ router.post('/switch-tenant', authenticate, validate(z.object({ tenantId: z.stri
   const member = await getMember(tenantId, req.auth!.sub);
   if (!member || member.status !== 'active') throw new AppError('TENANT_FORBIDDEN', 'You are not a member of this business.');
   await withPlatform(async () => {
-    await db().userSession.update({ where: { id: req.auth!.sid }, data: { tenantId, workspace: 'tenant' } });
+    await db().userSession.update({ where: { id: req.auth!.sid }, data: { tenantId } });
     await db().user.update({ where: { id: req.auth!.sub }, data: { lastTenantId: tenantId } });
   });
-  res.json({ accessToken: signAccessToken({ sub: req.auth!.sub, tid: tenantId, rid: member.roleId, sid: req.auth!.sid, ws: 'tenant' }) });
-});
-
-// Design v2: AHEAD team members switch between their businesses and the Console
-router.post('/switch-console', authenticate, async (req, res) => {
-  const platform = await getPlatformMember(req.auth!.sub);
-  if (!platform || platform.status !== 'active') throw new AppError('PERMISSION_DENIED', 'You are not an active member of the AHEAD team.');
-  await withPlatform(async () => {
-    await db().userSession.update({ where: { id: req.auth!.sid }, data: { tenantId: null, workspace: 'console' } });
-    await audit({ tenantId: null, actorId: req.auth!.sub, action: 'auth.switch_console' });
-  });
-  res.json({ accessToken: signAccessToken({ sub: req.auth!.sub, tid: null, rid: platform.roleId, sid: req.auth!.sid, ws: 'console' }) });
+  res.json({ accessToken: signAccessToken({ sub: req.auth!.sub, tid: tenantId, rid: member.roleId, sid: req.auth!.sid }) });
 });
 
 // ── Email verification & password reset ──
@@ -410,7 +408,7 @@ router.post(
 );
 
 export const meHandler = Router().get('/', authenticate, async (req, res) => {
-  res.json(await buildMe(req.auth!.sub, req.auth!.tid, req.auth!.ws));
+  res.json(await buildMe(req.auth!.sub, req.auth!.tid));
 });
 
 export default router;

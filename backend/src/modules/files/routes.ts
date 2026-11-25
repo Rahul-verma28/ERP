@@ -1,6 +1,6 @@
 import express, { Router, type Request } from 'express';
 import { z } from 'zod';
-import { consoleAuth, consoleTx, requirePermission, requirePlatformPermission, tenantAuth, tx } from '../../middleware/auth';
+import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { validate } from '../../middleware/request';
 import { getRolePermissions } from '../access/service';
 import { withPlatform } from '../../kernel/db';
@@ -99,38 +99,6 @@ router.delete('/files/library/:id', requirePermission('tenant.file.delete'), val
 router.delete('/files/:id', validate(IdParam, 'params'), tx(async (req, res) => {
   const canManage = (await getRolePermissions(req.ctx!.roleId)).has('tenant.settings.edit');
   await files.removeFile(req.ctx!.tenantId, String(req.params.id), req.ctx!.userId, canManage);
-  res.status(204).end();
-}));
-
-// ── AHEAD Console: KYC papers on partners and businesses being onboarded ──
-export const consoleFiles = Router();
-consoleFiles.use(consoleAuth);
-const CONSOLE_ENTITIES = { partner: 'platform.partner.edit', tenant: 'platform.tenant.edit', application: 'platform.partner.create' } as const;
-const consoleKey = (entityType?: string) => {
-  const key = CONSOLE_ENTITIES[(entityType ?? '') as keyof typeof CONSOLE_ENTITIES];
-  if (!key) throw new AppError('VALIDATION_FAILED', 'Files can be added to partners, businesses and applications only.');
-  return key;
-};
-const canConsole = async (req: Request, key: string) => {
-  if (!(await getRolePermissions(req.console!.roleId)).get(key)) throw new AppError('PERMISSION_DENIED', 'You do not have permission to do this.', { permission: key });
-};
-
-consoleFiles.post('/', raw, validate(UploadQuery, 'query'), consoleTx(async (req, res) => {
-  const q = req.query as unknown as z.infer<typeof UploadQuery>;
-  await canConsole(req, consoleKey(q.entityType));
-  res.status(201).json(await files.saveUpload({ tenantId: null, userId: req.console!.userId, bytes: body(req), name: fileName(req), kind: q.kind, entityType: q.entityType, entityId: q.entityId, field: q.field }));
-}));
-consoleFiles.get('/', requirePlatformPermission('platform.tenant.view'), validate(ListQuery, 'query'), consoleTx(async (req, res) => {
-  const q = req.query as unknown as z.infer<typeof ListQuery>;
-  res.json({ data: await files.listFiles(null, q.entityType, q.entityId, q.field) });
-}));
-consoleFiles.post('/attach', validate(AttachBody), consoleTx(async (req, res) => {
-  await canConsole(req, consoleKey(req.body.entityType));
-  res.json({ attached: await files.attachFiles(null, req.console!.userId, req.body.ids, req.body.entityType, req.body.entityId, req.body.field) });
-}));
-consoleFiles.delete('/:id', validate(IdParam, 'params'), consoleTx(async (req, res) => {
-  const canManage = (await getRolePermissions(req.console!.roleId)).has('platform.setting.edit');
-  await files.removeFile(null, String(req.params.id), req.console!.userId, canManage);
   res.status(204).end();
 }));
 

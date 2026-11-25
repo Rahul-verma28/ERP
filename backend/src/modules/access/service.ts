@@ -2,7 +2,7 @@ import type { PermissionScope } from '@prisma/client';
 import { prisma, db } from '../../kernel/db';
 import { cache } from '../../kernel/cache';
 import { PERMISSIONS } from '../../contracts/permissions';
-import { getEntitlements, fullModules } from '../subscription/entitlements';
+import { getEntitlements, fullModules } from '../licensing/entitlements';
 import { consumer } from '../events/outbox';
 
 // Cached lookups for the permission middleware (LLD §4.5). Reads use platform
@@ -54,7 +54,7 @@ export async function effectivePermissions(tenantId: string, roleId: string) {
   const out: Record<string, PermissionScope> = {};
   for (const p of PERMISSIONS) {
     const scope = perms.get(p.key);
-    if (!scope || p.moduleKey === 'platform') continue;
+    if (!scope) continue;
     if (p.moduleKey !== 'tenant') {
       const m = ent.modules[p.moduleKey];
       if (m.status === 'inactive') continue;
@@ -123,7 +123,7 @@ export async function lockedPermissions(tenantId: string, roleId: string) {
   const [perms, ent] = await Promise.all([getRolePermissions(roleId), getEntitlements(tenantId)]);
   const out: Record<string, LockReason> = {};
   for (const p of PERMISSIONS) {
-    if (!perms.get(p.key) || p.moduleKey === 'platform' || p.moduleKey === 'tenant') continue;
+    if (!perms.get(p.key) || p.moduleKey === 'tenant') continue;
     const m = ent.modules[p.moduleKey];
     if (m.status === 'inactive') out[p.key] = 'not_in_plan';
     else if (p.tier === 'full' && m.tier !== 'full') out[p.key] = 'paid_feature';

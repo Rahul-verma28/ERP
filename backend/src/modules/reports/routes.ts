@@ -6,7 +6,7 @@ import { scopeWhere } from '../../kernel/query';
 import { dateOnly, todayIST } from '../../kernel/gst';
 import { requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { getRolePermissions } from '../access/service';
-import { getEntitlements } from '../subscription/entitlements';
+import { getEntitlements } from '../licensing/entitlements';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../../kernel/db';

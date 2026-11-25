@@ -7,7 +7,7 @@ import { randomToken } from '../../kernel/crypto';
 import { GST_RATES_BP, computeDocument, dateOnly, divRound, todayIST } from '../../kernel/gst';
 import { allocateNumber } from '../../kernel/sequences';
 import { DateStr, Paise, consumeMonthly, inScope, markOnboarding, scopeWhere } from '../../kernel/query';
-import { getEntitlements } from '../subscription/entitlements';
+import { getEntitlements } from '../licensing/entitlements';
 import { validateCustom } from '../config/service';
 import { audit } from '../audit/service';
 import { publish } from '../events/outbox';

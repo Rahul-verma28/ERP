@@ -30,15 +30,6 @@ const SENSITIVE_ALL = [
 ];
 
 export const ROLES: RoleDef[] = [
-  // ── Console v3: six roles across the AHEAD Console, the vendor panel and the partner portal ──
-  { key: 'super_admin', name: 'Admin', layer: 'platform', roleType: 'admin', description: 'Everything: businesses, partners, billing, people, roles, plans, prices and Console settings', requiredModules: [], isSystem: true, grants: [['platform.*', 'all']] },
-  { key: 'console_staff', name: 'Staff', layer: 'platform', roleType: 'user', description: 'All businesses: onboard, change plan, extend, record payments; partners (view)', requiredModules: [], grants: [['platform.dashboard.view', 'all'], ['platform.tenant.*', 'all'], ['platform.grace.create', 'all'], ['platform.plan.view', 'all'], ['platform.payment.view', 'all'], ['platform.payment.create', 'all'], ['platform.revenue.view', 'all'], ['platform.note.*', 'all'], ['platform.partner.view', 'all']] },
-  { key: 'console_sales', name: 'Sales', layer: 'platform', roleType: 'salesperson', description: 'Own businesses: onboard, change plan, extend trial; own referral link and code', requiredModules: [], grants: [['platform.dashboard.view', 'own'], ['platform.tenant.*', 'own'], ['platform.grace.create', 'own'], ['platform.plan.view', 'all'], ['platform.payment.view', 'own'], ['platform.note.*', 'own']] },
-  { key: 'vendor', name: 'Vendor', layer: 'platform', roleType: 'user', description: 'Own businesses: onboard and send the login link; own referral link and code', requiredModules: [], grants: [['platform.dashboard.view', 'own'], ['platform.tenant.view', 'own'], ['platform.tenant.create', 'own'], ['platform.payment.view', 'own'], ['platform.plan.view', 'all']] },
-  // Partner people are Console members linked to a partner: every client query is limited to that partner (scopedTenantFilter)
-  { key: 'partner_admin', name: 'Partner owner', layer: 'partner', roleType: 'admin', description: "The partner's businesses and plans, its team and the monthly bill from AHEAD", requiredModules: [], grants: [['platform.dashboard.view', 'all'], ['platform.tenant.*', 'all'], ['platform.plan.view', 'all'], ['platform.member.*', 'all'], ['platform.partner.view', 'all']] },
-  { key: 'partner_staff', name: 'Partner staff', layer: 'partner', roleType: 'user', description: "Onboard and look after the partner's businesses; no bill or team", requiredModules: [], grants: [['platform.dashboard.view', 'all'], ['platform.tenant.view', 'all'], ['platform.tenant.create', 'all'], ['platform.plan.view', 'all']] },
-
   // ── Tenant core roles (always visible) ──
   {
     key: 'owner', name: 'Owner', layer: 'tenant', roleType: 'admin', isSystem: true, requiredModules: [],
@@ -196,23 +187,11 @@ const matches = (pattern: string, key: string) => {
   return p.every((part, i) => part === '*' || part === k[i]);
 };
 
-/** Console roles removed in Console v3 and the role their members move to (applied by the seed). */
-export const RETIRED_ROLES: Record<string, string> = {
-  platform_ops: 'console_staff',
-  platform_support: 'console_staff',
-  finance_payout_admin: 'console_staff',
-  console_sales_manager: 'console_sales',
-  console_sales_executive: 'console_sales',
-};
-
 /** Expand a role's grant patterns to concrete permission keys (most specific grant wins). */
 export function expandGrants(role: RoleDef): Map<string, PermissionScope> {
   const result = new Map<string, PermissionScope>();
-  const consoleRole = role.layer !== 'tenant';
   for (const [pattern, scope] of role.grants) {
     for (const p of PERMISSIONS) {
-      // Console keys only ever go to Console roles, and Console roles get nothing else
-      if ((p.moduleKey === 'platform') !== consoleRole) continue;
       if (p.moduleKey === 'tenant' && pattern.startsWith('*.')) {
         // wildcards over modules only include tenant settings views, never admin actions
         if (!['tenant.settings.view', 'tenant.branch.view'].includes(p.key)) continue;

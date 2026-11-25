@@ -5,6 +5,8 @@
 **/.env.*
 !**/.env.example
 **/storage
+**/*.local.md
+**/coverage
 .git
 .claude
 *.xlsx

@@ -52,7 +52,6 @@ function lightVars({ scale: s, primary }: ThemePreset) {
     "--border": mix(s[4], white, 0.55),
     "--input": mix(s[4], white, 0.35),
     "--ring": primary,
-    "--console-brand": primary,
     "--chart-1": primary,
     "--sidebar": white,
     "--sidebar-foreground": s[0],
@@ -85,7 +84,6 @@ function darkVars({ scale: s, primaryDark }: ThemePreset) {
     "--border": mix(s[0], s[4], 0.22),
     "--input": mix(s[0], s[4], 0.3),
     "--ring": primaryDark,
-    "--console-brand": mix(primaryDark, s[0], 0.35),
     "--chart-1": primaryDark,
     "--sidebar": mix(s[0], s[1], 0.25),
     "--sidebar-foreground": text,
@@ -102,7 +100,7 @@ const block = (selector: string, vars: Record<string, string>) => `${selector}{$
 
 /** A brand colour the owner typed in wins over the theme's own colour. */
 function brandVars(color: string) {
-  return { "--primary": color, "--primary-foreground": "#FFFFFF", "--ring": color, "--sidebar-primary": color, "--console-brand": color, "--chart-1": color }
+  return { "--primary": color, "--primary-foreground": "#FFFFFF", "--ring": color, "--sidebar-primary": color, "--chart-1": color }
 }
 
 export function themeCss(look: BrandLook) {

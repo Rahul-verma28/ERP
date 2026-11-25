@@ -10,10 +10,92 @@ import { audit } from '../audit/service';
 import { createAccessLink } from '../identity/accessLinks';
 import { applyLicence } from './service';
 
-// The Console asks this ERP to set up a business (provisioning API, POST /tenants). The Console
-// chose the id, the plan and who onboarded it; here only the workspace is made: the business,
-// its main branch, the owner's login (no password: they set it through the setup link) and the
-// licence. Running the same request again returns the same business (safe to retry).
+// Making a business's workspace in this ERP. The Console decides that a business exists, its plan
+// and who brought it in (and signs the licence); here only the ERP's part is made: the business,
+// its main branch, the owner's membership and the licence. Three ways in, one function:
+//   • self-serve signup on this ERP's website (the owner already chose a password)
+//   • "Add another business" by a signed-in owner
+//   • the Console adding a business (provisioning API, POST /tenants): the owner sets a password
+//     through the setup link
+
+export type WorkspaceOwner =
+  | { kind: 'new'; name: string; email: string; mobile: string; passwordHash: string | null; mobileVerified: boolean }
+  | { kind: 'existing'; userId: string };
+
+export interface WorkspaceInput {
+  id: string;
+  name: string;
+  industryKey: string;
+  legalName?: string | null;
+  gstin?: string | null;
+  stateCode?: string | null;
+  owner: WorkspaceOwner;
+  /** Signup answers (contracts/workspace.ts WorkspaceProfile) */
+  profile?: Record<string, unknown>;
+  licence: string;
+}
+
+/** Must run inside withPlatform(). Same id again: the business that is already there (safe to retry). */
+export async function createWorkspace(input: WorkspaceInput) {
+  const tx = db();
+  const existing = await tx.tenant.findUnique({ where: { id: input.id }, select: { id: true, ownerUserId: true } });
+  if (existing) {
+    await applyLicence(input.licence, { tenantId: existing.id });
+    const ownerRole = await tx.role.findFirstOrThrow({ where: { tenantId: null, key: 'owner' }, select: { id: true } });
+    return { tenantId: existing.id, ownerUserId: existing.ownerUserId, ownerRoleId: ownerRole.id, created: false };
+  }
+
+  const template = templateByKey(industryTemplateKey(input.industryKey) ?? '');
+  if (!template) throw new AppError('VALIDATION_FAILED', 'Unknown industry.', { fields: { industryKey: 'Unknown industry' } });
+
+  let userId: string;
+  if (input.owner.kind === 'existing') {
+    userId = (await tx.user.findUniqueOrThrow({ where: { id: input.owner.userId }, select: { id: true } })).id;
+  } else {
+    const o = input.owner;
+    // One login per person across businesses
+    const byEmail = await tx.user.findUnique({ where: { email: o.email } });
+    const byMobile = await tx.user.findUnique({ where: { mobile: o.mobile } });
+    if (byEmail && byMobile && byEmail.id !== byMobile.id) {
+      throw new AppError('CONFLICT', 'This email and this mobile belong to two different people on AHEAD. Use one person’s email and mobile.', { fields: { 'owner.email': 'Belongs to someone else', 'owner.mobile': 'Belongs to someone else' } });
+    }
+    const found = byEmail ?? byMobile;
+    // Self-signup with someone else's email or mobile is refused; the Console may add a business for an existing person
+    if (found && o.passwordHash) throw new AppError(byEmail ? 'EMAIL_TAKEN' : 'MOBILE_TAKEN', 'An account with these details already exists. Please sign in.');
+    userId =
+      found?.id ??
+      (await tx.user.create({ data: { name: o.name, email: o.email, mobile: o.mobile, passwordHash: o.passwordHash, mobileVerifiedAt: o.mobileVerified ? new Date() : null } })).id;
+  }
+
+  const tenant = await tx.tenant.create({
+    data: {
+      id: input.id,
+      name: input.name,
+      industryKey: storedIndustryKey(input.industryKey),
+      templateVersion: template.version,
+      status: 'trialing',
+      gstin: input.gstin ?? null,
+      billingStateCode: input.stateCode ?? input.gstin?.slice(0, 2) ?? null,
+      legalName: input.legalName ?? null,
+      profile: (input.profile ?? {}) as Prisma.InputJsonValue,
+      preferences: {} as Prisma.InputJsonValue,
+      ownerUserId: userId,
+    },
+  });
+  await tx.branch.create({ data: { tenantId: tenant.id, name: 'Main Branch', code: 'MAIN', isDefault: true } });
+  const ownerRole = await tx.role.findFirstOrThrow({ where: { tenantId: null, key: 'owner' }, select: { id: true } });
+  await tx.tenantMember.create({ data: { tenantId: tenant.id, userId, roleId: ownerRole.id, status: 'active', joinedAt: new Date() } });
+  await tx.user.update({ where: { id: userId }, data: { lastTenantId: tenant.id } });
+
+  // The licence sets the real status (trial, paid, waiting for payment) and opens the modules
+  await applyLicence(input.licence, { tenantId: tenant.id });
+
+  await publish('tenant.created', { tenantId: tenant.id, industryKey: template.key, ownerUserId: userId }, { tenantId: tenant.id });
+  await audit({ tenantId: tenant.id, actorId: input.owner.kind === 'existing' || input.owner.passwordHash ? userId : null, action: 'tenant.created', entity: 'tenant', entityId: tenant.id, after: { name: tenant.name } });
+  return { tenantId: tenant.id, ownerUserId: userId, ownerRoleId: ownerRole.id, created: true };
+}
+
+// ── The Console adds a business (provisioning API) ──
 
 export const ProvisionInput = z.object({
   id: z.string().uuid(),
@@ -27,67 +109,16 @@ export const ProvisionInput = z.object({
     email: z.string().trim().email().transform(normaliseEmail),
     mobile: z.string().trim().transform(normaliseMobile),
   }),
-  /** A partner's client: the partner pays AHEAD, the business never sees AHEAD's bills */
-  billedToPartner: z.boolean().default(false),
   licence: z.string().min(50).max(20_000),
-  /** Who onboarded it, for the business's own record (the Console keeps the real one) */
-  source: z.enum(['direct', 'sales', 'vendor', 'partner']).default('direct'),
 });
 export type ProvisionInput = z.infer<typeof ProvisionInput>;
 
-/** Must run inside withPlatform() */
+/** Must run inside withPlatform(). Hands back a fresh one-use setup link for the owner. */
 export async function provisionWorkspace(input: ProvisionInput) {
-  const tx = db();
-  const existing = await tx.tenant.findUnique({ where: { id: input.id }, select: { id: true, ownerUserId: true } });
-  if (existing) {
-    // Already made (a retry): keep the newest licence and hand back a fresh setup link
-    await applyLicence(input.licence, { tenantId: existing.id });
-    const link = await createAccessLink({ kind: 'client_owner', userId: existing.ownerUserId, tenantId: existing.id, createdBy: null });
-    return { tenantId: existing.id, ownerUserId: existing.ownerUserId, ownerLink: link, created: false };
-  }
-
-  const template = templateByKey(industryTemplateKey(input.industryKey) ?? '');
-  if (!template) throw new AppError('VALIDATION_FAILED', 'Unknown industry.', { fields: { industryKey: 'Unknown industry' } });
-
-  // One login per person across businesses: an owner who already uses AHEAD keeps their login
-  const byEmail = await tx.user.findUnique({ where: { email: input.owner.email } });
-  const byMobile = await tx.user.findUnique({ where: { mobile: input.owner.mobile } });
-  if (byEmail && byMobile && byEmail.id !== byMobile.id) {
-    throw new AppError('CONFLICT', 'This email and this mobile belong to two different people on AHEAD. Use one person’s email and mobile.', { fields: { 'owner.email': 'Belongs to someone else', 'owner.mobile': 'Belongs to someone else' } });
-  }
-  const user =
-    byEmail ??
-    byMobile ??
-    (await tx.user.create({ data: { name: input.owner.name, email: input.owner.email, mobile: input.owner.mobile, passwordHash: null } }));
-
-  const tenant = await tx.tenant.create({
-    data: {
-      id: input.id,
-      name: input.name,
-      industryKey: storedIndustryKey(input.industryKey),
-      templateVersion: template.version,
-      status: 'trialing',
-      source: input.source,
-      onboardingType: 'trial',
-      billingOwner: input.billedToPartner ? 'partner' : 'self',
-      gstin: input.gstin ?? null,
-      billingStateCode: input.stateCode ?? input.gstin?.slice(0, 2) ?? null,
-      legalName: input.legalName ?? null,
-      profile: {} as Prisma.InputJsonValue,
-      preferences: {} as Prisma.InputJsonValue,
-      ownerUserId: user.id,
-    },
+  const made = await createWorkspace({
+    id: input.id, name: input.name, industryKey: input.industryKey, legalName: input.legalName, gstin: input.gstin, stateCode: input.stateCode,
+    owner: { kind: 'new', ...input.owner, passwordHash: null, mobileVerified: false }, licence: input.licence,
   });
-  await tx.branch.create({ data: { tenantId: tenant.id, name: 'Main Branch', code: 'MAIN', isDefault: true } });
-  const ownerRole = await tx.role.findFirstOrThrow({ where: { tenantId: null, key: 'owner' } });
-  await tx.tenantMember.create({ data: { tenantId: tenant.id, userId: user.id, roleId: ownerRole.id, status: 'active', joinedAt: new Date() } });
-  if (!user.lastTenantId) await tx.user.update({ where: { id: user.id }, data: { lastTenantId: tenant.id } });
-
-  // The licence sets the real status (trial, paid, waiting for payment) and opens the modules
-  await applyLicence(input.licence, { tenantId: tenant.id });
-  const ownerLink = await createAccessLink({ kind: 'client_owner', userId: user.id, tenantId: tenant.id, createdBy: null });
-
-  await publish('tenant.created', { tenantId: tenant.id, source: input.source, onboardingType: 'trial', partnerId: null, industryKey: template.key, ownerUserId: user.id }, { tenantId: tenant.id });
-  await audit({ tenantId: tenant.id, actorId: null, action: 'tenant.created', entity: 'tenant', entityId: tenant.id, after: { name: tenant.name, source: input.source, by: 'console' } });
-  return { tenantId: tenant.id, ownerUserId: user.id, ownerLink, created: true };
+  const ownerLink = await createAccessLink({ kind: 'client_owner', userId: made.ownerUserId, tenantId: made.tenantId, createdBy: null });
+  return { tenantId: made.tenantId, ownerUserId: made.ownerUserId, ownerLink, created: made.created };
 }

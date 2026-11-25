@@ -134,3 +134,18 @@ Base `/provision/v1`, same signed header with the deployment's key.
 6. **Self-hosted ERP** (when the first enterprise asks) — licence file upload, install guide.
 
 Each phase ends with type-checks, tests and a browser check, and the app still works.
+
+## Status (24 Nov 2026)
+
+Phases 1–5 are done. The ERP (`backend`, `frontend`) holds no Console code, table, page or
+setting: no plans, prices, coupons, partners, Console members, platform billing, `/console`,
+`/partner` or `/pay` pages, and no `LICENCE_PRIVATE_KEY` or Razorpay keys. It reads modules and
+limits only from the licence (`modules/licensing/entitlements.ts`) and asks console-api (through
+`kernel/consoleClient.ts`) for signup, plans, billing, closing and reopening. Migration
+`20261204000000_console_split` drops the old tables.
+
+`console-web` (port 3001) is the Console and partner portal, talking only to console-api. The
+website's "sell AHEAD" form lives there at `/apply`. First Admin: `npm run staff:add -- --email … --name …`
+in console-api; keys: `npm run licence:keys` in console-api.
+
+Shared code is only `backend/src/contracts` (licence, signed calls, modules, validation, workspace).

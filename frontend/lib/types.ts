@@ -34,32 +34,12 @@ export interface PlanLimits {
   aiCredits: number
 }
 
-/** design v2: AHEAD team members work in the Console, clients in the ERP */
-export type Workspace = "tenant" | "console"
-
-export interface ConsoleAccess {
-  memberId: string
-  role: { key: string; name: string }
-  /** platform.* permission keys with their scope (all / team / own) */
-  permissions: Record<string, Scope>
-  /** Which Console panel this person sees */
-  audience: "team" | "vendor" | "partner"
-  partner: { id: string; name: string; status: "active" | "paused"; discountPercent: number } | null
-}
-
 /** Why the plan holds back a permission */
 export type LockReason = "not_in_plan" | "paid_feature" | "view_only"
 
 export interface Me {
-  workspace: Workspace
-  /** null unless the user is on the AHEAD team */
-  console: ConsoleAccess | null
-  /** Console › Settings › Appearance, for Console and partner portal people */
-  consoleBranding: WorkspacePreferences["branding"] | null
-  /** Platform-wide banner set from the Console */
-  announcement: { text: string; tone: "info" | "warning" } | null
   user: { id: string; name: string; email: string; mobile: string; emailVerified: boolean; mobileVerified: boolean; preferences: PersonalPreferences; /** Signed link to the profile photo */ avatarUrl?: string | null }
-  /** Two-step verification required by a business (or the Console) and its grace period */
+  /** Two-step verification required by a business and its grace period */
   security: { mfaEnabled: boolean; mfaRequired: boolean; requiredBy: string[]; deadline: string | null; mustSetUpMfa: boolean }
   memberships: { tenantId: string; name: string; status: TenantStatus; logoUrl: string | null; roleName: string }[]
   tenant: null | {
@@ -73,9 +53,7 @@ export interface Me {
     billingStateCode: string | null
     timezone: string
     fyStartMonth: number
-    billingOwner: "self" | "partner"
     configApplied: boolean
-    needsSeatChoice: boolean
     isOwner: boolean
     onboarding: { dashboard?: string[]; recommendedModules?: ModuleKey[]; setup?: SetupState }
     createdAt: string

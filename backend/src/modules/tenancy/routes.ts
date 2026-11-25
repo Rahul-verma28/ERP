@@ -6,11 +6,9 @@ import { notFound } from '../../kernel/errors';
 import { validate } from '../../middleware/request';
 import { publicRoute, requirePermission, tenantAuth, tx } from '../../middleware/auth';
 import { lookupLimiter, publicLimiter } from '../../middleware/rateLimit';
-import { ApplicationInput, submitApplication } from '../console/applications';
 import { PERMISSIONS } from '../../contracts/permissions';
 import { DEFAULT_TERMS, TEMPLATES, templateByKey } from '../../contracts/templates';
-import { getEntitlements } from '../subscription/entitlements';
-import { getCatalog } from '../subscription/catalog';
+import { getEntitlements } from '../licensing/entitlements';
 import { visibleRoles } from '../access/service';
 import { audit, auditPeople, listAudit, type AuditQuery } from '../audit/service';
 import { AUDIT_AREAS } from '../audit/describe';
@@ -26,7 +24,6 @@ import { adminResetMfa } from '../account/service';
 import { zReason } from '../../kernel/zodRules';
 import { INDUSTRIES, industryTemplateKey } from '../../contracts/workspace';
 import { zEmail, zMobileIN } from '../../kernel/zodRules';
-import { acceptHandover, handoverForOwner } from '../console/onboarding';
 import { storageUsage } from '../files/usage';
 import * as users from './users';
 
@@ -64,32 +61,6 @@ router.get(
   },
 );
 
-// Signup step 4: live check of a referral/coupon code (what it gives, never who owns it)
-/** Website: apply to become an AHEAD vendor or partner (an Admin decides in the Console) */
-router.post('/public/applications', publicRoute, lookupLimiter, validate(ApplicationInput), async (req, res) => {
-  res.status(201).json(await withPlatform(() => submitApplication(req.body)));
-});
-
-router.get('/public/coupons/:code', publicRoute, lookupLimiter, validate(z.object({ code: z.string().trim().toUpperCase().regex(/^[A-Z0-9_-]{2,20}$/, 'Use letters and digits') }), 'params'), async (req, res) => {
-  const code = String(req.params.code);
-  const c = await withPlatform(() => db().coupon.findUnique({ where: { code } }));
-  const now = new Date();
-  const valid = !!c && (!c.validFrom || c.validFrom <= now) && (!c.validTo || c.validTo > now) && (c.maxRedemptions === null || c.redeemed < c.maxRedemptions);
-  if (!c || !valid) return res.json({ valid: false, message: c ? 'This code has expired' : "We couldn't find this code" });
-  const off = c.type === 'percent' ? `${c.value}% off` : `₹${(c.value / 100).toLocaleString('en-IN')} off`;
-  res.json({ valid: true, message: `${off} your first paid ${c.appliesTo === 'all' ? 'plan' : `${c.appliesTo} plan`}` });
-});
-
-router.get('/billing/plans', publicRoute, publicLimiter, async (_req, res) => {
-  const catalog = await getCatalog();
-  res.json({
-    plans: catalog.plans.filter((p) => p.isPublic).map(({ isPublic: _, ...p }) => p),
-    modules: catalog.modules,
-    extraUserMonthlyPaise: catalog.extraUserMonthlyPaise,
-    currency: 'INR',
-  });
-});
-
 router.get('/invitations/:token', publicRoute, publicLimiter, async (req, res) => {
   res.json(await tenancy.invitationPreview(String(req.params.token)));
 });
@@ -126,13 +97,6 @@ router.get('/tenant', requirePermission('tenant.settings.view'), tx(async (req, 
 }));
 router.patch('/tenant', requirePermission('tenant.settings.edit'), validate(tenancy.TenantPatch), tx(async (req, res) => {
   res.json(await tenancy.updateTenant(req.ctx!.tenantId, req.body));
-}));
-// Console handover (blueprint Phase B): the owner sees "your workspace is ready" and accepts it
-router.get('/tenant/handover', tx(async (req, res) => {
-  res.json({ handover: await handoverForOwner(req.ctx!.tenantId, req.ctx!.userId) });
-}));
-router.post('/tenant/handover/accept', tx(async (req, res) => {
-  res.json(await acceptHandover(req.ctx!.tenantId, req.ctx!.userId));
 }));
 router.get('/tenant/onboarding', requirePermission('tenant.settings.view'), tx(async (req, res) => {
   res.json(await tenancy.onboardingStatus(req.ctx!.tenantId));
@@ -255,7 +219,7 @@ router.delete('/roles/:id', requirePermission('tenant.role.delete'), validate(id
 router.get('/permissions', requirePermission('tenant.role.view'), async (req, res) => {
   const ent = await getEntitlements(req.ctx!.tenantId);
   // Only modules the tenant has (hidden, not greyed out — Roles doc)
-  const data = PERMISSIONS.filter((p) => p.moduleKey === 'tenant' || (p.moduleKey !== 'platform' && ent.modules[p.moduleKey].status !== 'inactive'));
+  const data = PERMISSIONS.filter((p) => p.moduleKey === 'tenant' || ent.modules[p.moduleKey].status !== 'inactive');
   res.json({ data });
 });
 

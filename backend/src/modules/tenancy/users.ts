@@ -7,7 +7,7 @@ import { randomToken, sha256 } from '../../kernel/crypto';
 import type { TenantCtx } from '../../kernel/context';
 import { MODULES } from '../../contracts/modules';
 import { PERMISSION_CATALOG } from '../../contracts/permissions';
-import { getEntitlements } from '../subscription/entitlements';
+import { getEntitlements } from '../licensing/entitlements';
 import { audit } from '../audit/service';
 import { sendMessage } from '../notifications/service';
 

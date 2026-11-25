@@ -157,7 +157,7 @@ function SignupFlow() {
   // Not right after creating one here: that goes to the loading screen instead.
   const createdRef = React.useRef(false)
   React.useEffect(() => {
-    if (!addBusiness && status === "authenticated" && !createdRef.current) router.replace(me?.workspace === "console" ? "/console" : "/app")
+    if (!addBusiness && status === "authenticated" && !createdRef.current) router.replace("/app")
     if (addBusiness && status === "anonymous") router.replace(`/login?next=${encodeURIComponent("/signup?mode=business")}`)
   }, [addBusiness, status, me, router])
 
